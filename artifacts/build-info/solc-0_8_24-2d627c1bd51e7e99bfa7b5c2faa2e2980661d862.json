@@ -1,0 +1,39 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_24-2d627c1bd51e7e99bfa7b5c2faa2e2980661d862",
+  "solcVersion": "0.8.24",
+  "solcLongVersion": "0.8.24+commit.e11b9ed9",
+  "userSourceNameMap": {
+    "contracts/BantahTestToken.sol": "project/contracts/BantahTestToken.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "shanghai",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/BantahTestToken.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/**\n * @title BantahTestToken\n * @notice Minimal ERC20 used for Bantah onchain testnet flows (USDC/USDT simulation).\n *         Owner can mint additional supply for faucet-style testing.\n */\ncontract BantahTestToken {\n    string public name;\n    string public symbol;\n    uint8 public immutable decimals;\n    uint256 public totalSupply;\n    address public owner;\n\n    mapping(address => uint256) public balanceOf;\n    mapping(address => mapping(address => uint256)) public allowance;\n\n    event Transfer(address indexed from, address indexed to, uint256 value);\n    event Approval(address indexed owner, address indexed spender, uint256 value);\n    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);\n\n    modifier onlyOwner() {\n        require(msg.sender == owner, \"Only owner\");\n        _;\n    }\n\n    constructor(\n        string memory tokenName,\n        string memory tokenSymbol,\n        uint8 tokenDecimals,\n        address initialOwner,\n        uint256 initialSupply\n    ) {\n        require(initialOwner != address(0), \"Invalid owner\");\n        name = tokenName;\n        symbol = tokenSymbol;\n        decimals = tokenDecimals;\n        owner = initialOwner;\n\n        emit OwnershipTransferred(address(0), initialOwner);\n        _mint(initialOwner, initialSupply);\n    }\n\n    function transfer(address to, uint256 amount) external returns (bool) {\n        _transfer(msg.sender, to, amount);\n        return true;\n    }\n\n    function approve(address spender, uint256 amount) external returns (bool) {\n        allowance[msg.sender][spender] = amount;\n        emit Approval(msg.sender, spender, amount);\n        return true;\n    }\n\n    function transferFrom(address from, address to, uint256 amount) external returns (bool) {\n        uint256 currentAllowance = allowance[from][msg.sender];\n        require(currentAllowance >= amount, \"Insufficient allowance\");\n        unchecked {\n            allowance[from][msg.sender] = currentAllowance - amount;\n        }\n        emit Approval(from, msg.sender, allowance[from][msg.sender]);\n        _transfer(from, to, amount);\n        return true;\n    }\n\n    function mint(address to, uint256 amount) external onlyOwner returns (bool) {\n        _mint(to, amount);\n        return true;\n    }\n\n    function transferOwnership(address newOwner) external onlyOwner {\n        require(newOwner != address(0), \"Invalid owner\");\n        emit OwnershipTransferred(owner, newOwner);\n        owner = newOwner;\n    }\n\n    function _transfer(address from, address to, uint256 amount) internal {\n        require(to != address(0), \"Invalid recipient\");\n        uint256 fromBalance = balanceOf[from];\n        require(fromBalance >= amount, \"Insufficient balance\");\n        unchecked {\n            balanceOf[from] = fromBalance - amount;\n        }\n        balanceOf[to] += amount;\n        emit Transfer(from, to, amount);\n    }\n\n    function _mint(address to, uint256 amount) internal {\n        require(to != address(0), \"Invalid recipient\");\n        totalSupply += amount;\n        balanceOf[to] += amount;\n        emit Transfer(address(0), to, amount);\n    }\n}\n\n"
+      }
+    }
+  }
+}
