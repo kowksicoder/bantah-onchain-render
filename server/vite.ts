@@ -69,6 +69,8 @@ export async function setupVite(app: Express, server: Server) {
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(import.meta.dirname, "../dist/public");
+  const clientPublicPath = path.resolve(import.meta.dirname, "../client/public");
+  const rootPublicPath = path.resolve(import.meta.dirname, "../public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
@@ -76,6 +78,10 @@ export function serveStatic(app: Express) {
     );
   }
 
+  // Ensure public runtime assets (fonts/service worker) resolve even when missing from dist build.
+  app.use("/assets", express.static(path.resolve(clientPublicPath, "assets")));
+  app.use("/fonts", express.static(path.resolve(clientPublicPath, "fonts")));
+  app.use(express.static(rootPublicPath));
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist

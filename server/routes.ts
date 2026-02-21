@@ -5463,8 +5463,12 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
-  app.get('/api/wallet/balance', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/wallet/balance', async (req: AuthenticatedRequest, res) => {
     try {
+      if (!req.user?.id) {
+        return res.json({ balance: 0, coins: 0 });
+      }
+
       const userId = getUserId(req);
       console.log(`Fetching balance for user: ${userId}`);
 
@@ -6698,21 +6702,23 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   });
 
   // Get navigation badge counts route
-  app.get('/api/navigation/badges', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/navigation/badges', async (req: AuthenticatedRequest, res) => {
     try {
-      const userId = getUserId(req);
-
-      // Get profile-related notification count (unread profile-specific notifications)
-      const profileNotifications = await db
-        .select({
-          count: sql<number>`count(*)`
-        })
-        .from(notifications)
-        .where(and(
-          eq(notifications.userId, userId),
-          eq(notifications.read, false),
-          sql`type IN ('new_follower', 'achievement_unlocked', 'daily_signin_reminder', 'winner_challenge', 'loser_encourage')`
-        ));
+      const userId = req.user?.id;
+      let profileCount = 0;
+      if (userId) {
+        const profileNotifications = await db
+          .select({
+            count: sql<number>`count(*)`
+          })
+          .from(notifications)
+          .where(and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false),
+            sql`type IN ('new_follower', 'achievement_unlocked', 'daily_signin_reminder', 'winner_challenge', 'loser_encourage')`
+          ));
+        profileCount = Number(profileNotifications[0]?.count || 0);
+      }
 
       // Get new events count (events posted in last 24 hours)
       const newEvents = await db
@@ -6731,7 +6737,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         .where(sql`created_at >= NOW() - INTERVAL '24 hours'`);
 
       res.json({
-        profile: Number(profileNotifications[0]?.count || 0),
+        profile: profileCount,
         events: Number(newEvents[0]?.count || 0),
         challenges: Number(newChallenges[0]?.count || 0)
       });
