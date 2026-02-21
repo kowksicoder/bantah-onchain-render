@@ -16,7 +16,6 @@ app
 contracts
 scripts
 supabase
-public
 *.log
 *.zip
 *.tar.gz
