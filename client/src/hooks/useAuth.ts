@@ -1,8 +1,7 @@
 import { usePrivy } from '@privy-io/react-auth';
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from 'react';
-import { useLocation } from 'wouter';
-import { setAuthToken } from '@/lib/queryClient';
+import { useEffect, useState } from 'react';
+import { apiRequest, setAuthToken } from '@/lib/queryClient';
 
 export function useAuth() {
   const { toast } = useToast();
@@ -14,51 +13,59 @@ export function useAuth() {
     logout: privyLogout,
     getAccessToken,
   } = usePrivy();
-  const [, navigate] = useLocation();
+  const [stableAuthenticated, setStableAuthenticated] = useState(false);
+  const [resolvingAuthToken, setResolvingAuthToken] = useState(false);
 
-  const [stableAuthenticated, setStableAuthenticated] = useState(authenticated);
-
-  // Stabilize authentication state and set auth token for API requests
   useEffect(() => {
-    if (ready) {
-      // Only update stable state after Privy is ready
-      setStableAuthenticated(authenticated);
-      
-      // If authenticated, get the access token and cache it for API requests
-      if (authenticated && getAccessToken) {
-        (async () => {
-          try {
-            const token = await getAccessToken();
-            if (token) {
-              setAuthToken(token);
-              console.debug('✅ Privy auth token cached for API requests');
+    if (!ready) return;
 
-              // Check for stored referral code and report it to the backend
-              const storedReferralCode = localStorage.getItem("referralCode");
-              if (storedReferralCode) {
-                try {
-                  await apiRequest('POST', '/api/referrals/apply', { referralCode: storedReferralCode });
-                  localStorage.removeItem("referralCode"); // Clear after successful application
-                } catch (err) {
-                  console.error('Failed to apply referral code:', err);
-                }
-              }
-            }
-          } catch (err) {
-            console.error('Failed to get Privy access token:', err);
-            setAuthToken(null);
-          }
-        })();
-      } else {
-        // Clear token when logged out
-        setAuthToken(null);
-      }
+    if (!authenticated || !getAccessToken) {
+      setAuthToken(null);
+      setStableAuthenticated(false);
+      setResolvingAuthToken(false);
+      return;
     }
+
+    setResolvingAuthToken(true);
+    setStableAuthenticated(false);
+
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) {
+          setAuthToken(null);
+          setStableAuthenticated(false);
+          return;
+        }
+
+        setAuthToken(token);
+        setStableAuthenticated(true);
+
+        // Apply deferred referral code after token becomes available.
+        const storedReferralCode = localStorage.getItem("referralCode");
+        if (storedReferralCode) {
+          try {
+            await apiRequest('POST', '/api/referrals/apply', { referralCode: storedReferralCode });
+            localStorage.removeItem("referralCode");
+          } catch (err) {
+            console.error('Failed to apply referral code:', err);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to get Privy access token:', err);
+        setAuthToken(null);
+        setStableAuthenticated(false);
+      } finally {
+        setResolvingAuthToken(false);
+      }
+    })();
   }, [authenticated, ready, getAccessToken]);
 
   const logout = async () => {
     try {
       await privyLogout();
+      setAuthToken(null);
+      setStableAuthenticated(false);
       // Force redirect to home page after logout
       window.location.replace('/');
       toast({
@@ -76,7 +83,7 @@ export function useAuth() {
 
   return {
     user: stableAuthenticated ? user : null,
-    isLoading: !ready,
+    isLoading: !ready || resolvingAuthToken,
     isAuthenticated: stableAuthenticated,
     login,
     logout,

@@ -45,6 +45,7 @@ export default function Shop() {
   const { data: users = [] } = useQuery({
     queryKey: ["/api/users"],
     retry: false,
+    enabled: !!user,
   });
 
   const coinPackages = [

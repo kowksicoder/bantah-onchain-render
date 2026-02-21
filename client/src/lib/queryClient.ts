@@ -24,11 +24,6 @@ export async function apiRequest(
   data?: unknown,
 ): Promise<any> {
   const authToken = getAuthToken();
-  
-  // Debug logging
-  if (!authToken) {
-    console.warn('No auth token found for request to:', url);
-  }
 
   const options: RequestInit = {
     method,
@@ -83,11 +78,6 @@ export const queryClient = new QueryClient({
         }
 
         const authToken = getAuthToken();
-        
-        // Debug logging for queries
-        if (!authToken) {
-          console.warn('No auth token found for query to:', fullUrl);
-        }
 
         const res = await fetch(fullUrl, {
           credentials: "include",

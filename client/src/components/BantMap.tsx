@@ -1,6 +1,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export function BantMap({ onChallengeUser, embedded = false }: BantMapProps) {
+  const { user } = useAuth();
   const [selectedUser, setSelectedUser] = useState<MapUser | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -65,6 +67,7 @@ export function BantMap({ onChallengeUser, embedded = false }: BantMapProps) {
   const { data: users = [], isLoading } = useQuery<MapUser[]>({
     queryKey: ["/api/users"],
     retry: false,
+    enabled: !!user,
   });
 
   const { data: challenges = [] } = useQuery<any[]>({

@@ -114,6 +114,7 @@ function RequestRowSkeleton() {
   const { data: friends = [] as any[], isLoading: isFriendsLoading } = useQuery({
     queryKey: ["/api/friends"],
     retry: false,
+    enabled: !!user,
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60,
   });
@@ -250,6 +251,7 @@ function RequestRowSkeleton() {
   const { data: allUsers = [] as any[], isLoading: isUsersLoading } = useQuery({
     queryKey: ["/api/users"],
     retry: false,
+    enabled: !!user,
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60,
   });
