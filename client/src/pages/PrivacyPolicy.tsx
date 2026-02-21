@@ -25,10 +25,10 @@ export default function PrivacyPolicy() {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 flex items-center">
               <Shield className="w-6 h-6 mr-2" />
-              Privacy Policy
+              Bantah Onchain Privacy Policy
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              Last updated: January 28, 2025
+              Last updated: February 21, 2026
             </p>
           </div>
         </div>
@@ -69,7 +69,7 @@ export default function PrivacyPolicy() {
                   <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
                     <li>Name, email address, and contact information</li>
                     <li>Profile picture and bio (optional)</li>
-                    <li>Payment information (securely processed)</li>
+                    <li>Wallet address and chain/network selections used in the app</li>
                     <li>Identity verification documents when required</li>
                   </ul>
                 </div>
@@ -105,6 +105,9 @@ export default function PrivacyPolicy() {
                 <li>Provide customer support</li>
                 <li>Comply with legal and regulatory requirements</li>
               </ul>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed mt-4">
+                Note: blockchain transactions and public wallet addresses are inherently visible on public explorers and cannot be deleted by Bantah.
+              </p>
             </CardContent>
           </Card>
 
@@ -117,7 +120,7 @@ export default function PrivacyPolicy() {
                 We do not sell or rent your personal information to third parties. We may share your information only in these limited circumstances:
               </p>
               <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
-                <li>With payment processors to handle transactions</li>
+                <li>With infrastructure providers (RPC/indexing/analytics) required to run the onchain experience</li>
                 <li>With service providers who assist us in operating the platform</li>
                 <li>When required by law or to protect our rights</li>
                 <li>In connection with a business transaction (merger, acquisition, etc.)</li>
@@ -191,7 +194,7 @@ export default function PrivacyPolicy() {
             </CardHeader>
             <CardContent className="prose dark:prose-invert max-w-none">
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                We retain your personal information for as long as necessary to provide our services and comply with legal obligations. Betting transaction records are kept for 7 years as required by financial regulations. You can request earlier deletion of non-essential data.
+                We retain your personal information for as long as necessary to provide our services and comply with legal obligations. App-level records may be deleted where legally permitted, but onchain records remain publicly accessible on their respective networks.
               </p>
             </CardContent>
           </Card>
@@ -245,7 +248,7 @@ export default function PrivacyPolicy() {
         <div className="mt-8 text-center">
           <div className="flex items-center justify-center space-x-2 text-sm text-slate-500">
             <Calendar className="w-4 h-4" />
-            <span>Last updated: January 28, 2025</span>
+            <span>Last updated: February 21, 2026</span>
           </div>
         </div>
       </div>

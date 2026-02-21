@@ -15,15 +15,15 @@ const highlights = [
   {
     label: "Escrow Secured",
     value: "100%",
-    note: "Locked before challenge starts",
+    note: "Locked in smart-contract escrow before match start",
     icon: ShieldCheck,
     iconClass: "text-emerald-600 dark:text-emerald-300",
     chipClass: "bg-emerald-100 dark:bg-emerald-900/40",
   },
   {
-    label: "P2P Flow",
-    value: "Direct + Open",
-    note: "1v1 invites and open-market join",
+    label: "Onchain Networks",
+    value: "Base + Arbitrum + BSC",
+    note: "Multi-chain challenge support on EVM testnets",
     icon: Users,
     iconClass: "text-blue-600 dark:text-blue-300",
     chipClass: "bg-blue-100 dark:bg-blue-900/40",
@@ -31,7 +31,7 @@ const highlights = [
   {
     label: "Settlement",
     value: "Vote + Proof",
-    note: "Both sides submit and confirm",
+    note: "Both sides submit proof and confirm outcomes",
     icon: Trophy,
     iconClass: "text-amber-600 dark:text-amber-300",
     chipClass: "bg-amber-100 dark:bg-amber-900/40",
@@ -50,28 +50,28 @@ const flows = [
   {
     step: "01",
     title: "Create or Accept",
-    text: "Start a direct challenge with a friend or accept an open challenge from the board.",
+    text: "Start a direct challenge with a wallet address or accept an open challenge from the board.",
     icon: Users,
   },
   {
     step: "02",
-    title: "Play and Submit Proof",
-    text: "After the match window closes, both sides upload proof to support their result.",
+    title: "Lock Escrow Onchain",
+    text: "Each side confirms stake through an onchain escrow transaction, with chain and token metadata tracked in-app.",
     icon: MessageSquare,
   },
   {
     step: "03",
     title: "Vote and Settle",
-    text: "Both players vote. Matching votes settle instantly, disputes route for review.",
+    text: "Both players submit proof and vote. Matching votes settle, disputes route for moderation review.",
     icon: Trophy,
   },
 ];
 
 const trustPoints = [
-  "Stake is held before challenge starts",
-  "Both users can upload proof and vote",
-  "Dispute path exists when votes conflict",
-  "Leaderboard reflects real settled performance",
+  "Escrow transactions are traceable on chain explorers",
+  "Wallet-based access for all onchain challenge actions",
+  "Both users can upload proof and vote on outcomes",
+  "Dispute path exists when counterpart votes conflict",
 ];
 
 export default function About() {
@@ -81,16 +81,16 @@ export default function About() {
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 md:p-7 shadow-sm">
           <div className="flex flex-col gap-4">
             <Badge className="w-fit bg-[#ccff00]/30 text-slate-900 dark:text-slate-100 border border-[#ccff00]/50 hover:bg-[#ccff00]/30">
-              Built for real P2P challenges
+              Built for onchain P2P challenges
             </Badge>
             <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-6">
               <div className="space-y-3">
                 <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-slate-100 leading-tight">
-                  Bantah turns arguments into structured, escrow-backed challenges.
+                  Bantah Onchain turns arguments into wallet-native, escrow-backed challenges.
                 </h1>
                 <p className="text-sm md:text-base text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Create challenges, lock stakes, submit proof, vote outcomes, and settle transparently.
-                  No vague flow, no guesswork.
+                  Create challenges, lock token stakes in escrow, submit proof, vote outcomes, and settle transparently.
+                  Multi-chain, EVM-native, and built for verifiable challenge flow.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
                   <Button
@@ -101,9 +101,9 @@ export default function About() {
                   </Button>
                   <Button
                     className="h-10 px-5 text-xs font-bold uppercase tracking-wide border-0 bg-[#ccff00]/70 text-slate-900 hover:bg-[#ccff00]"
-                    onClick={() => (window.location.href = "/partner-signup")}
+                    onClick={() => (window.location.href = "/help-support")}
                   >
-                    Sign Up as Partner
+                    Onchain FAQ
                   </Button>
                   <Button
                     className="h-10 px-5 text-xs font-bold uppercase tracking-wide border-0 bg-slate-100 text-slate-900 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
@@ -244,15 +244,15 @@ export default function About() {
                 Ready to start?
               </p>
               <h3 className="text-lg md:text-xl font-black text-slate-900 dark:text-slate-100">
-                Pick a side, stake smart, settle fairly.
+                Connect wallet, pick a side, settle transparently.
               </h3>
             </div>
             <div className="flex gap-2">
               <Button
                 className="h-9 px-4 text-xs font-bold uppercase tracking-wide border-0 bg-[#ccff00]/70 text-slate-900 hover:bg-[#ccff00]"
-                onClick={() => (window.location.href = "/partner-signup")}
+                onClick={() => (window.location.href = "/help-support")}
               >
-                Sign Up as Partner
+                FAQ
               </Button>
               <Button
                 className="h-9 px-4 text-xs font-bold uppercase tracking-wide border-0 bg-slate-100 text-slate-900 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"

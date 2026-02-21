@@ -53,17 +53,17 @@ export default function HelpSupport() {
   const faqs: FAQItem[] = [
     {
       id: "1",
-      question: "How do I deposit money into my account?",
+      question: "How do I fund my onchain challenge stake?",
       answer:
-        "You can deposit money by going to the Wallet page and clicking 'Deposit'. We support bank transfers, cards, and mobile money payments through Paystack.",
+        "Connect your EVM wallet, switch to a supported chain, and make sure you hold the token you want to stake (ETH/USDC/USDT depending on the challenge). Escrow is confirmed through an onchain transaction.",
       category: "payments",
       popularity: 95,
     },
     {
       id: "2",
-      question: "How long do withdrawals take?",
+      question: "How do payouts work on Bantah Onchain?",
       answer:
-        "Withdrawals typically take 1-3 business days to process. The exact time depends on your payment method and bank processing times.",
+        "When a challenge is settled, payout is released from escrow according to result rules. Payout timing depends on chain confirmation and settlement status.",
       category: "payments",
       popularity: 90,
     },
@@ -79,7 +79,7 @@ export default function HelpSupport() {
       id: "4",
       question: "What types of challenges can I participate in?",
       answer:
-        "Bantah offers two types of challenges: 1) Head-to-Head Challenges - Create a challenge and invite a specific friend to compete against you. 2) Featured Challenges - Participate in platform-featured challenges where you can compete with other users. Both types allow you to stake coins or money and win rewards.",
+        "Bantah Onchain supports two core flows: 1) Direct P2P challenges where you invite a specific wallet/user. 2) Open challenges where anyone can accept first. Both flows use onchain escrow for stake enforcement.",
       category: "challenges",
       popularity: 85,
     },
@@ -87,7 +87,7 @@ export default function HelpSupport() {
       id: "5",
       question: "How do I create a challenge?",
       answer:
-        "Go to the Challenges page and click 'Create Challenge'. You can create a head-to-head challenge with a friend by selecting them from your friends list, setting the challenge details (title, description, stakes), and sending the invitation. They'll receive a notification to accept or decline.",
+        "Go to Challenges and click Create. Set title, side, stake, chain, token, and timing. For direct challenges, paste/select the opponent wallet; for open challenges, publish to the board for first accept.",
       category: "challenges",
       popularity: 75,
     },
@@ -121,7 +121,7 @@ export default function HelpSupport() {
     { id: "all", name: "All Categories", count: faqs.length },
     {
       id: "payments",
-      name: "Payments & Wallet",
+      name: "Onchain Wallet & Gas",
       count: faqs.filter((f) => f.category === "payments").length,
     },
     {
@@ -163,7 +163,7 @@ export default function HelpSupport() {
     },
     {
       title: "Phone Support",
-      description: "Call our support hotline",
+      description: "Call our support line for urgent issues",
       icon: Phone,
       action: () => (window.location.href = "tel:+2348123456789"),
       availability: "Mon-Fri, 9AM-6PM",
@@ -226,10 +226,10 @@ export default function HelpSupport() {
           </Button>
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-              About Us & FAQ
+              Bantah Onchain Help & FAQ
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              Find answers to common questions or get help from our team
+              Wallet, chain, escrow, proof, and settlement help for onchain users
             </p>
           </div>
         </div>

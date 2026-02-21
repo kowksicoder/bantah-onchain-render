@@ -27,10 +27,10 @@ export default function TermsOfService() {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 flex items-center">
               <FileText className="w-6 h-6 mr-2" />
-              Terms of Service
+              Bantah Onchain Terms of Service
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              Last updated: January 28, 2025
+              Last updated: February 21, 2026
             </p>
           </div>
         </div>
@@ -101,35 +101,35 @@ export default function TermsOfService() {
 
           <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-lg">4. Betting and Gaming Rules</CardTitle>
+              <CardTitle className="text-lg">4. Onchain Challenge Rules</CardTitle>
             </CardHeader>
             <CardContent className="prose dark:prose-invert max-w-none">
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                Bantah facilitates head-to-head challenges and featured challenges where users compete in prediction and outcome-based competitions. By participating, you agree that:
+                Bantah Onchain facilitates direct and open challenges where users compete in prediction and outcome-based flows with wallet-backed escrow. By participating, you agree that:
               </p>
               <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
-                <li>You understand the risks involved in betting activities</li>
+                <li>You understand the risks involved in onchain challenge activity</li>
                 <li>You will not engage in fraudulent or manipulative behavior</li>
                 <li>Dispute resolution decisions by our team are final</li>
                 <li>Winnings are subject to our payout terms and conditions</li>
-                <li>We reserve the right to void bets in case of technical errors</li>
+                <li>We reserve the right to pause/void challenges in case of severe technical or security issues</li>
               </ul>
             </CardContent>
           </Card>
 
           <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-lg">5. Financial Terms</CardTitle>
+              <CardTitle className="text-lg">5. Onchain Financial Terms</CardTitle>
             </CardHeader>
             <CardContent className="prose dark:prose-invert max-w-none">
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                All financial transactions are processed securely. Please note:
+                Challenge escrow and payout interactions involve blockchain transactions. Please note:
               </p>
               <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
-                <li>Deposits and withdrawals may be subject to processing fees</li>
-                <li>Withdrawal requests are processed within 1-3 business days</li>
-                <li>We may request identity verification for large transactions</li>
-                <li>Refunds are only available in specific circumstances outlined in our policy</li>
+                <li>You are responsible for wallet security, transaction confirmations, and gas fees</li>
+                <li>Token prices and network fees are volatile and outside Bantah control</li>
+                <li>Escrow and settlement flows follow platform rules and smart-contract constraints</li>
+                <li>Transactions already finalized onchain are generally irreversible</li>
               </ul>
             </CardContent>
           </Card>
@@ -197,7 +197,7 @@ export default function TermsOfService() {
         <div className="mt-8 text-center">
           <div className="flex items-center justify-center space-x-2 text-sm text-slate-500">
             <Calendar className="w-4 h-4" />
-            <span>Last updated: January 28, 2025</span>
+            <span>Last updated: February 21, 2026</span>
           </div>
         </div>
       </div>
