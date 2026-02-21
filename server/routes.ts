@@ -3294,14 +3294,15 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
-  app.get('/api/challenges', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/challenges', async (req: AuthenticatedRequest, res) => {
     try {
-      const userId = getUserId(req);
       // Check if requesting all challenges (public feed) or user-specific challenges
       const feedType = req.query.feed as string;
-      const challenges = feedType === 'all' 
-        ? await storage.getAllChallengesFeed(100)
-        : await storage.getChallenges(userId);
+      const hasAuthedUser = Boolean(req.user?.id);
+      const challenges =
+        feedType === 'all' || !hasAuthedUser
+          ? await storage.getAllChallengesFeed(100)
+          : await storage.getChallenges(getUserId(req));
       res.json(challenges);
     } catch (error) {
       console.error("Error fetching challenges:", error);
@@ -8555,7 +8556,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   setupOGImageRoutes(app, storage);
 
   // Add leaderboard endpoint
-  app.get("/api/leaderboard", PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/leaderboard", async (_req, res) => {
     try {
       const leaderboard = await storage.getLeaderboard();
       console.log(`Leaderboard query returned ${leaderboard.length} users`);
