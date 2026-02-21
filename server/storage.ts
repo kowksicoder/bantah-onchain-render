@@ -2919,7 +2919,7 @@ export class DatabaseStorage implements IStorage {
     const challengerWinsSubquery = this.db
       .select({
         userId: challenges.challenger,
-        wins: sql<number>`count(*)`.as("wins"),
+        wins: sql<number>`count(*)`.as("challengerWins"),
       })
       .from(challenges)
       .where(eq(challenges.result, "challenger_won"))
@@ -2929,7 +2929,7 @@ export class DatabaseStorage implements IStorage {
     const challengedWinsSubquery = this.db
       .select({
         userId: challenges.challenged,
-        wins: sql<number>`count(*)`.as("wins"),
+        wins: sql<number>`count(*)`.as("challengedWins"),
       })
       .from(challenges)
       .where(eq(challenges.result, "challenged_won"))
