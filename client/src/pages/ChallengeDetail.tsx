@@ -213,7 +213,7 @@ function ChallengeComments({ challengeId }: { challengeId: string }) {
 }
 
 export default function ChallengeDetail() {
-  const { user } = useAuth();
+  const { user, login } = useAuth();
   const { toast } = useToast();
   const { id } = useParams<{ id: string }>();
   const [showChat, setShowChat] = useState(false);
@@ -331,6 +331,15 @@ export default function ChallengeDetail() {
                     className="h-12 px-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-600/20 active:scale-95 transition-transform"
                   >
                     Join Challenge
+                  </Button>
+                )}
+                {!user && (
+                  <Button
+                    onClick={() => login()}
+                    className="h-12 px-6 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-bold"
+                  >
+                    <LogIn className="w-4 h-4 mr-2" />
+                    Sign In to Take Action
                   </Button>
                 )}
                 <Button variant="outline" size="icon" className="h-12 w-12 rounded-full border-slate-200 dark:border-slate-800">

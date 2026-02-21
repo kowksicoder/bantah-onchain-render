@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getChallengeChannel } from "@/lib/pusher";
 import { apiRequest } from "@/lib/queryClient";
-import { MessageCircle, Users, Activity, Send, Trophy, DollarSign, UserPlus, Zap, Heart, Share2, Reply, ArrowLeft, Lock, Pin } from "lucide-react";
+import { MessageCircle, Users, Activity, Send, Trophy, DollarSign, UserPlus, Zap, Heart, Share2, Reply, ArrowLeft, Lock, Pin, LogIn } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { UserAvatar } from "@/components/UserAvatar";
 import P2PChallengeTradePanel from "@/components/P2PChallengeTradePanel";
@@ -86,7 +86,7 @@ export default function ChallengeChatPage() {
   const params = useParams();
   const challengeId = params.id ? parseInt(params.id) : null;
   const isOnchainBuild = (import.meta as any).env?.VITE_APP_MODE === "onchain";
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, login } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [newMessage, setNewMessage] = useState("");
@@ -97,6 +97,14 @@ export default function ChallengeChatPage() {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [showHeaderProofMenu, setShowHeaderProofMenu] = useState(false);
   const [countdownNowMs, setCountdownNowMs] = useState<number>(() => Date.now());
+
+  const requireSignInForAction = (actionLabel: string) => {
+    toast({
+      title: "Sign in required",
+      description: `Please sign in to ${actionLabel}.`,
+    });
+    login();
+  };
 
   const getRelativeTime = (value: unknown, fallback = "just now") => {
     if (!value) return fallback;
@@ -425,6 +433,10 @@ export default function ChallengeChatPage() {
   };
 
   const handleVote = async (voteChoice: string) => {
+    if (!isAuthenticated) {
+      requireSignInForAction("vote on this challenge");
+      return;
+    }
     if (!isParticipant) return alert('Only participants can vote');
     try {
       // Ask user to pick proof file (simple prompt for demo)
@@ -464,6 +476,10 @@ export default function ChallengeChatPage() {
   };
 
   const handleOpenDispute = async () => {
+    if (!isAuthenticated) {
+      requireSignInForAction("open a dispute");
+      return;
+    }
     if (!challengeId || !isParticipant) return;
     const reason = window.prompt("State your dispute reason (optional):") || undefined;
     try {
@@ -506,6 +522,10 @@ export default function ChallengeChatPage() {
   };
 
   const handleQuickVote = async (voteChoice: string) => {
+    if (!isAuthenticated) {
+      requireSignInForAction("vote on this challenge");
+      return;
+    }
     if (!challengeId || !user?.id || !isParticipant) return;
     try {
       const res = await fetch(`/api/challenges/${challengeId}/proofs`, { credentials: 'include' });
@@ -548,6 +568,10 @@ export default function ChallengeChatPage() {
   };
 
   const handleReportChallenge = async () => {
+    if (!isAuthenticated) {
+      requireSignInForAction("report this challenge");
+      return;
+    }
     if (!challengeId || !isParticipant) return;
     const reason = window.prompt("State your report reason (optional):") || "";
     if (reason === null) return;
@@ -572,6 +596,10 @@ export default function ChallengeChatPage() {
   };
 
   const handleSendMessage = () => {
+    if (!isAuthenticated) {
+      requireSignInForAction("send messages");
+      return;
+    }
     const message = newMessage.trim();
     if (!message) return;
     sendMessageMutation.mutate({ message });
@@ -891,6 +919,15 @@ export default function ChallengeChatPage() {
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                         Only the challenger and accepted opponent can view and send messages here.
                       </p>
+                      {!isAuthenticated && (
+                        <Button
+                          onClick={() => login()}
+                          className="mt-4 h-8 px-4 text-xs font-semibold border-0"
+                        >
+                          <LogIn className="w-3.5 h-3.5 mr-1.5" />
+                          Sign In
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ) : messages.length === 0 ? (
@@ -951,6 +988,19 @@ export default function ChallengeChatPage() {
                       className="rounded-full"
                     >
                       <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {!isAuthenticated && (
+                <div className="px-3 sm:px-4 py-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2">
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      Viewing is open. Sign in to chat, vote, upload proof, or dispute.
+                    </p>
+                    <Button onClick={() => login()} className="h-8 px-3 text-xs font-semibold border-0">
+                      <LogIn className="w-3.5 h-3.5 mr-1.5" />
+                      Sign In
                     </Button>
                   </div>
                 </div>
@@ -1297,6 +1347,22 @@ export default function ChallengeChatPage() {
                 className="rounded-full shadow-lg"
               >
                 <Send className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+        {!isAuthenticated && activeTab === 'comments' && (canAccessChat || canAccessComments) && (
+          <div
+            className="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shrink-0"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+          >
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2">
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                You can view this page without login. Sign in for actions.
+              </p>
+              <Button onClick={() => login()} className="h-8 px-3 text-xs font-semibold border-0">
+                <LogIn className="w-3.5 h-3.5 mr-1.5" />
+                Sign In
               </Button>
             </div>
           </div>

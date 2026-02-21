@@ -3430,7 +3430,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
-  app.get('/api/challenges/:id/matches', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/challenges/:id/matches', async (req, res) => {
     try {
       const challengeId = parseInt(req.params.id);
       const matches = await db.select({
@@ -4912,10 +4912,10 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       res.status(500).json({ message: error instanceof Error ? error.message : "Failed to join challenge" });
     }
   });
-  app.get('/api/challenges/:id/messages', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/challenges/:id/messages', async (req: Request, res) => {
     try {
       const challengeId = parseInt(req.params.id);
-      const userId = getUserId(req);
+      const userId = await getOptionalPrivyUserId(req);
 
       // Get challenge details
       const challenge = await storage.getChallengeById(challengeId);
@@ -4924,14 +4924,15 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       }
 
       const isAdminChallenge = !!challenge.adminCreated;
-      const isParticipant = userId === challenge.challenger || userId === challenge.challenged;
+      const isParticipant =
+        !!userId && (userId === challenge.challenger || userId === challenge.challenged);
 
       // All non-admin challenges (direct + open) are private.
       // Only participants can access challenge messages.
       if (!isAdminChallenge && !isParticipant) {
         return res.status(403).json({ message: "You don't have access to this private chat" });
       }
-      // Admin challenges: anyone authenticated can view comments.
+      // Admin challenges: public read is allowed (including unauthenticated users).
 
       // Get all messages for the challenge
       const messages = await storage.getChallengeMessages(challengeId);
