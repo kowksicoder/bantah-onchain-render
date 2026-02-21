@@ -129,6 +129,15 @@ app.use((req, res, next) => {
   } else {
     // Production: serve static files
     if (fs.existsSync(distPublicPath)) {
+      const clientPublicPath = path.resolve(__dirname, "../client/public");
+      const rootPublicPath = path.resolve(__dirname, "../public");
+
+      // Serve source public assets first so runtime files like service workers/fonts
+      // are available even when omitted from dist by the build pipeline.
+      app.use("/assets", express.static(path.join(clientPublicPath, "assets")));
+      app.use("/fonts", express.static(path.join(clientPublicPath, "fonts")));
+      app.use(express.static(rootPublicPath));
+
       app.use(express.static(distPublicPath));
 
       app.get("*", (_req, res) => {
