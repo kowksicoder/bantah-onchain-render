@@ -54,7 +54,11 @@ import { FloatingBantzzButton } from "./FloatingBantzzButton";
 
 export function Navigation() {
   const { user, isLoading, login } = useAuth();
-  const isOnchainBuild = (import.meta as any).env?.VITE_APP_MODE === "onchain";
+  const appModeRaw = String((import.meta as any).env?.VITE_APP_MODE || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .toLowerCase();
+  const isOnchainBuild = appModeRaw !== "offchain";
   const [showOnchainModal, setShowOnchainModal] = useState(false);
 
   const { notifications, unreadCount } = useNotifications();

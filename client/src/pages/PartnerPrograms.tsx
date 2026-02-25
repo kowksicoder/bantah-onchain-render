@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowDownToLine, BarChart3, CheckCircle2, Coins, Eye, MessageSquare, Radar, RefreshCcw, Rocket, Shield, Sparkles, UserPlus, Wallet, XCircle } from "lucide-react";
@@ -58,7 +58,7 @@ const rel = (value: unknown) => {
   return formatDistanceToNow(date, { addSuffix: true });
 };
 
-const naira = (value: number) => `NGN ${Number(value || 0).toLocaleString()}`;
+const formatAmount = (value: number) => `${Number(value || 0).toLocaleString()}`;
 const canManageProgramRole = (role?: string) => ["owner", "manager", "admin"].includes(String(role || "").toLowerCase());
 const formatTxType = (type: string) => (type === "settlement_credit" ? "Settlement credit" : type === "withdrawal_debit" ? "Withdrawal debit" : type.replace(/_/g, " "));
 const formatChallengeResult = (result?: string | null) => {
@@ -436,7 +436,7 @@ export default function PartnerPrograms() {
                   {pendingAdminWithdrawals.slice(0, 6).map((withdrawal) => (
                     <div key={withdrawal.id} className="rounded-lg border border-slate-200 dark:border-slate-700 p-2 bg-slate-50 dark:bg-slate-950 space-y-2">
                       <p className="text-xs font-semibold truncate">{withdrawal.program?.name || `Program #${withdrawal.programId}`}</p>
-                      <p className="text-xs text-slate-500">{naira(withdrawal.amount)} | {rel(withdrawal.createdAt)}</p>
+                      <p className="text-xs text-slate-500">{formatAmount(withdrawal.amount)} | {rel(withdrawal.createdAt)}</p>
                       <Input placeholder="Admin note (optional)" value={adminNotes[withdrawal.id] || ""} onChange={(event) => setAdminNotes((prev) => ({ ...prev, [withdrawal.id]: event.target.value }))} className="h-8 text-xs" />
                       <div className="flex gap-1">
                         <Button size="sm" className="h-7 text-[11px] flex-1 border-0" disabled={decideWithdrawal.isPending} onClick={() => decideWithdrawal.mutate({ withdrawalId: withdrawal.id, action: "approve", note: adminNotes[withdrawal.id] })}><CheckCircle2 className="w-3 h-3 mr-1" />Approve</Button>
@@ -488,7 +488,7 @@ export default function PartnerPrograms() {
                           <div className="flex justify-between gap-2">
                             <div>
                               <p className="text-sm font-semibold">{challengeItem.challenge.title}</p>
-                              <p className="text-[11px] text-slate-500">{challengeItem.challenge.category} | {naira(challengeItem.challenge.amount)} | {challengeItem.challenge.status}</p>
+                              <p className="text-[11px] text-slate-500">{challengeItem.challenge.category} | {formatAmount(challengeItem.challenge.amount)} | {challengeItem.challenge.status}</p>
                             </div>
                             <div className="text-[11px] text-slate-500 text-right">{challengeItem.challenge.participantCount} players<br />{challengeItem.challenge.commentCount} comments</div>
                           </div>
@@ -570,7 +570,7 @@ export default function PartnerPrograms() {
                             )}
                           </div>
                           {feeQuery.data?.settlement ? (
-                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">Partner fee: {naira(feeQuery.data.settlement.partnerFee)} | Settled {rel(feeQuery.data.settlement.settledAt)}</p>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">Partner fee: {formatAmount(feeQuery.data.settlement.partnerFee)} | Settled {rel(feeQuery.data.settlement.settledAt)}</p>
                           ) : (
                             <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">Settlement appears after result is set.</p>
                           )}
@@ -616,9 +616,9 @@ export default function PartnerPrograms() {
                     {!walletQuery.isLoading && wallet && (
                       <>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3"><p className="text-[11px] uppercase tracking-wide text-slate-500">Balance</p><p className="text-sm font-semibold mt-1">{naira(wallet.balance)}</p></div>
-                          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3"><p className="text-[11px] uppercase tracking-wide text-slate-500">Available</p><p className="text-sm font-semibold mt-1">{naira(wallet.availableBalance)}</p></div>
-                          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3"><p className="text-[11px] uppercase tracking-wide text-slate-500">Pending Withdrawals</p><p className="text-sm font-semibold mt-1">{naira(wallet.pendingWithdrawals)}</p></div>
+                          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3"><p className="text-[11px] uppercase tracking-wide text-slate-500">Balance</p><p className="text-sm font-semibold mt-1">{formatAmount(wallet.balance)}</p></div>
+                          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3"><p className="text-[11px] uppercase tracking-wide text-slate-500">Available</p><p className="text-sm font-semibold mt-1">{formatAmount(wallet.availableBalance)}</p></div>
+                          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3"><p className="text-[11px] uppercase tracking-wide text-slate-500">Pending Withdrawals</p><p className="text-sm font-semibold mt-1">{formatAmount(wallet.pendingWithdrawals)}</p></div>
                         </div>
 
                         <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-950 space-y-2">
@@ -631,7 +631,7 @@ export default function PartnerPrograms() {
                           </div>
                           <Input placeholder="Note (optional)" value={withdrawNote} onChange={(event) => setWithdrawNote(event.target.value)} className="h-9" />
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-[11px] text-slate-500">Available now: {naira(wallet.availableBalance)}</p>
+                            <p className="text-[11px] text-slate-500">Available now: {formatAmount(wallet.availableBalance)}</p>
                             <Button onClick={() => requestWithdrawal.mutate()} disabled={requestWithdrawal.isPending || !canManageSelectedProgram || !withdrawAmount.trim() || Number(withdrawAmount) <= 0} className="h-9 text-xs font-bold uppercase tracking-wide border-0"><ArrowDownToLine className="w-3 h-3 mr-1" />{requestWithdrawal.isPending ? "Submitting..." : "Request"}</Button>
                           </div>
                           {!canManageSelectedProgram && <p className="text-[11px] text-amber-600 dark:text-amber-400">Only owner or manager can request withdrawals.</p>}
@@ -644,7 +644,7 @@ export default function PartnerPrograms() {
                               {walletWithdrawals.map((withdrawal) => (
                                 <div key={withdrawal.id} className="rounded border border-slate-200 dark:border-slate-700 px-2 py-2 text-xs">
                                   <div className="flex items-start justify-between gap-2">
-                                    <div><p className="font-semibold">{naira(withdrawal.amount)}</p><p className="text-slate-500 mt-0.5">Requested {rel(withdrawal.createdAt)}</p></div>
+                                    <div><p className="font-semibold">{formatAmount(withdrawal.amount)}</p><p className="text-slate-500 mt-0.5">Requested {rel(withdrawal.createdAt)}</p></div>
                                     <Badge className="border-0 capitalize bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">{withdrawal.status}</Badge>
                                   </div>
                                   {withdrawal.reviewNote && <p className="mt-1 text-slate-600 dark:text-slate-300">Review: {withdrawal.reviewNote}</p>}
@@ -661,9 +661,9 @@ export default function PartnerPrograms() {
                                 <div key={transaction.id} className="rounded border border-slate-200 dark:border-slate-700 px-2 py-2 text-xs">
                                   <div className="flex items-start justify-between gap-2">
                                     <div><p className="font-semibold capitalize">{formatTxType(transaction.type)}</p><p className="text-slate-500 mt-0.5">{rel(transaction.createdAt)}</p></div>
-                                    <p className={`font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{transaction.amount >= 0 ? "+" : ""}{naira(transaction.amount)}</p>
+                                    <p className={`font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{transaction.amount >= 0 ? "+" : ""}{formatAmount(transaction.amount)}</p>
                                   </div>
-                                  <p className="text-slate-500 mt-1">Balance after: {naira(transaction.balanceAfter)}</p>
+                                  <p className="text-slate-500 mt-1">Balance after: {formatAmount(transaction.balanceAfter)}</p>
                                 </div>
                               ))}
                               {walletTransactions.length === 0 && <p className="text-xs text-slate-500">No wallet transactions yet.</p>}
@@ -682,3 +682,4 @@ export default function PartnerPrograms() {
     </div>
   );
 }
+

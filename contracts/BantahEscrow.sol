@@ -9,9 +9,9 @@ interface IERC20Minimal {
 /**
  * @title BantahEscrow
  * @notice Minimal escrow vault for testnet integration. It supports:
- *  - Native token deposits via receive()
- *  - ERC20 deposits via depositToken(address,uint256)
- *  - Settlement signal calls via settle() / settle(uint256,uint8)
+ *  - Native token staking via lockStakeNative()
+ *  - ERC20 staking via lockStakeToken(address,uint256)
+ *  - Settlement signal calls via settleChallenge() / settleChallenge(uint256,uint8)
  *  - Admin withdrawals for controlled settlement operations
  *
  * The current backend verifies tx hash/chain/contract and records outcome.
@@ -22,9 +22,15 @@ contract BantahEscrow {
     address public owner;
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event NativeEscrowLocked(address indexed sender, uint256 amount);
-    event TokenEscrowLocked(address indexed sender, address indexed token, uint256 amount);
-    event SettlementSignaled(address indexed caller, uint256 indexed challengeId, uint8 resultCode);
+    event StakeLockedNative(address indexed sender, uint256 amount);
+    event StakeLockedToken(address indexed sender, address indexed token, uint256 amount);
+    event ChallengeSettledSignal(address indexed caller, uint256 indexed challengeId, uint8 resultCode);
+    event ChallengeCreatedLogged(
+        address indexed caller,
+        uint256 indexed challengeId,
+        bytes32 indexed metadataHash,
+        string challengeType
+    );
     event NativeWithdrawn(address indexed to, uint256 amount);
     event TokenWithdrawn(address indexed token, address indexed to, uint256 amount);
 
@@ -47,25 +53,54 @@ contract BantahEscrow {
 
     receive() external payable {
         require(msg.value > 0, "No value");
-        emit NativeEscrowLocked(msg.sender, msg.value);
+        emit StakeLockedNative(msg.sender, msg.value);
     }
 
-    function depositToken(address token, uint256 amount) external returns (bool) {
+    function lockStakeNative() external payable returns (bool) {
+        require(msg.value > 0, "No value");
+        emit StakeLockedNative(msg.sender, msg.value);
+        return true;
+    }
+
+    function lockStakeToken(address token, uint256 amount) public returns (bool) {
         require(token != address(0), "Invalid token");
         require(amount > 0, "Invalid amount");
         bool ok = IERC20Minimal(token).transferFrom(msg.sender, address(this), amount);
         require(ok, "Transfer failed");
-        emit TokenEscrowLocked(msg.sender, token, amount);
+        emit StakeLockedToken(msg.sender, token, amount);
         return true;
     }
 
-    function settle() external returns (bool) {
-        emit SettlementSignaled(msg.sender, 0, 0);
+    // Backward-compatible alias.
+    function depositToken(address token, uint256 amount) external returns (bool) {
+        return lockStakeToken(token, amount);
+    }
+
+    function settleChallenge() public returns (bool) {
+        emit ChallengeSettledSignal(msg.sender, 0, 0);
         return true;
+    }
+
+    function settleChallenge(uint256 challengeId, uint8 resultCode) public returns (bool) {
+        emit ChallengeSettledSignal(msg.sender, challengeId, resultCode);
+        return true;
+    }
+
+    // Backward-compatible aliases.
+    function settle() external returns (bool) {
+        return settleChallenge();
     }
 
     function settle(uint256 challengeId, uint8 resultCode) external returns (bool) {
-        emit SettlementSignaled(msg.sender, challengeId, resultCode);
+        return settleChallenge(challengeId, resultCode);
+    }
+
+    function logChallengeCreated(
+        uint256 challengeId,
+        bytes32 metadataHash,
+        string calldata challengeType
+    ) external returns (bool) {
+        emit ChallengeCreatedLogged(msg.sender, challengeId, metadataHash, challengeType);
         return true;
     }
 

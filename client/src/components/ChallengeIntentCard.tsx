@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+﻿import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "./UserAvatar";
 import { Button } from "@/components/ui/button";
@@ -146,7 +146,7 @@ export function ChallengeIntentCard({
             <div className="flex items-center gap-1">
               <Crown className="w-4 h-4 text-yellow-500" />
               <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                ₦{parseInt(challenge.amount).toLocaleString()}
+                {parseInt(challenge.amount).toLocaleString()}
               </span>
             </div>
             <Badge variant="outline" className="text-xs">
@@ -239,7 +239,7 @@ export function ChallengeIntentCard({
                 <Crown className="w-5 h-5 text-yellow-500" />
                 <span className="text-sm text-gray-600 dark:text-gray-400">Stake:</span>
                 <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                  ₦{parseInt(challenge.amount).toLocaleString()}
+                  {parseInt(challenge.amount).toLocaleString()}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -346,7 +346,7 @@ export function ChallengeIntentCard({
               <div className="flex items-center gap-2">
                 <Crown className="w-5 h-5 text-yellow-500" />
                 <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                  ₦{parseInt(challenge.amount).toLocaleString()}
+                  {parseInt(challenge.amount).toLocaleString()}
                 </span>
               </div>
               <Badge variant="outline" className="flex items-center gap-1">
@@ -376,3 +376,4 @@ export function ChallengeIntentCard({
     </Card>
   );
 }
+

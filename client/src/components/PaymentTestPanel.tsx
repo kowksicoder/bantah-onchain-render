@@ -1,4 +1,4 @@
-
+﻿
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,7 +55,7 @@ export function PaymentTestPanel() {
           key: data.publicKey,
           email: user?.email || 'test@example.com',
           amount: parseFloat(testAmount) * 100,
-          currency: 'NGN',
+          currency: 'USD',
           ref: data.reference,
           callback: function(response: any) {
             if (response.status === 'success') {
@@ -196,7 +196,7 @@ export function PaymentTestPanel() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="text-sm font-medium">Test Amount (₦)</label>
+            <label className="text-sm font-medium">Test Amount ()</label>
             <Input
               type="number"
               value={testAmount}
@@ -304,3 +304,4 @@ export function PaymentTestPanel() {
     </div>
   );
 }
+

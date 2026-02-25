@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -916,11 +916,10 @@ function RequestRowSkeleton() {
                       <FormItem className="space-y-0">
                         <FormControl>
                           <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₦</span>
                             <Input
                               type="number"
                               placeholder="Stake"
-                              className="h-9 text-sm pl-6 rounded-lg border-slate-200 dark:border-slate-700 focus:ring-1 focus:ring-primary focus:border-primary"
+                              className="h-9 text-sm rounded-lg border-slate-200 dark:border-slate-700 focus:ring-1 focus:ring-primary focus:border-primary"
                               {...field}
                             />
                           </div>
@@ -981,3 +980,4 @@ function RequestRowSkeleton() {
     </div>
   );
 }
+

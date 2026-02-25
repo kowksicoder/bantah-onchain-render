@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
@@ -88,10 +88,6 @@ export default function History() {
     retry: false,
     enabled: !!user,
   });
-
-
-
-  if (!user) return null;
 
   // Combine and categorize all activities
   const allActivities = [
@@ -434,6 +430,8 @@ export default function History() {
   );
 };
 
+  if (!user) return null;
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[50px]">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -614,7 +612,7 @@ export default function History() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="editEntryFee">Entry Fee (₦)</Label>
+              <Label htmlFor="editEntryFee">Entry Fee ()</Label>
               <Input
                 id="editEntryFee"
                 type="number"
@@ -689,7 +687,7 @@ export default function History() {
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="editChallengeAmount" className="text-sm font-medium">Stake Amount (₦)</Label>
+              <Label htmlFor="editChallengeAmount" className="text-sm font-medium">Stake Amount ()</Label>
               <Input
                 id="editChallengeAmount"
                 type="number"
@@ -720,3 +718,4 @@ export default function History() {
     </div>
   );
 }
+

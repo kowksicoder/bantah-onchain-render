@@ -1,4 +1,4 @@
-
+﻿
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -94,7 +94,7 @@ export function ChallengePreviewCard({
         <div className="flex items-center justify-between">
           <div className="flex flex-col space-y-1">
             <span className="text-xs font-semibold text-emerald-600">
-              Stake: ₦{parseFloat(amount || '0').toLocaleString()}
+              Stake: {parseFloat(amount || '0').toLocaleString()}
             </span>
             <div className="flex items-center space-x-2 text-xs text-slate-600 dark:text-slate-400">
               <span className="flex items-center">
@@ -124,3 +124,4 @@ export function ChallengePreviewCard({
     </Card>
   );
 }
+

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -20,7 +20,11 @@ export function AcceptChallengeModal({
   onAccept,
   isSubmitting = false,
 }: AcceptChallengeModalProps) {
-  const isOnchainBuild = (import.meta as any).env?.VITE_APP_MODE === 'onchain';
+  const appModeRaw = String((import.meta as any).env?.VITE_APP_MODE || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .toLowerCase();
+  const isOnchainBuild = appModeRaw !== "offchain";
   const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
 
@@ -110,10 +114,10 @@ export function AcceptChallengeModal({
 
   const stakeLabel = isOnchainChallenge
     ? atomicStakeLabel || 'Unavailable'
-    : `NGN ${amountValue.toLocaleString()}`;
+    : `${amountValue.toLocaleString()}`;
   const potentialWinLabel = isOnchainChallenge
     ? atomicWinLabel || 'Unavailable'
-    : `NGN ${potentialWinValue.toLocaleString()}`;
+    : `${potentialWinValue.toLocaleString()}`;
   const onchainStakeUnavailable = isOnchainChallenge && !atomicStakeLabel;
 
   // Normalize side from multiple payload variants and only render known values.
@@ -255,3 +259,4 @@ export function AcceptChallengeModal({
     </Dialog>
   );
 }
+

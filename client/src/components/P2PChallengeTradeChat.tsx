@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, CheckCircle2, Clock, Flag, Send, Upload, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -216,7 +216,7 @@ export default function P2PChallengeTradeChat({
 
             <div className="text-center">
               <div className="text-2xl font-bold text-slate-700 dark:text-slate-200">VS</div>
-              <div className="text-xs text-slate-500 mt-1">₦{(challenge?.amount || 0).toLocaleString()}</div>
+              <div className="text-xs text-slate-500 mt-1">{(challenge?.amount || 0).toLocaleString()}</div>
             </div>
 
             <div className="text-center">
@@ -437,3 +437,4 @@ export default function P2PChallengeTradeChat({
     </div>
   );
 }
+

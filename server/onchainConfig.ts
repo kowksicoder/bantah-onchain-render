@@ -85,12 +85,12 @@ function withEnvChainOverride(chain: OnchainChainConfig): OnchainChainConfig {
     process.env[`ONCHAIN_${prefix}_ESCROW_STAKE_METHOD_ERC20`] ||
     process.env[`ONCHAIN_${chain.chainId}_ESCROW_STAKE_METHOD_ERC20`] ||
     process.env.ONCHAIN_ESCROW_STAKE_METHOD_ERC20 ||
-    null;
+    "lockStakeToken(address,uint256)";
   const escrowSettleMethod =
     process.env[`ONCHAIN_${prefix}_ESCROW_SETTLE_METHOD`] ||
     process.env[`ONCHAIN_${chain.chainId}_ESCROW_SETTLE_METHOD`] ||
     process.env.ONCHAIN_ESCROW_SETTLE_METHOD ||
-    null;
+    "settleChallenge(uint256,uint8)";
 
   const effectiveChainId = chainIdEnv ?? chain.chainId;
 

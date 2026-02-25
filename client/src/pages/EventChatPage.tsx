@@ -1,4 +1,4 @@
-import { useParams } from "wouter";
+﻿import { useParams } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -372,7 +372,7 @@ export default function EventChatPage() {
     onSuccess: () => {
       toast({
         title: "Bet Placed!",
-        description: `You've bet ₦${parseFloat(event.entryFee).toLocaleString()} on ${prediction ? 'YES' : 'NO'}. Your funds are now locked until the event concludes.`,
+        description: `You've bet ${parseFloat(event.entryFee).toLocaleString()} on ${prediction ? 'YES' : 'NO'}. Your funds are now locked until the event concludes.`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/events", eventId] });
       queryClient.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
@@ -862,7 +862,7 @@ export default function EventChatPage() {
                       : "Unknown"
                     }
                   </span>
-                  <span>Pool ₦ {totalPool.toLocaleString()}</span>
+                  <span>Pool  {totalPool.toLocaleString()}</span>
                 </div>
               </div>
               <div className="flex space-x-1 md:space-x-2 ml-2 md:ml-3">
@@ -1300,7 +1300,7 @@ export default function EventChatPage() {
               <div className="text-center">
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Entry Amount</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                  ₦{parseFloat(event.entryFee).toLocaleString()}
+                  {parseFloat(event.entryFee).toLocaleString()}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   All participants bet the same amount
@@ -1321,7 +1321,7 @@ export default function EventChatPage() {
                 disabled={prediction === null || joinEventMutation.isPending}
                 className="flex-1 bg-primary text-white hover:bg-primary/90"
               >
-                {joinEventMutation.isPending ? "Placing..." : `Place Bet (₦${parseFloat(event.entryFee).toLocaleString()})`}
+                {joinEventMutation.isPending ? "Placing..." : `Place Bet (${parseFloat(event.entryFee).toLocaleString()})`}
               </Button>
             </div>
           </div>
@@ -1339,3 +1339,4 @@ export default function EventChatPage() {
     </>
   );
 }
+

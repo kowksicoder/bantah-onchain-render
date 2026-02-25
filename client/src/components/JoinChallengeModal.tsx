@@ -40,6 +40,17 @@ function normalizeSide(value?: string): "YES" | "NO" | null {
   return normalized === "YES" || normalized === "NO" ? normalized : null;
 }
 
+function isUpDownMarketChallenge(challenge: { title?: string; category?: string } | null | undefined) {
+  const title = String(challenge?.title || "").toLowerCase();
+  const category = String(challenge?.category || "").toLowerCase();
+  const hasBitcoin = title.includes("bitcoin") || title.includes("btc");
+  const hasDirectionPhrase =
+    title.includes("up or down") ||
+    title.includes("up/down") ||
+    (title.includes("up") && title.includes("down"));
+  return hasBitcoin && hasDirectionPhrase && category === "crypto";
+}
+
 export function JoinChallengeModal({
   isOpen,
   onClose,
@@ -60,11 +71,52 @@ export function JoinChallengeModal({
   });
   const [selectedSide, setSelectedSide] = useState<"YES" | "NO" | null>(normalizeSide(challenge.selectedSide));
   const [isWaiting, setIsWaiting] = useState(false);
+  const [btcSeries, setBtcSeries] = useState<number[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
     setSelectedSide(normalizeSide(challenge.selectedSide));
   }, [challenge.id, challenge.selectedSide, isOpen]);
+
+  const isUpDownMarket = isUpDownMarketChallenge(challenge);
+  const sideYesLabel = isUpDownMarket ? "UP" : "YES";
+  const sideNoLabel = isUpDownMarket ? "DOWN" : "NO";
+
+  useEffect(() => {
+    if (!isOpen || !isUpDownMarket) {
+      setBtcSeries([]);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchBtcSeries = async () => {
+      try {
+        const response = await fetch(
+          "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=24",
+        );
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!Array.isArray(payload)) return;
+
+        const prices = payload
+          .map((entry: any) => Number(entry?.[4]))
+          .filter((value: number) => Number.isFinite(value));
+
+        if (!cancelled && prices.length > 1) {
+          setBtcSeries(prices);
+        }
+      } catch {
+        // Ignore transient API issues in modal context.
+      }
+    };
+
+    fetchBtcSeries();
+    const interval = window.setInterval(fetchBtcSeries, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isOpen, isUpDownMarket]);
 
   const stakeAmount = Number.parseInt(String(challenge.amount || "0"), 10) || 0;
   const potentialWin = stakeAmount * 2;
@@ -155,7 +207,7 @@ export function JoinChallengeModal({
   const joinMutation = useMutation({
     mutationFn: async () => {
       if (!selectedSide) {
-        throw new Error("Please select YES or NO");
+        throw new Error(isUpDownMarket ? "Please select UP or DOWN" : "Please select YES or NO");
       }
 
       if (stakeAmount <= 0) {
@@ -253,6 +305,22 @@ export function JoinChallengeModal({
   });
 
   const isBalanceSufficient = requiresContractEscrow || normalizedBalance >= stakeAmount;
+  const btcLastPrice = btcSeries.length > 0 ? btcSeries[btcSeries.length - 1] : null;
+  const btcFirstPrice = btcSeries.length > 0 ? btcSeries[0] : null;
+  const btcDelta = btcLastPrice !== null && btcFirstPrice !== null ? btcLastPrice - btcFirstPrice : null;
+  const btcMin = btcSeries.length > 0 ? Math.min(...btcSeries) : 0;
+  const btcMax = btcSeries.length > 0 ? Math.max(...btcSeries) : 0;
+  const btcRange = btcMax - btcMin;
+  const btcPath =
+    btcSeries.length > 1
+      ? btcSeries
+          .map((price, index) => {
+            const x = (index / (btcSeries.length - 1)) * 100;
+            const y = btcRange === 0 ? 50 : ((btcMax - price) / btcRange) * 100;
+            return `${x},${y}`;
+          })
+          .join(" ")
+      : "";
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -260,9 +328,11 @@ export function JoinChallengeModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-sm font-semibold">
             <Zap className="w-4 h-4 text-yellow-500" />
-            Join Challenge
+            {isUpDownMarket ? "Join BTC Direction" : "Join Challenge"}
           </DialogTitle>
-          <DialogDescription className="text-xs text-slate-500">Pick your side and lock stake</DialogDescription>
+          <DialogDescription className="text-xs text-slate-500">
+            {isUpDownMarket ? "Pick UP or DOWN for this live 5-minute BTC round" : "Pick your side and lock stake"}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -320,7 +390,39 @@ export function JoinChallengeModal({
             <Trophy className="w-3 h-3 text-white/40" />
           </div>
 
-          <div className="grid grid-cols-2 gap-2 -mt-4">
+          {isUpDownMarket && (
+            <div className="-mt-3 rounded-md border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10 px-2.5 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  BTC Live
+                </span>
+                {btcLastPrice !== null && (
+                  <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200">
+                    ${btcLastPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </div>
+              <div className="h-14 w-full rounded bg-white/80 dark:bg-slate-900/50 p-1">
+                {btcSeries.length > 1 ? (
+                  <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none" aria-hidden="true">
+                    <polyline
+                      fill="none"
+                      stroke={btcDelta !== null && btcDelta >= 0 ? "#16a34a" : "#dc2626"}
+                      strokeWidth="2"
+                      points={btcPath}
+                    />
+                  </svg>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-[10px] text-slate-500">
+                    Loading BTC chart...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className={`grid grid-cols-2 gap-2 ${isUpDownMarket ? "mt-0" : "-mt-4"}`}>
             <button
               onClick={() => setSelectedSide("YES")}
               className={`py-2 rounded-md text-sm font-semibold transition-all ${
@@ -330,7 +432,7 @@ export function JoinChallengeModal({
               }`}
               data-testid="button-choice-yes"
             >
-              YES
+              {sideYesLabel}
             </button>
             <button
               onClick={() => setSelectedSide("NO")}
@@ -341,7 +443,7 @@ export function JoinChallengeModal({
               }`}
               data-testid="button-choice-no"
             >
-              NO
+              {sideNoLabel}
             </button>
           </div>
 
@@ -367,4 +469,3 @@ export function JoinChallengeModal({
     </Dialog>
   );
 }
-

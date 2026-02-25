@@ -122,7 +122,8 @@ app.use((req, res, next) => {
 
   const distPublicPath = path.resolve(__dirname, "../dist/public");
 
-  if (process.env.NODE_ENV === "development") {
+  // On Windows, npm scripts often run without NODE_ENV; default to dev unless explicitly production.
+  if (process.env.NODE_ENV !== "production") {
     // Dev only: dynamic Vite import
     const { setupVite } = await import("./vite");
     await setupVite(app, server);
@@ -174,7 +175,7 @@ app.use((req, res, next) => {
       try {
         await telegramBot.testConnection();
       } catch (err) {
-        console.error("âš ï¸ Telegram bot connection test failed:", err);
+        console.error("⚠️ Telegram bot connection test failed:", err);
       }
     }
 
@@ -182,7 +183,7 @@ app.use((req, res, next) => {
     try {
       await initializeDatabase();
     } catch (err) {
-      console.error("âŒ Failed to initialize database:", err);
+      console.error("❌ Failed to initialize database:", err);
     }
 
     // Notification service
@@ -191,14 +192,14 @@ app.use((req, res, next) => {
       const notificationAlgorithm = new NotificationAlgorithmService(storage);
       notificationAlgorithm.startNotificationScheduler();
     } catch (err) {
-      console.error("âš ï¸ Failed to start notification scheduler:", err);
+      console.error("⚠️ Failed to start notification scheduler:", err);
     }
 
     // Seed admin users
     try {
       await seedAdmin();
     } catch (err) {
-      console.error("âŒ Failed to seed admin users:", err);
+      console.error("❌ Failed to seed admin users:", err);
     }
   })();
 })();

@@ -46,6 +46,9 @@ type PrivyWallet = {
 const erc20Abi = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
+const escrowNativeAbi = parseAbi([
+  "function lockStakeNative() payable returns (bool)",
+]);
 
 function normalizeAddress(input: unknown): `0x${string}` | null {
   if (typeof input !== "string") return null;
@@ -248,6 +251,7 @@ export async function executeOnchainEscrowStakeTx(params: {
   chainId: number;
   tokenSymbol: OnchainTokenSymbol;
   amount: string | number;
+  amountAtomic?: string | null;
 }): Promise<{
   approveTxHash?: `0x${string}`;
   escrowTxHash: `0x${string}`;
@@ -278,16 +282,26 @@ export async function executeOnchainEscrowStakeTx(params: {
     throw new Error("Connected wallet address is invalid.");
   }
 
-  const amountAtomic = toAtomicAmount(params.amount, token.decimals);
+  const amountAtomicRaw =
+    typeof params.amountAtomic === "string" ? params.amountAtomic.trim() : "";
+  const amountAtomic = /^\d+$/.test(amountAtomicRaw)
+    ? BigInt(amountAtomicRaw)
+    : toAtomicAmount(params.amount, token.decimals);
   if (amountAtomic <= BigInt(0)) {
     throw new Error("Stake amount must be greater than zero.");
   }
 
   if (token.isNative) {
+    const nativeStakeData = encodeFunctionData({
+      abi: escrowNativeAbi,
+      functionName: "lockStakeNative",
+      args: [],
+    });
     const escrowTxHash = await sendTransactionAndWait({
       provider,
       from: sender,
       to: escrowAddress,
+      data: nativeStakeData,
       value: amountAtomic,
     });
     return { escrowTxHash, walletAddress: sender };
@@ -311,7 +325,7 @@ export async function executeOnchainEscrowStakeTx(params: {
   });
 
   const erc20MethodSignature =
-    chainConfig.escrowStakeMethodErc20?.trim() || "depositToken(address,uint256)";
+    chainConfig.escrowStakeMethodErc20?.trim() || "lockStakeToken(address,uint256)";
   const escrowData = buildErc20EscrowCalldata(
     erc20MethodSignature,
     tokenAddress,
@@ -356,7 +370,8 @@ export async function executeOnchainSettleTx(params: {
     throw new Error("Connected wallet address is invalid.");
   }
 
-  const settleMethod = chainConfig.escrowSettleMethod?.trim() || "settle()";
+  const settleMethod =
+    chainConfig.escrowSettleMethod?.trim() || "settleChallenge(uint256,uint8)";
   const settleData = buildSettlementCalldata({
     methodSignature: settleMethod,
     challengeId: params.challengeId,

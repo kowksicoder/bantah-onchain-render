@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -319,7 +319,7 @@ export default function ChallengeDetail() {
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-6">
               <div>
                 <div className="text-3xl font-black text-green-600 dark:text-green-400">
-                  ₦{parseInt(challenge.amount).toLocaleString()}
+                  {parseInt(challenge.amount).toLocaleString()}
                 </div>
                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Stake Amount</div>
               </div>
@@ -517,3 +517,4 @@ export default function ChallengeDetail() {
     </div>
   );
 }
+

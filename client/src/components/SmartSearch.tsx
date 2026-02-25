@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Calendar, Trophy, Users, Clock } from "lucide-react";
 import {
@@ -90,7 +90,7 @@ export function SmartSearch({
     if (result.type === "challenge") {
       return (
         <Badge variant="outline" className="text-xs">
-          ₦{result.amount?.toLocaleString() || 0}
+          {result.amount?.toLocaleString() || 0}
         </Badge>
       );
     }

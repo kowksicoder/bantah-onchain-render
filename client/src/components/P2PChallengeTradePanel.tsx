@@ -64,7 +64,11 @@ export default function P2PChallengeTradePanel({
   const { toast } = useToast();
   const { wallets } = useWallets();
   const queryClient = useQueryClient();
-  const isOnchainBuild = (import.meta as any).env?.VITE_APP_MODE === 'onchain';
+  const appModeRaw = String((import.meta as any).env?.VITE_APP_MODE || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .toLowerCase();
+  const isOnchainBuild = appModeRaw !== "offchain";
   const { data: onchainConfig } = useQuery<OnchainRuntimeConfig>({
     queryKey: ['/api/onchain/config'],
     queryFn: async () => await apiRequest('GET', '/api/onchain/config'),

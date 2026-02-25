@@ -1,4 +1,4 @@
-import { useAuth } from "@/hooks/useAuth";
+﻿import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/contexts/ThemeProvider";
 import { MobileNavigation } from "@/components/MobileNavigation";
 import { Button } from "@/components/ui/button";
@@ -465,17 +465,16 @@ export default function Settings() {
                   </p>
                 </div>
                 <Select
-                  value={preferences?.regional?.currency || 'NGN'}
+                  value={preferences?.regional?.currency || 'USD'}
                   onValueChange={(value) => handleRegionalChange('currency', value)}
                 >
                   <SelectTrigger className="w-32 border-0">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="border-0 bg-white dark:bg-slate-800">
-                    <SelectItem value="NGN">NGN (₦)</SelectItem>
-                    <SelectItem value="USD">USD ($)</SelectItem>
-                    <SelectItem value="EUR">EUR (€)</SelectItem>
-                    <SelectItem value="GBP">GBP (£)</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                    <SelectItem value="GBP">GBP</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

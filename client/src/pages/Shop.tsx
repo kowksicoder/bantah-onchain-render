@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { MobileNavigation } from "@/components/MobileNavigation";
@@ -88,8 +88,8 @@ export default function Shop() {
   ];
 
   const purchaseCoinsMutation = useMutation({
-    mutationFn: async ({ coins, nairaAmount }: { coins: number; nairaAmount: number }) => {
-      return await apiRequest("POST", "/api/shop/purchase-coins", { coins, nairaAmount });
+    mutationFn: async ({ coins, walletFundsAmount }: { coins: number; walletFundsAmount: number }) => {
+      return await apiRequest("POST", "/api/shop/purchase-coins", { coins, walletFundsAmount });
     },
     onSuccess: (data) => {
       toast({
@@ -161,7 +161,7 @@ export default function Shop() {
     if (currentBalance < pkg.price) {
       toast({
         title: "Insufficient Balance",
-        description: "Please deposit more Naira to purchase this package.",
+        description: "Please add more balance to purchase this package.",
         variant: "destructive",
       });
       return;
@@ -170,35 +170,35 @@ export default function Shop() {
     const totalCoins = pkg.coins + pkg.bonus;
     purchaseCoinsMutation.mutate({ 
       coins: totalCoins, 
-      nairaAmount: pkg.price 
+      walletFundsAmount: pkg.price 
     });
   };
 
   const handleCustomPurchase = () => {
-    const nairaAmount = parseFloat(customAmount);
+    const walletFundsAmount = parseFloat(customAmount);
     const currentBalance = typeof balance === 'object' ? balance.balance : balance;
 
-    if (!nairaAmount || nairaAmount < 50) {
+    if (!walletFundsAmount || walletFundsAmount < 50) {
       toast({
         title: "Invalid Amount",
-        description: "Minimum purchase is ₦50",
+        description: "Minimum purchase is 50",
         variant: "destructive",
       });
       return;
     }
 
-    if (currentBalance < nairaAmount) {
+    if (currentBalance < walletFundsAmount) {
       toast({
         title: "Insufficient Balance",
-        description: "Please deposit more Naira to purchase coins.",
+        description: "Please add more balance to purchase coins.",
         variant: "destructive",
       });
       return;
     }
 
-    // Exchange rate: 1 Naira = 10 coins
-    const coins = nairaAmount * 10;
-    purchaseCoinsMutation.mutate({ coins, nairaAmount });
+    // Exchange rate: 1 balance unit = 10 coins
+    const coins = walletFundsAmount * 10;
+    purchaseCoinsMutation.mutate({ coins, walletFundsAmount });
   };
 
   const handleGiftCoins = () => {
@@ -271,7 +271,7 @@ export default function Shop() {
               <div className="w-12 h-12 bg-gradient-to-r from-green-400 to-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-3">
                 <span className="text-2xl">💰</span>
               </div>
-              <p className="text-xs text-purple-200 mb-1">Naira Balance</p>
+              <p className="text-xs text-purple-200 mb-1">Balance</p>
               <p className="text-lg font-bold text-white">
                 {formatBalance(currentBalance)}
               </p>
@@ -357,7 +357,7 @@ export default function Shop() {
             <div className="relative">
               <Input
                 type="number"
-                placeholder="Enter amount (min ₦50)"
+                placeholder="Enter amount (min 50)"
                 value={customAmount}
                 onChange={(e) => setCustomAmount(e.target.value)}
                 className="bg-white/20 border-white/30 text-white placeholder-purple-200 rounded-2xl h-12 text-center backdrop-blur"
@@ -469,3 +469,4 @@ export default function Shop() {
     </div>
   );
 }
+

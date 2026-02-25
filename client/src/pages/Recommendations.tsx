@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -210,7 +210,7 @@ export default function Recommendations() {
                                 </div>
                                 <div className="flex items-center space-x-1">
                                   <Coins className="w-4 h-4" />
-                                  <span>₦{parseInt(event.entryFee).toLocaleString()}</span>
+                                  <span>{parseInt(event.entryFee).toLocaleString()}</span>
                                 </div>
                               </div>
                             </div>
@@ -242,7 +242,7 @@ export default function Recommendations() {
                               <div className="flex items-center justify-between text-sm">
                                 <span className="text-gray-600 dark:text-gray-400">Prize Pool:</span>
                                 <span className="font-semibold text-green-600 dark:text-green-400">
-                                  ₦{event.eventPool.toLocaleString()}
+                                  {event.eventPool.toLocaleString()}
                                 </span>
                               </div>
                             )}
@@ -399,7 +399,7 @@ export default function Recommendations() {
                         <div className="text-sm text-gray-600 dark:text-gray-400">
                           <div className="flex justify-between">
                             <span>Average Bet:</span>
-                            <span className="font-medium">₦{preferences.averageBetAmount.toLocaleString()}</span>
+                            <span className="font-medium">{preferences.averageBetAmount.toLocaleString()}</span>
                           </div>
                         </div>
                         <p className="text-xs text-center text-gray-500">

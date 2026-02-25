@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { X, Trophy, Users, TrendingUp, Star, Send, Zap, Swords, Bookmark, BookmarkCheck, QrCode } from 'lucide-react';
 import { ProfileQRCode } from "@/components/ProfileQRCode";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -17,7 +17,6 @@ import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { formatDistanceToNow } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { formatBalance } from "@/utils/currencyUtils";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getUserDisplayName } from "@/hooks/usePublicUserBasic";
 import { getLevelColor, getLevelIcon, getLevelName } from "@/utils/levelSystem";
@@ -161,7 +160,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/profile`] });
       toast({
         title: "Tip Sent",
-        description: `Successfully sent ${formatBalance(parseInt(tipAmount))} to ${getUserDisplayName({
+        description: `Successfully sent ${Number.parseInt(tipAmount || "0", 10).toLocaleString()} coins to ${getUserDisplayName({
           id: profile?.id,
           firstName: profile?.firstName,
           username: profile?.username,
@@ -438,7 +437,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
                     <Trophy className="w-3 h-3 md:w-4 md:h-4 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div className="text-[13px] md:text-base font-bold text-slate-900 dark:text-slate-100">
-                    {profile.stats?.totalEarnings ? `₦${Number(profile.stats.totalEarnings).toLocaleString()}` : '₦0'}
+                    {profile.stats?.totalEarnings ? `${Number(profile.stats.totalEarnings).toLocaleString()}` : '0'}
                   </div>
                   <div className="text-[10px] text-slate-600 dark:text-slate-400">earned</div>
                 </div>
@@ -616,14 +615,13 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
 
               <div className="space-y-0">
                 <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₦</span>
                   <Input
                     id="challengeAmount"
                     type="number"
                     value={challengeAmount}
                     onChange={(e) => setChallengeAmount(e.target.value)}
                     placeholder="Stake"
-                    className="h-9 pl-6 rounded-lg text-sm border-slate-200 dark:border-slate-700 focus:ring-1 focus:ring-primary"
+                    className="h-9 rounded-lg text-sm border-slate-200 dark:border-slate-700 focus:ring-1 focus:ring-primary"
                     min="1"
                     required
                   />
@@ -720,3 +718,4 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
 };
 
 export default ProfileCard;
+

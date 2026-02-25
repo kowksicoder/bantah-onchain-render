@@ -71,11 +71,41 @@ export function getUserDisplayName(
   user: PublicUserBasic | null | undefined,
   fallback = "unknown"
 ): string {
+  const walletFromId = (() => {
+    if (typeof user?.id !== "string") return "";
+    const id = user.id.trim();
+    if (!id.toLowerCase().startsWith("wallet_")) return "";
+    const raw = id.slice("wallet_".length).trim();
+    if (/^0x[a-f0-9]{40}$/i.test(raw)) return raw.toLowerCase();
+    if (/^[a-f0-9]{40}$/i.test(raw)) return `0x${raw.toLowerCase()}`;
+    return "";
+  })();
+
+  const truncateWallet = (address: string) =>
+    `${address.slice(0, 6)}...${address.slice(-4)}`;
+
+  const isPlaceholderLabel = (value: string) => {
+    const normalized = value.trim().toLowerCase();
+    return (
+      normalized === "user" ||
+      normalized === "wallet" ||
+      normalized === "unknown user" ||
+      normalized === "wallet target" ||
+      normalized === "challenged" ||
+      normalized === "opponent" ||
+      normalized === "waiting"
+    );
+  };
+
+  const isGeneratedWalletUsername = (value: string) => /^user-[a-z0-9]{4}$/i.test(value.trim());
+
   const firstName = typeof user?.firstName === "string" ? user.firstName.trim() : "";
-  if (firstName && firstName.toLowerCase() !== "user") return firstName;
+  if (firstName && !isPlaceholderLabel(firstName)) return firstName;
 
   const username = typeof user?.username === "string" ? user.username.trim() : "";
-  if (username && username.toLowerCase() !== "user") return username;
+  if (username && !isPlaceholderLabel(username) && !isGeneratedWalletUsername(username)) return username;
+
+  if (walletFromId) return truncateWallet(walletFromId);
 
   if (user?.id) return `user_${String(user.id).slice(-6)}`;
   return fallback;

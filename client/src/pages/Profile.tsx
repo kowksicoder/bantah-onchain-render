@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
-import { formatBalance } from "@/utils/currencyUtils";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getLevelIcon, getLevelName } from "@/utils/levelSystem";
 import { useLocation } from "wouter";
@@ -28,6 +27,7 @@ export default function Profile() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const userId = user?.id;
 
   const {
     data: userStats = {} as { wins?: number; activeChallenges?: number },
@@ -37,8 +37,8 @@ export default function Profile() {
   });
 
   const { data: userProfile } = useQuery({
-    queryKey: [`/api/users/${user.id}/profile`],
-    enabled: !!user?.id,
+    queryKey: [`/api/users/${userId}/profile`],
+    enabled: !!userId,
     retry: false,
   });
 
@@ -172,7 +172,7 @@ export default function Profile() {
                     <div className="flex items-center gap-1 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full">
                       <Star className="w-4 h-4" />
                       <span className="font-semibold text-xs sm:text-sm">
-                        {formatBalance(user.points || 0)}
+                        {Number(user.points || 0).toLocaleString()}
                       </span>
                     </div>
                     <span className="text-[10px] text-gray-500 mt-1">Points</span>

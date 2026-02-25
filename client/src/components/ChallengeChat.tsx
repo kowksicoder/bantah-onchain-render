@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -293,14 +293,14 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
             </Badge>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
-            ×
+            Ã—
           </Button>
         </div>
 
         <div className="flex items-center justify-between mt-3">
           <div className="flex items-center space-x-4">
             <div className="text-sm text-slate-600 dark:text-slate-400">
-              Stake: <span className="font-semibold text-green-600">₦{parseFloat(challenge.amount).toLocaleString()}</span>
+              Stake: <span className="font-semibold text-green-600">{parseFloat(challenge.amount).toLocaleString()}</span>
             </div>
             {challenge.dueDate && (
               <div className="flex items-center space-x-1 text-sm text-slate-600 dark:text-slate-400">
@@ -362,7 +362,7 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
             <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 mb-6 inline-block">
               <div className="text-sm text-slate-600 dark:text-slate-400 mb-2">Stake Amount</div>
               <div className="text-3xl font-bold text-green-600">
-                ₦{parseFloat(challenge.amount).toLocaleString()}
+                {parseFloat(challenge.amount).toLocaleString()}
               </div>
             </div>
             
@@ -504,3 +504,4 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
   </div>
 );
 }
+

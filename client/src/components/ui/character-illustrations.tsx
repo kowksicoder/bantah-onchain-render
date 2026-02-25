@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface CharacterProps {
@@ -179,7 +179,7 @@ export function WalletCharacter({ className, animate = true }: CharacterProps) {
         <rect x="15" y="35" width="50" height="3" fill="hsl(var(--primary) / 0.6)" />
         
         {/* Money symbol */}
-        <text x="40" y="48" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">₦</text>
+        <text x="40" y="48" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold"></text>
         
         {/* Character face */}
         <circle cx="40" cy="20" r="8" fill="hsl(var(--primary))" />
@@ -233,4 +233,5 @@ export function ChatBubbleCharacter({ className, animate = true }: CharacterProp
     </motion.div>
   );
 }
+
 

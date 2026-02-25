@@ -66,7 +66,7 @@ export async function initializeDatabase() {
         if (error.code === '42P01') {
           continue;
         }
-        console.error(`âœ— Onchain schema statement FAILED: ${statement.substring(0, 90)}...`);
+        console.error(`✗ Onchain schema statement FAILED: ${statement.substring(0, 90)}...`);
         console.error(`   ${error.message?.substring(0, 120)}`);
       }
     }

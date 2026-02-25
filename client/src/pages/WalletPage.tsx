@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { MobileNavigation } from "@/components/MobileNavigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -126,7 +126,7 @@ export default function WalletPage() {
     .trim()
     .replace(/^['"]|['"]$/g, "")
     .toLowerCase();
-  const isOnchainBuild = appModeRaw ? appModeRaw === "onchain" : true;
+  const isOnchainBuild = appModeRaw !== "offchain";
   const { wallets } = useWallets();
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
 
@@ -938,11 +938,8 @@ export default function WalletPage() {
                   placeholder="Enter amount"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
-                  className="text-center text-base border-0 bg-slate-50 dark:bg-slate-700 rounded-xl h-12 pl-8"
+                  className="text-center text-base border-0 bg-slate-50 dark:bg-slate-700 rounded-xl h-12"
                 />
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400">
-                  ₦
-                </span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {[500, 1000, 2500, 5000].map((amount) => (
@@ -952,7 +949,7 @@ export default function WalletPage() {
                     onClick={() => setDepositAmount(amount.toString())}
                     className="h-9 text-sm border-0 bg-slate-50 dark:bg-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-600"
                   >
-                    ₦{amount.toLocaleString()}
+                    {amount.toLocaleString()}
                   </Button>
                 ))}
               </div>
@@ -1096,7 +1093,7 @@ export default function WalletPage() {
                       : formatBalance(parseFloat(swapAmount) * 0.1)}
                   </p>
                   <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                    Rate: 1 ₦ = 10 coins
+                    Rate: 1 unit = 10 coins
                   </p>
                 </div>
               )}
@@ -1183,11 +1180,8 @@ export default function WalletPage() {
                   placeholder="Enter amount"
                   value={withdrawAmount}
                   onChange={(e) => setWithdrawAmount(e.target.value)}
-                  className="text-center text-base border-0 bg-slate-50 dark:bg-slate-700 rounded-xl h-12 pl-8"
+                  className="text-center text-base border-0 bg-slate-50 dark:bg-slate-700 rounded-xl h-12"
                 />
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400">
-                  ₦
-                </span>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -1313,3 +1307,4 @@ export default function WalletPage() {
     </div>
   );
 }
+

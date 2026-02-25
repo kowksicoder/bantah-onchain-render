@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { useLocation } from 'wouter';
 
 interface Challenge {
@@ -55,7 +55,7 @@ export function DynamicMetaTags({
         const challengedName = challenge.challengedUser.username || challenge.challengedUser.firstName || 'User';
         
         title = `${challenge.title} - ${challengerName} vs ${challengedName} | Bantah`;
-        description = `🎯 CHALLENGE: "${challenge.title}" - ${challengerName} challenges ${challengedName} for ₦${challenge.amount} in ${challenge.category}. Join Bantah to see the action!`;
+        description = `🎯 CHALLENGE: "${challenge.title}" - ${challengerName} challenges ${challengedName} for ${challenge.amount} in ${challenge.category}. Join Bantah to see the action!`;
         
         // Generate a dynamic challenge image URL (this would be handled by a backend service)
         image = `${window.location.origin}/api/og/challenge/${challenge.id}`;
@@ -64,7 +64,7 @@ export function DynamicMetaTags({
       // Event-specific meta tags
       if (pageType === 'event' && event) {
         title = `${event.title} - Predict & Win | Bantah`;
-        description = `🎲 EVENT: "${event.title}" - Join ${event.participantCount || 0} participants predicting this ${event.category} event. Entry: ₦${event.entryFee}`;
+        description = `🎲 EVENT: "${event.title}" - Join ${event.participantCount || 0} participants predicting this ${event.category} event. Entry: ${event.entryFee}`;
         image = `${window.location.origin}/api/og/event/${event.id}`;
       }
 
@@ -130,7 +130,7 @@ export function DynamicMetaTags({
           offers: {
             '@type': 'Offer',
             price: challenge.amount,
-            priceCurrency: 'NGN'
+            priceCurrency: 'USD'
           }
         };
 

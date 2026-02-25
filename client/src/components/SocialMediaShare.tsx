@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -69,7 +69,7 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
     const title = challenge.title;
     const category = challenge.category;
 
-    const baseText = `🎯 CHALLENGE ALERT!\n\n"${title}"\n\n${challengerName} vs ${challengedName}\n💰 Stake: ₦${amount}\n📂 Category: ${category}\n\n`;
+    const baseText = `🎯 CHALLENGE ALERT!\n\n"${title}"\n\n${challengerName} vs ${challengedName}\n💰 Stake: ${amount}\n📂 Category: ${category}\n\n`;
     
     switch (platform) {
       case 'twitter':

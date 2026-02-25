@@ -1,0 +1,39 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_24-6dc9da72b575e71cdb869b898707823769b7e93c",
+  "solcVersion": "0.8.24",
+  "solcLongVersion": "0.8.24+commit.e11b9ed9",
+  "userSourceNameMap": {
+    "contracts/BantahEscrow.sol": "project/contracts/BantahEscrow.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "shanghai",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/BantahEscrow.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ninterface IERC20Minimal {\n    function transferFrom(address from, address to, uint256 amount) external returns (bool);\n    function transfer(address to, uint256 amount) external returns (bool);\n}\n\n/**\n * @title BantahEscrow\n * @notice Minimal escrow vault for testnet integration. It supports:\n *  - Native token staking via lockStakeNative()\n *  - ERC20 staking via lockStakeToken(address,uint256)\n *  - Settlement signal calls via settleChallenge() / settleChallenge(uint256,uint8)\n *  - Admin withdrawals for controlled settlement operations\n *\n * The current backend verifies tx hash/chain/contract and records outcome.\n * This contract keeps onchain custody + auditable events while the platform\n * finalizes challenge resolution logic server-side.\n */\ncontract BantahEscrow {\n    address public owner;\n\n    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);\n    event StakeLockedNative(address indexed sender, uint256 amount);\n    event StakeLockedToken(address indexed sender, address indexed token, uint256 amount);\n    event ChallengeSettledSignal(address indexed caller, uint256 indexed challengeId, uint8 resultCode);\n    event ChallengeCreatedLogged(\n        address indexed caller,\n        uint256 indexed challengeId,\n        bytes32 indexed metadataHash,\n        string challengeType\n    );\n    event NativeWithdrawn(address indexed to, uint256 amount);\n    event TokenWithdrawn(address indexed token, address indexed to, uint256 amount);\n\n    modifier onlyOwner() {\n        require(msg.sender == owner, \"Only owner\");\n        _;\n    }\n\n    constructor(address initialOwner) {\n        require(initialOwner != address(0), \"Invalid owner\");\n        owner = initialOwner;\n        emit OwnershipTransferred(address(0), initialOwner);\n    }\n\n    function transferOwnership(address newOwner) external onlyOwner {\n        require(newOwner != address(0), \"Invalid owner\");\n        emit OwnershipTransferred(owner, newOwner);\n        owner = newOwner;\n    }\n\n    receive() external payable {\n        require(msg.value > 0, \"No value\");\n        emit StakeLockedNative(msg.sender, msg.value);\n    }\n\n    function lockStakeNative() external payable returns (bool) {\n        require(msg.value > 0, \"No value\");\n        emit StakeLockedNative(msg.sender, msg.value);\n        return true;\n    }\n\n    function lockStakeToken(address token, uint256 amount) public returns (bool) {\n        require(token != address(0), \"Invalid token\");\n        require(amount > 0, \"Invalid amount\");\n        bool ok = IERC20Minimal(token).transferFrom(msg.sender, address(this), amount);\n        require(ok, \"Transfer failed\");\n        emit StakeLockedToken(msg.sender, token, amount);\n        return true;\n    }\n\n    // Backward-compatible alias.\n    function depositToken(address token, uint256 amount) external returns (bool) {\n        return lockStakeToken(token, amount);\n    }\n\n    function settleChallenge() public returns (bool) {\n        emit ChallengeSettledSignal(msg.sender, 0, 0);\n        return true;\n    }\n\n    function settleChallenge(uint256 challengeId, uint8 resultCode) public returns (bool) {\n        emit ChallengeSettledSignal(msg.sender, challengeId, resultCode);\n        return true;\n    }\n\n    // Backward-compatible aliases.\n    function settle() external returns (bool) {\n        return settleChallenge();\n    }\n\n    function settle(uint256 challengeId, uint8 resultCode) external returns (bool) {\n        return settleChallenge(challengeId, resultCode);\n    }\n\n    function logChallengeCreated(\n        uint256 challengeId,\n        bytes32 metadataHash,\n        string calldata challengeType\n    ) external returns (bool) {\n        emit ChallengeCreatedLogged(msg.sender, challengeId, metadataHash, challengeType);\n        return true;\n    }\n\n    function withdrawNative(address payable to, uint256 amount) external onlyOwner returns (bool) {\n        require(to != address(0), \"Invalid recipient\");\n        require(amount > 0, \"Invalid amount\");\n        require(address(this).balance >= amount, \"Insufficient balance\");\n        (bool ok, ) = to.call{ value: amount }(\"\");\n        require(ok, \"Withdraw failed\");\n        emit NativeWithdrawn(to, amount);\n        return true;\n    }\n\n    function withdrawToken(address token, address to, uint256 amount) external onlyOwner returns (bool) {\n        require(token != address(0), \"Invalid token\");\n        require(to != address(0), \"Invalid recipient\");\n        require(amount > 0, \"Invalid amount\");\n        bool ok = IERC20Minimal(token).transfer(to, amount);\n        require(ok, \"Withdraw failed\");\n        emit TokenWithdrawn(token, to, amount);\n        return true;\n    }\n}\n"
+      }
+    }
+  }
+}

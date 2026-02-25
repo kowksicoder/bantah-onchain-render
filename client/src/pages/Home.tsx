@@ -1,4 +1,4 @@
-import { useAuth } from "@/hooks/useAuth";
+﻿import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 
 import { NotificationToast } from "@/components/NotificationToast";
@@ -215,7 +215,7 @@ export default function Home() {
                     {new Date(event.endDate).toLocaleDateString()}
                   </span>
                   <span className="text-emerald-600 font-medium">
-                    ₦{event.poolSize || Math.floor(Math.random() * 100000) + 1000}
+                    {event.poolSize || Math.floor(Math.random() * 100000) + 1000}
                   </span>
                 </div>
               </div>
@@ -268,7 +268,7 @@ export default function Home() {
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-semibold text-base md:text-lg">{challenge.title || 'Challenge'}</h3>
                     <span className="text-sm text-slate-500 dark:text-slate-400">
-                      ₦{challenge.amount || 0}
+                      {challenge.amount || 0}
                     </span>
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-xs md:text-sm mb-4">

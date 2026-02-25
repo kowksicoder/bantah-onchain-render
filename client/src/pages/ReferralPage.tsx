@@ -1,4 +1,4 @@
-
+﻿
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -112,7 +112,7 @@ export default function ReferralPage() {
                 <Gift className="w-4 h-4 text-emerald-700 dark:text-emerald-300" />
               </div>
               <div className="w-5 h-5 rounded-full bg-emerald-200 dark:bg-emerald-700 flex items-center justify-center">
-                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">₦</span>
+                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300"></span>
               </div>
             </div>
             <div className="space-y-1">
@@ -308,3 +308,4 @@ export default function ReferralPage() {
     </div>
   );
 }
+

@@ -94,12 +94,12 @@ import { createPairingEngine } from './pairingEngine';
 
 // Import formatBalance utility for coin operations
 function formatBalance(amount: number): string {
-  return `â‚¦${amount.toLocaleString()}`;
+  return `₦${amount.toLocaleString()}`;
 }
 import axios from "axios";
 import fs from "fs/promises";
 import path from "path";
-// express-fileupload removed â€” multer handles file uploads in server/index.ts
+// express-fileupload removed — multer handles file uploads in server/index.ts
 import { adminAuth } from "./adminAuth";
 import { desc, or, not, isNull, count, sum, avg } from "drizzle-orm";
 import type { NextFunction } from "express";
@@ -335,6 +335,72 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
     if (txHash) return `${baseExplorer}/tx/${txHash}`;
     return baseExplorer;
+  }
+
+  function resolveOnchainChainName(chainIdLike: unknown): string | null {
+    const chainId = Number(chainIdLike);
+    if (!Number.isFinite(chainId)) return null;
+    const chain = ONCHAIN_CONFIG.chains[String(chainId)];
+    return chain?.name || `Chain ${chainId}`;
+  }
+
+  function formatAtomicStakeForDisplay(
+    stakeAtomicLike: unknown,
+    decimalsLike: unknown,
+    tokenSymbolLike: unknown,
+  ): string | null {
+    const raw = String(stakeAtomicLike ?? "").trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const decimals = Number(decimalsLike);
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) return null;
+    const tokenSymbol = String(tokenSymbolLike || "ETH").toUpperCase();
+    try {
+      const atomic = BigInt(raw);
+      if (decimals === 0) return `${atomic.toString()} ${tokenSymbol}`;
+      const base = BigInt(10) ** BigInt(decimals);
+      const whole = atomic / base;
+      const fraction = atomic % base;
+      let fractionText = fraction.toString().padStart(decimals, "0").replace(/0+$/, "");
+      if (fractionText.length > 8) {
+        fractionText = fractionText.slice(0, 8).replace(/0+$/, "");
+      }
+      const amountText = fractionText ? `${whole.toString()}.${fractionText}` : whole.toString();
+      return `${amountText} ${tokenSymbol}`;
+    } catch {
+      return null;
+    }
+  }
+
+  function buildChallengeStakeBroadcastMeta(challengeLike: any): {
+    stakeDisplay: string;
+    settlementLabel: string;
+  } {
+    const settlementRail = String(
+      challengeLike?.settlementRail || challengeLike?.settlement_rail || "offchain",
+    ).toLowerCase();
+    const amount = Number.parseFloat(String(challengeLike?.amount ?? 0));
+    const safeAmount = Number.isFinite(amount) ? amount : 0;
+
+    if (settlementRail === "onchain") {
+      const tokenSymbol = String(
+        challengeLike?.tokenSymbol || challengeLike?.token_symbol || "ETH",
+      ).toUpperCase();
+      const chainName = resolveOnchainChainName(challengeLike?.chainId || challengeLike?.chain_id);
+      const atomicDisplay = formatAtomicStakeForDisplay(
+        challengeLike?.stakeAtomic ?? challengeLike?.stake_atomic,
+        challengeLike?.decimals,
+        tokenSymbol,
+      );
+      return {
+        stakeDisplay: atomicDisplay || `${safeAmount.toLocaleString()} ${tokenSymbol}`,
+        settlementLabel: `Onchain${chainName ? ` (${chainName})` : ""}`,
+      };
+    }
+
+    return {
+      stakeDisplay: `NGN ${safeAmount.toLocaleString()}`,
+      settlementLabel: "Offchain (NGN)",
+    };
   }
 
   function parseNotificationData(data: unknown): Record<string, any> | null {
@@ -731,7 +797,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   app.post('/api/telegram/webhook', async (req, res) => {
     try {
       const update = req.body;
-      console.log('ðŸ“¨ Telegram webhook update:', JSON.stringify(update, null, 2));
+      console.log('📨 Telegram webhook update:', JSON.stringify(update, null, 2));
 
       // Handle my_chat_member updates (bot or user status changes in chats)
       if (update.my_chat_member) {
@@ -782,7 +848,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         const data = callbackQuery.data;
         const telegramUserId = callbackQuery.from.id;
 
-        console.log(`ðŸ”˜ Callback button clicked: ${data} by user ${telegramUserId}`);
+        console.log(`🔘 Callback button clicked: ${data} by user ${telegramUserId}`);
 
         // Get user by Telegram ID
         const user = await storage.getUserByTelegramId(telegramUserId.toString());
@@ -826,7 +892,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             if (bal.balance < defaultAmount) {
               await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
                 callback_query_id: callbackQuery.id,
-                text: `Insufficient balance to create a â‚¦${defaultAmount} challenge.`,
+                text: `Insufficient balance to create a ₦${defaultAmount} challenge.`,
                 show_alert: true,
               });
               return res.json({ ok: true });
@@ -847,14 +913,14 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             // Post confirmation message with accept/decline buttons
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
               chat_id: chatId,
-              text: `âš”ï¸ *Challenge Created*\n*${challenge.title}*\nWager: â‚¦${defaultAmount}\nChallenger: @${callerUser.username || callerUser.id}\nChallenged: @${targetUser.username || targetUser.id}`,
+              text: `⚔️ *Challenge Created*\n*${challenge.title}*\nWager: ₦${defaultAmount}\nChallenger: @${callerUser.username || callerUser.id}\nChallenged: @${targetUser.username || targetUser.id}`,
               parse_mode: 'Markdown',
               reply_markup: {
                 inline_keyboard: [
                   [
-                    { text: 'âœ… Accept', callback_data: `accept_challenge_${challenge.id}` },
-                    { text: 'âŒ Decline', callback_data: `decline_challenge_${challenge.id}` },
-                    { text: 'ðŸ” Open', web_app: { url: `${(process.env.FRONTEND_URL||'http://localhost:5173')}/telegram-mini-app?action=view_challenge&challengeId=${challenge.id}` } }
+                    { text: '✅ Accept', callback_data: `accept_challenge_${challenge.id}` },
+                    { text: '❌ Decline', callback_data: `decline_challenge_${challenge.id}` },
+                    { text: '🔍 Open', web_app: { url: `${(process.env.FRONTEND_URL||'http://localhost:5173')}/telegram-mini-app?action=view_challenge&challengeId=${challenge.id}` } }
                   ]
                 ]
               }
@@ -862,7 +928,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
               callback_query_id: callbackQuery.id,
-              text: 'âœ… Challenge created and posted to chat',
+              text: '✅ Challenge created and posted to chat',
             });
 
             return res.json({ ok: true });
@@ -870,7 +936,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             console.error('Error handling challenge_user callback:', err);
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
               callback_query_id: callbackQuery.id,
-              text: 'âŒ Failed to create challenge',
+              text: '❌ Failed to create challenge',
               show_alert: true,
             });
             return res.json({ ok: true });
@@ -938,14 +1004,14 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             // Answer callback query to remove loading state
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
               callback_query_id: callbackQuery.id,
-              text: 'âœ… Processing...'
+              text: '✅ Processing...'
             });
 
           } catch (error: any) {
             console.error('Error accepting challenge:', error);
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
               callback_query_id: callbackQuery.id,
-              text: `âŒ Error: ${error.message}`,
+              text: `❌ Error: ${error.message}`,
               show_alert: true
             });
           }
@@ -960,13 +1026,13 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
               callback_query_id: callbackQuery.id,
-              text: 'âŒ Challenge declined'
+              text: '❌ Challenge declined'
             });
 
             // Send declined message
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
               chat_id: chatId,
-              text: 'âŒ *Challenge Declined*\n\nYou have declined this challenge.',
+              text: '❌ *Challenge Declined*\n\nYou have declined this challenge.',
               parse_mode: 'Markdown'
             });
 
@@ -974,7 +1040,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             console.error('Error declining challenge:', error);
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
               callback_query_id: callbackQuery.id,
-              text: `âŒ Error: ${error.message}`,
+              text: `❌ Error: ${error.message}`,
               show_alert: true
             });
           }
@@ -1016,7 +1082,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       res.json({ ok: true });
     } catch (error) {
-      console.error('âŒ Telegram webhook error:', error);
+      console.error('❌ Telegram webhook error:', error);
       res.status(500).json({ error: 'Webhook processing failed' });
     }
   });
@@ -1180,7 +1246,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId: userId,
         type: 'referral_success',
-        title: 'ðŸŽ Referral Bonus Applied!',
+        title: '🎁 Referral Bonus Applied!',
         message: `You earned ${bonusPoints} points and ${bonusCoins} coins from the referral!`,
         data: { points: bonusPoints, coins: bonusCoins },
       });
@@ -1219,7 +1285,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId: referrer.id,
         type: 'referral_success',
-        title: 'ðŸŽ‰ Referral Success!',
+        title: '🎉 Referral Success!',
         message: `${user.username || 'A new user'} joined using your code! You earned ${referrerBonus} points and ${referrerCoinBonus} coins.`,
         data: { points: referrerBonus, coins: referrerCoinBonus },
       });
@@ -2571,9 +2637,9 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             max_participants: event.maxParticipants,
             category: event.category,
           });
-          console.log("ðŸ“¤ Event broadcasted to Telegram successfully");
+          console.log("📤 Event broadcasted to Telegram successfully");
         } catch (error) {
-          console.error("âŒ Failed to broadcast event to Telegram:", error);
+          console.error("❌ Failed to broadcast event to Telegram:", error);
         }
       }
 
@@ -2722,7 +2788,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await storage.createNotification({
           userId,
           type: 'event_join_pending',
-          title: 'â³ Join Request Submitted',
+          title: '⏳ Join Request Submitted',
           message: `Your request to join "${event.title}" is pending approval. Funds will be locked once approved.`,
           data: { 
             eventId: eventId, 
@@ -2760,7 +2826,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId,
         type: 'coins_locked',
-        title: 'ðŸ”’ Coins Locked in Escrow',
+        title: '🔒 Coins Locked in Escrow',
         message: `${amount.toLocaleString()} coins locked for your ${prediction ? 'YES' : 'NO'} prediction on "${event.title}". Coins will be released when the event ends.`,
         data: { 
           eventId: eventId,
@@ -2776,7 +2842,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId: event.creatorId,
         type: 'event_participant_joined',
-        title: 'ðŸŽ¯ New Event Participant',
+        title: '🎯 New Event Participant',
         message: `${req.user.claims.first_name || 'Someone'} joined your event "${event.title}" with a ${prediction ? 'YES' : 'NO'} prediction (${amount.toLocaleString()} coins)!`,
         data: { 
           eventId: eventId,
@@ -2789,14 +2855,14 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       // Send real-time notifications via Pusher
       await pusher.trigger(`user-${userId}`, 'coins-locked', {
-        title: 'ðŸ”’ Coins Locked in Escrow',
+        title: '🔒 Coins Locked in Escrow',
         message: `${amount.toLocaleString()} coins locked for your ${prediction ? 'YES' : 'NO'} prediction on "${event.title}"`,
         eventId: eventId,
         type: 'coins_locked',
       });
 
       await pusher.trigger(`user-${event.creatorId}`, 'participant-joined', {
-        title: 'ðŸŽ¯ New Event Participant',
+        title: '🎯 New Event Participant',
         message: `${req.user.claims.first_name || 'Someone'} joined your event "${event.title}"`,
         eventId: eventId,
         type: 'participant_joined',
@@ -2902,10 +2968,10 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             const event = await storage.getEventById(eventId);
             const senderName = user?.firstName || user?.username || 'BetChat User';
 
-            const formattedMessage = `ðŸŽ¯ ${event?.title || 'Event Chat'}\nðŸ‘¤ ${senderName}: ${message}`;
+            const formattedMessage = `🎯 ${event?.title || 'Event Chat'}\n👤 ${senderName}: ${message}`;
 
             await telegramBot.sendCustomMessage(formattedMessage);
-            console.log(`ðŸ“¤ BetChat â†’ Telegram Bot: ${senderName}: ${message} [Event: ${event?.title || 'Event Chat'}]`);
+            console.log(`📤 BetChat → Telegram Bot: ${senderName}: ${message} [Event: ${event?.title || 'Event Chat'}]`);
           } catch (telegramError) {
             console.error('Error sending message via Telegram bot:', telegramError);
           }
@@ -3137,7 +3203,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       res.json({ 
         event, 
         payout: payoutResult,
-        message: `Event result set to ${result ? 'YES' : 'NO'}. Payout processed: ${payoutResult.winnersCount} winners received â‚¦${payoutResult.totalPayout.toLocaleString()} total, â‚¦${payoutResult.creatorFee.toLocaleString()} creator fee.`
+        message: `Event result set to ${result ? 'YES' : 'NO'}. Payout processed: ${payoutResult.winnersCount} winners received ₦${payoutResult.totalPayout.toLocaleString()} total, ₦${payoutResult.creatorFee.toLocaleString()} creator fee.`
       });
     } catch (error) {
       console.error("Error setting event result:", error);
@@ -3218,12 +3284,12 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   // Challenge routes
   app.get('/api/challenges/public', async (req, res) => {
     try {
-      console.log("ðŸ“¥ Fetching public admin challenges...");
+      console.log("📥 Fetching public admin challenges...");
       const challenges = await storage.getPublicAdminChallenges();
-      console.log(`âœ… Retrieved ${challenges.length} public challenges`);
+      console.log(`✅ Retrieved ${challenges.length} public challenges`);
       res.json(challenges);
     } catch (error: any) {
-      console.error("âŒ Error fetching public challenges:", error);
+      console.error("❌ Error fetching public challenges:", error);
       console.error("Error details:", {
         message: error?.message,
         code: error?.code,
@@ -3358,7 +3424,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       // Add bonus event if bonus is active
       if (challenge.bonusSide && challenge.bonusMultiplier && parseFloat(challenge.bonusMultiplier.toString()) > 1) {
-        const bonusType = challenge.bonusAmount > 0 ? `â‚¦${challenge.bonusAmount}` : `${challenge.bonusMultiplier}x`;
+        const bonusType = challenge.bonusAmount > 0 ? `₦${challenge.bonusAmount}` : `${challenge.bonusMultiplier}x`;
         activity.push({
           id: `bonus-${challengeId}`,
           user: challenge.challenger ? await storage.getUser(challenge.challenger) : null,
@@ -3386,7 +3452,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         activity.push({
           id: `result-${challengeId}`,
           user: winner,
-          action: `defeated ${loser?.username || 'Opponent'} â€” Winner: ${winner?.username || 'Winner'}`,
+          action: `defeated ${loser?.username || 'Opponent'} — Winner: ${winner?.username || 'Winner'}`,
           createdAt: challenge.completedAt || new Date()
         });
       }
@@ -3630,7 +3696,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         const challengedNotification = await storage.createNotification({
           userId: challenge.challenged,
           type: 'challenge',
-          title: 'ðŸŽ¯ New Challenge Request',
+          title: '🎯 New Challenge Request',
           message: `${challenger?.firstName || challenger?.username || 'Someone'} challenged you to "${challenge.title}"`,
           data: { 
             challengeId: challenge.id,
@@ -3651,7 +3717,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           await pusher.trigger(`user-${challenge.challenged}`, 'challenge-received', {
             id: challengedNotification.id,
             type: 'challenge_received',
-            title: 'ðŸŽ¯ Challenge Received!',
+            title: '🎯 Challenge Received!',
             message: `${challenger?.firstName || challenger?.username || 'Someone'} challenged you to "${challenge.title}"`,
             challengerName: challenger?.firstName || challenger?.username || 'Someone',
             challengeTitle: challenge.title,
@@ -3670,7 +3736,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const challengerNotification = await storage.createNotification({
         userId: userId,
         type: 'challenge_sent',
-        title: 'ðŸš€ Challenge Sent',
+        title: '🚀 Challenge Sent',
         message: `Your challenge "${challenge.title}" was sent to ${challenged?.firstName || challenged?.username || 'Open Challenge'}`,
         data: { 
           challengeId: challenge.id,
@@ -3691,7 +3757,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await pusher.trigger(`user-${userId}`, 'challenge-sent', {
           id: challengerNotification.id,
           type: 'challenge_sent',
-          title: 'ðŸš€ Challenge Sent',
+          title: '🚀 Challenge Sent',
           message: `Your challenge "${challenge.title}" was sent to ${challenged?.firstName || challenged?.username || 'Open Challenge'}`,
           data: challengerNotification.data,
           scanUrl: challengeScanUrl,
@@ -3716,8 +3782,9 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       }
 
       // Broadcast to Telegram channel
-      if (telegramBot && challenger?.telegramId) {
+      if (telegramBot) {
         try {
+          const stakeBroadcastMeta = buildChallengeStakeBroadcastMeta(challenge);
           await telegramBot.broadcastChallenge({
             id: challenge.id,
             title: challenge.title,
@@ -3731,15 +3798,17 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
               username: challenged?.username || undefined,
             },
             stake_amount: parseFloat(challenge.amount.toString()),
+            stake_display: stakeBroadcastMeta.stakeDisplay,
+            settlement_label: stakeBroadcastMeta.settlementLabel,
             status: challenge.status,
             end_time: challenge.dueDate,
             category: challenge.category,
           });
-          console.log("ðŸ“¤ Challenge broadcasted to Telegram successfully");
+          console.log("📤 Challenge broadcasted to Telegram successfully");
 
           // Phase 2: Send accept card to challenged user if they have Telegram linked
           if (challenged?.telegramId) {
-            console.log(`ðŸ“¤ Sending challenge accept card to Telegram user ${challenged.telegramId}`);
+            console.log(`📤 Sending challenge accept card to Telegram user ${challenged.telegramId}`);
             await telegramBot.sendChallengeAcceptCard(
               parseInt(challenged.telegramId),
               {
@@ -3758,10 +3827,10 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
                 category: challenge.category,
               }
             );
-            console.log("ðŸ“¤ Challenge accept card sent to Telegram user");
+            console.log("📤 Challenge accept card sent to Telegram user");
           }
         } catch (error) {
-          console.error("âŒ Failed to broadcast challenge to Telegram:", error);
+          console.error("❌ Failed to broadcast challenge to Telegram:", error);
         }
       }
 
@@ -3901,7 +3970,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await pusher.trigger(`user-${otherUserId}`, eventType, {
           id: Date.now(),
           type: 'challenge_cancelled',
-          title: 'âŒ Challenge Declined',
+          title: '❌ Challenge Declined',
           message: `${currentUser?.firstName || currentUser?.username} declined the challenge "${challenge.title}".`,
           data: { challengeId: challengeId },
           timestamp: new Date().toISOString(),
@@ -4057,7 +4126,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId: challenge.challenger,
         type: 'challenge_accepted',
-        title: 'ðŸŽ¯ Challenge Accepted!',
+        title: '🎯 Challenge Accepted!',
         message: `${challenged?.firstName || challenged?.username} accepted your challenge "${challenge.title}"! The challenge is now active.`,
         data: { 
           challengeId: challengeId,
@@ -4075,11 +4144,11 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId: challenge.challenged,
         type: 'challenge_active',
-        title: 'ðŸ”’ Challenge Active',
+        title: '🔒 Challenge Active',
         message:
           String(challenge.settlementRail || "").toLowerCase() === "onchain"
             ? `Your stake of ${parseFloat(challenge.amount).toLocaleString()} ${String(challenge.tokenSymbol || "ETH").toUpperCase()} is now locked in escrow for "${challenge.title}". Good luck!`
-            : `Your stake of â‚¦${parseFloat(challenge.amount).toLocaleString()} has been escrowed for challenge "${challenge.title}". Good luck!`,
+            : `Your stake of ₦${parseFloat(challenge.amount).toLocaleString()} has been escrowed for challenge "${challenge.title}". Good luck!`,
         data: { 
           challengeId: challengeId,
           challengeTitle: challenge.title,
@@ -4097,7 +4166,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await pusher.trigger(`user-${challenge.challenger}`, 'challenge-accepted', {
           id: Date.now(),
           type: 'challenge_accepted',
-          title: 'ðŸŽ¯ Challenge Accepted!',
+          title: '🎯 Challenge Accepted!',
           message: `${challenged?.firstName || challenged?.username} accepted your challenge "${challenge.title}"!`,
           data: { challengeId: challengeId },
           scanUrl: acceptScanUrl,
@@ -4107,7 +4176,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await pusher.trigger(`user-${challenge.challenged}`, 'challenge-active', {
           id: Date.now(),
           type: 'challenge_active',
-          title: 'ðŸ”’ Challenge Active',
+          title: '🔒 Challenge Active',
           message: `Challenge "${challenge.title}" is now active! Your funds are secured in escrow.`,
           data: { challengeId: challengeId },
           scanUrl: acceptScanUrl,
@@ -4134,10 +4203,10 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             stake_amount: parseFloat(challenge.amount),
             category: challenge.type,
           });
-          console.log('ðŸ“¤ Challenge acceptance (matchmaking) broadcasted to Telegram successfully');
+          console.log('📤 Challenge acceptance (matchmaking) broadcasted to Telegram successfully');
         }
       } catch (telegramError) {
-        console.error('âŒ Error broadcasting matchmaking to Telegram:', telegramError);
+        console.error('❌ Error broadcasting matchmaking to Telegram:', telegramError);
       }
 
       res.setHeader("x-onchain-execution-mode", ONCHAIN_CONFIG.executionMode);
@@ -5002,7 +5071,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           await storage.createNotification({
             userId: challenge.challenger,
             type: 'challenge_message',
-            title: 'ðŸ’¬ New Challenge Message',
+            title: '💬 New Challenge Message',
             message: `${user?.firstName || user?.username} sent a message in challenge "${challenge.title}"`,
             data: { 
               challengeId: challengeId,
@@ -5016,7 +5085,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           await storage.createNotification({
             userId: challenge.challenged,
             type: 'challenge_message',
-            title: 'ðŸ’¬ New Challenge Message',
+            title: '💬 New Challenge Message',
             message: `${user?.firstName || user?.username} sent a message in challenge "${challenge.title}"`,
             data: { 
               challengeId: challengeId,
@@ -5544,7 +5613,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
-  // Wallet swap route (Money â†” Coins)
+  // Wallet swap route (Money ↔ Coins)
   app.post('/api/wallet/swap', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
     try {
       const userId = getUserId(req);
@@ -5593,7 +5662,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await storage.createNotification({
           userId,
           type: 'currency_swap',
-          title: 'ðŸ”„ Currency Swap Complete',
+          title: '🔄 Currency Swap Complete',
           message: `Successfully swapped ${formatBalance(amount)} for ${coinsToAdd.toLocaleString()} coins!`,
           data: { 
             fromAmount: amount,
@@ -5603,7 +5672,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           },
         });
 
-        console.log(`âœ… Swapped ${formatBalance(amount)} to ${coinsToAdd} coins for user ${userId}`);
+        console.log(`✅ Swapped ${formatBalance(amount)} to ${coinsToAdd} coins for user ${userId}`);
         res.json({ 
           message: "Swap completed successfully",
           fromAmount: amount,
@@ -5642,7 +5711,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await storage.createNotification({
           userId,
           type: 'currency_swap',
-          title: 'ðŸ”„ Currency Swap Complete',
+          title: '🔄 Currency Swap Complete',
           message: `Successfully swapped ${amount.toLocaleString()} coins for ${formatBalance(moneyToAdd)}!`,
           data: { 
             fromAmount: amount,
@@ -5652,7 +5721,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           },
         });
 
-        console.log(`âœ… Swapped ${amount} coins to ${formatBalance(moneyToAdd)} for user ${userId}`);
+        console.log(`✅ Swapped ${amount} coins to ${formatBalance(moneyToAdd)} for user ${userId}`);
         res.json({ 
           message: "Swap completed successfully",
           fromAmount: amount,
@@ -5667,7 +5736,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await pusher.trigger(`user-${userId}`, 'currency-swap', {
           id: Date.now(),
           type: 'currency_swap',
-          title: 'ðŸ”„ Currency Swap Complete',
+          title: '🔄 Currency Swap Complete',
           message: fromCurrency === 'money' 
             ? `Swapped ${formatBalance(amount)} for ${(amount * 10).toLocaleString()} coins!`
             : `Swapped ${amount.toLocaleString()} coins for ${formatBalance(amount * 0.1)}!`,
@@ -5715,7 +5784,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId,
         type: 'withdrawal',
-        title: 'ðŸ’¸ Withdrawal Complete',
+        title: '💸 Withdrawal Complete',
         message: `Successfully withdrew ${formatBalance(amount)} from your account!`,
         data: { 
           amount: amount,
@@ -5728,7 +5797,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         await pusher.trigger(`user-${userId}`, 'withdrawal', {
           id: Date.now(),
           type: 'withdrawal',
-          title: 'ðŸ’¸ Withdrawal Complete',
+          title: '💸 Withdrawal Complete',
           message: `Withdrew ${formatBalance(amount)} from your account!`,
           timestamp: new Date().toISOString(),
         });
@@ -5736,7 +5805,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         console.error("Error sending Pusher notification:", pusherError);
       }
 
-      console.log(`âœ… Withdrawal of ${formatBalance(amount)} completed for user ${userId}`);
+      console.log(`✅ Withdrawal of ${formatBalance(amount)} completed for user ${userId}`);
       res.json({ 
         message: "Withdrawal completed successfully",
         amount: amount
@@ -5811,7 +5880,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           const userId = metadata.userId;
           const depositAmount = amount / 100; // Convert from kobo to naira
 
-          console.log(`Processing successful deposit for user ${userId}: â‚¦${depositAmount}`);
+          console.log(`Processing successful deposit for user ${userId}: ₦${depositAmount}`);
 
           try {
             // Create transaction record
@@ -5827,8 +5896,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             await storage.createNotification({
               userId,
               type: 'deposit',
-              title: 'ðŸ’° Deposit Successful',
-              message: `Your deposit of â‚¦${depositAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} has been credited to your account!`,
+              title: '💰 Deposit Successful',
+              message: `Your deposit of ₦${depositAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} has been credited to your account!`,
               data: { 
                 amount: depositAmount,
                 reference: reference,
@@ -5837,13 +5906,13 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
               },
             });
 
-            console.log(`âœ… Deposit completed for user ${userId}: â‚¦${depositAmount}`);
+            console.log(`✅ Deposit completed for user ${userId}: ₦${depositAmount}`);
           } catch (dbError) {
             console.error('Database error while creating transaction:', dbError);
             return res.status(500).json({ message: "Database error" });
           }
         } else {
-          console.log('âš ï¸ Charge success but invalid status or missing metadata:', {
+          console.log('⚠️ Charge success but invalid status or missing metadata:', {
             status,
             hasMetadata: !!metadata,
             userId: metadata?.userId
@@ -5855,7 +5924,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       res.status(200).json({ message: "Webhook processed successfully" });
     } catch (error) {
-      console.error("âŒ Error processing webhook:", error);
+      console.error("❌ Error processing webhook:", error);
       res.status(500).json({ message: "Webhook processing failed" });
     }
   });
@@ -5918,7 +5987,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           );
 
           if (!exists) {
-            console.log(`Creating new deposit transaction for user ${userId}: â‚¦${depositAmount}`);
+            console.log(`Creating new deposit transaction for user ${userId}: ₦${depositAmount}`);
 
             const newTransaction = await storage.createTransaction({
               userId,
@@ -5949,8 +6018,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             await storage.createNotification({
               userId,
               type: 'deposit',
-              title: 'ðŸ’° Deposit Successful',
-              message: `Your deposit of â‚¦${depositAmount.toLocaleString()} has been credited to your account!`,
+              title: '💰 Deposit Successful',
+              message: `Your deposit of ₦${depositAmount.toLocaleString()} has been credited to your account!`,
               data: { 
                 amount: depositAmount,
                 reference: reference,
@@ -5959,7 +6028,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
               },
             });
 
-            console.log(`âœ… Manual verification completed for user ${userId}: â‚¦${depositAmount}`);
+            console.log(`✅ Manual verification completed for user ${userId}: ₦${depositAmount}`);
             res.json({ 
               message: "Payment verified successfully", 
               amount: depositAmount,
@@ -6024,8 +6093,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId,
         type: 'withdrawal',
-        title: 'ðŸ“¤ Withdrawal Requested',
-        message: `Your withdrawal of â‚¦${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} is being processed.`,
+        title: '📤 Withdrawal Requested',
+        message: `Your withdrawal of ₦${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} is being processed.`,
         data: { amount, method },
       });
 
@@ -6154,7 +6223,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         const chatId = update.message.chat.id;
         const firstName = update.message.from.first_name || 'User';
 
-        console.log(`ðŸ“± Received /start from Telegram user ${chatId}`);
+        console.log(`📱 Received /start from Telegram user ${chatId}`);
 
         const telegramBot = getTelegramBot();
         if (telegramBot) {
@@ -6174,7 +6243,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           const user = await TelegramLinkingService.getUserByTelegramId(telegramId);
 
           if (!user) {
-            await telegramBot.sendMessage(chatId, 'ðŸ’° *Your Wallet*\n\nNo account linked yet. Open the mini-app to get started!');
+            await telegramBot.sendMessage(chatId, '💰 *Your Wallet*\n\nNo account linked yet. Open the mini-app to get started!');
           } else {
             const balance = await storage.getUserBalance(user.id);
             await telegramBot.sendBalanceNotification(chatId, parseInt(balance.balance || '0'), balance.coins || 0);
@@ -6194,7 +6263,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           const user = await TelegramLinkingService.getUserByTelegramId(telegramId);
 
           if (!user) {
-            await telegramBot.sendMessage(chatId, 'âš”ï¸ *Your Challenges*\n\nNo account linked yet. Open the mini-app to get started!');
+            await telegramBot.sendMessage(chatId, '⚔️ *Your Challenges*\n\nNo account linked yet. Open the mini-app to get started!');
           } else {
             const challenges = await storage.getChallenges(user.id, 10);
             const activeChallenges = challenges.filter((c: any) => c.status === 'active' || c.status === 'pending');
@@ -6206,7 +6275,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       return res.json({ ok: true });
     } catch (error) {
-      console.error('âŒ Webhook error:', error);
+      console.error('❌ Webhook error:', error);
       res.json({ ok: true });
     }
   });
@@ -6217,10 +6286,10 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const { token } = req.query;
       const userId = getUserId(req);
 
-      console.log(`ðŸ” Telegram link verification request - Token: ${token}, User: ${userId}`);
+      console.log(`🔍 Telegram link verification request - Token: ${token}, User: ${userId}`);
 
       if (!token || typeof token !== 'string') {
-        console.log('âŒ Invalid token format');
+        console.log('❌ Invalid token format');
         return res.status(400).json({ success: false, message: 'Invalid token' });
       }
 
@@ -6230,7 +6299,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const linkData = await TelegramLinkingService.verifyLinkToken(token);
 
       if (!linkData) {
-        console.log(`âŒ Token verification failed: ${token}`);
+        console.log(`❌ Token verification failed: ${token}`);
         return res.json({ 
           success: false, 
           error: 'invalid_token',
@@ -6238,7 +6307,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         });
       }
 
-      console.log(`âœ… Token verified for Telegram user ${linkData.telegramChatId}`);
+      console.log(`✅ Token verified for Telegram user ${linkData.telegramChatId}`);
 
       // Link account
       const linked = await TelegramLinkingService.linkTelegramAccount(
@@ -6248,7 +6317,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       );
 
       if (!linked) {
-        console.log(`âŒ Account linking failed - already linked`);
+        console.log(`❌ Account linking failed - already linked`);
         return res.json({ 
           success: false,
           error: 'already_linked',
@@ -6272,7 +6341,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         );
       }
 
-      console.log(`âœ… Successfully linked Telegram account ${linkData.telegramChatId} to user ${userId}`);
+      console.log(`✅ Successfully linked Telegram account ${linkData.telegramChatId} to user ${userId}`);
 
       res.json({ 
         success: true,
@@ -6283,7 +6352,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         }
       });
     } catch (error) {
-      console.error('âŒ Error verifying Telegram link:', error);
+      console.error('❌ Error verifying Telegram link:', error);
       res.status(500).json({ success: false, message: 'Server error' });
     }
   });
@@ -6299,7 +6368,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(400).json({ success: false, message: 'Missing Telegram data' });
       }
 
-      console.log(`ðŸ” Mini-app link request - User: ${userId}, Telegram ID: ${telegramId}`);
+      console.log(`🔍 Mini-app link request - User: ${userId}, Telegram ID: ${telegramId}`);
 
       // Verify the Telegram initData signature
       // The initData is a URL-encoded string with format: user=%7B...%7D&auth_date=...&hash=...
@@ -6309,7 +6378,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       try {
         const isValid = validateTelegramWebAppData(initData, process.env.TELEGRAM_BOT_TOKEN || '');
         if (!isValid) {
-          console.log('âŒ Invalid Telegram signature');
+          console.log('❌ Invalid Telegram signature');
           return res.json({
             success: false,
             message: 'Invalid Telegram signature. Please use the official mini-app link.'
@@ -6331,7 +6400,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       );
 
       if (!linked) {
-        console.log(`âŒ Account linking failed - already linked`);
+        console.log(`❌ Account linking failed - already linked`);
         return res.json({
           success: false,
           message: 'This Telegram account is already linked to another user.'
@@ -6349,14 +6418,14 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         );
       }
 
-      console.log(`âœ… Successfully linked Telegram account ${telegramId} to user ${userId}`);
+      console.log(`✅ Successfully linked Telegram account ${telegramId} to user ${userId}`);
 
       res.json({
         success: true,
         message: 'Account linked successfully!'
       });
     } catch (error) {
-      console.error('âŒ Error linking mini-app account:', error);
+      console.error('❌ Error linking mini-app account:', error);
       res.status(500).json({ success: false, message: 'Server error' });
     }
   });
@@ -6407,11 +6476,11 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           console.error('Error logging in Telegram user:', err);
           return res.status(500).json({ success: false, message: 'Failed to create session' });
         }
-        console.log(`âœ… Telegram session created for ${user.id}`);
+        console.log(`✅ Telegram session created for ${user.id}`);
         return res.json({ success: true, user: { id: user.id, username: user.username, firstName: user.firstName } });
       });
     } catch (error) {
-      console.error('âŒ Telegram mini-app auth error:', error);
+      console.error('❌ Telegram mini-app auth error:', error);
       res.status(500).json({ success: false, message: 'Server error' });
     }
   });
@@ -6423,7 +6492,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     try {
       const { telegramId } = req.params;
 
-      console.log(`ðŸ“± Bot API request for Telegram user ${telegramId}`);
+      console.log(`📱 Bot API request for Telegram user ${telegramId}`);
 
       // Find user by telegram ID
       const { TelegramLinkingService } = await import('./telegramLinking');
@@ -6457,7 +6526,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         }
       });
     } catch (error) {
-      console.error('âŒ Bot API error:', error);
+      console.error('❌ Bot API error:', error);
       res.status(500).json({ 
         success: false, 
         message: 'Server error' 
@@ -6514,7 +6583,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(400).json({ message: "Telegram bot not configured" });
       }
 
-      const message = req.body.message || "ðŸ§ª Test message from BetChat";
+      const message = req.body.message || "🧪 Test message from BetChat";
       const success = await telegramBot.sendCustomMessage(message);
 
       res.json({ 
@@ -6615,9 +6684,9 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             id: notificationId,
             userId: followingId,
             type: 'new_follower',
-            title: 'ðŸ‘¤ New Follower',
+            title: '👤 New Follower',
             message: `@${follower?.firstName || follower?.username || 'Someone'} is now following you!`,
-            icon: 'ðŸ‘¤',
+            icon: '👤',
             data: { 
               followerId: followerId,
               followerName: follower?.firstName || follower?.username
@@ -6627,7 +6696,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           // Send real-time notification via Pusher
           const sanitizedFollowingId = followingId.replace(/[^a-zA-Z0-9_\-=@,.;]/g, '_');
           await pusher.trigger(`user-${sanitizedFollowingId}`, 'new-follower', {
-            title: 'ðŸ‘¤ New Follower',
+            title: '👤 New Follower',
             message: `@${follower?.firstName || follower?.username || 'Someone'} is now following you!`,
             followerId: followerId,
             followerName: follower?.firstName || follower?.username,
@@ -6656,7 +6725,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const user = await storage.getUser(userId);
 
       // Create notification for successful share
-      let notificationTitle = 'ðŸ”— Content Shared!';
+      let notificationTitle = '🔗 Content Shared!';
       let notificationMessage = '';
 
       if (contentType === 'event') {
@@ -6829,7 +6898,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId: receiverId,
         type: 'gift_received',
-        title: 'ðŸ’° Gift Received',
+        title: '💰 Gift Received',
         message: `You received a gift of ${amount} coins from @${sender?.username || 'Someone'}!`,
         data: { 
           amount: amount,
@@ -6842,7 +6911,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       await storage.createNotification({
         userId: senderId,
         type: 'gift_sent',
-        title: 'ðŸ’¸ Gift Sent',
+        title: '💸 Gift Sent',
         message: `You gifted @${receiver?.username || 'User'} ${amount} coins!`,
         data: { 
           amount: amount,
@@ -6856,7 +6925,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const sanitizedSenderId = senderId.replace(/[^a-zA-Z0-9_\-=@,.;]/g, '_');
 
       await pusher.trigger(`user-${sanitizedReceiverId}`, 'tip-received', {
-        title: 'ðŸ’° Gift Received',
+        title: '💰 Gift Received',
         message: `You received a gift of ${amount} coins from @${sender?.username || 'Someone'}!`,
         amount: amount,
         senderId: senderId,
@@ -6865,7 +6934,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       });
 
       await pusher.trigger(`user-${sanitizedSenderId}`, 'tip-sent', {
-        title: 'ðŸ’¸ Gift Sent',
+        title: '💸 Gift Sent',
         message: `You gifted @${receiver?.username || 'User'} ${amount} coins!`,
         amount: amount,
         receiverId: receiverId,
@@ -7333,7 +7402,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   app.post('/api/admin/challenges', adminAuth, async (req: AdminAuthRequest, res) => {
     try {
       // Log the request to debug
-      console.log('\nðŸ” ADMIN CHALLENGE CREATE REQUEST:');
+      console.log('\n🔍 ADMIN CHALLENGE CREATE REQUEST:');
       console.log('Body keys:', Object.keys(req.body));
       console.log('Has req.files:', !!req.files);
       console.log('req.files type:', Array.isArray(req.files) ? `Array (${req.files.length})` : typeof req.files);
@@ -7372,13 +7441,13 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       // Validate required fields
       if (!title || !category || amount === undefined || amount === null || amount === '') {
-        console.log('âŒ Validation failed:', { title, category, amount });
+        console.log('❌ Validation failed:', { title, category, amount });
         return res.status(400).json({ message: `Missing required fields - title: ${title}, category: ${category}, amount: ${amount}` });
       }
 
       const amountNum = parseFloat(String(amount));
       if (isNaN(amountNum) || amountNum <= 0) {
-        console.log('âŒ Invalid amount:', amount);
+        console.log('❌ Invalid amount:', amount);
         return res.status(400).json({ message: "Invalid amount. Must be a number greater than 0" });
       }
 
@@ -7390,13 +7459,13 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       if (req.files) {
         if (Array.isArray(req.files) && req.files.length > 0) {
           uploadedFile = req.files[0];
-          console.log('âœ… Found file in array format');
+          console.log('✅ Found file in array format');
         } else if (!Array.isArray(req.files)) {
           // Check if coverImage field exists
           const files = req.files as any;
           if (files.coverImage) {
             uploadedFile = Array.isArray(files.coverImage) ? files.coverImage[0] : files.coverImage;
-            console.log('âœ… Found file in coverImage field');
+            console.log('✅ Found file in coverImage field');
           }
         }
       }
@@ -7407,12 +7476,12 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           const base64Data = uploadedFile.buffer.toString('base64');
           const mimeType = uploadedFile.mimetype || 'image/jpeg';
           coverImageUrl = `data:${mimeType};base64,${base64Data}`;
-          console.log('âœ… Cover image encoded as base64, size:', base64Data.length, 'bytes');
+          console.log('✅ Cover image encoded as base64, size:', base64Data.length, 'bytes');
         } catch (err: any) {
-          console.log('âŒ Error encoding image:', err.message);
+          console.log('❌ Error encoding image:', err.message);
         }
       } else {
-        console.log('âš ï¸ No file uploaded');
+        console.log('⚠️ No file uploaded');
       }
 
       // Create admin challenge
@@ -7436,7 +7505,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       };
 
       const challenge = await storage.createAdminChallenge(challengeData);
-      console.log('âœ… Challenge created successfully:', challenge.id);
+      console.log('✅ Challenge created successfully:', challenge.id);
 
       // Trigger notification infrastructure for newly created admin challenge
       try {
@@ -7454,6 +7523,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       if (telegramBot) {
         try {
           const admin = await storage.getUser((req as any).user?.id);
+          const stakeBroadcastMeta = buildChallengeStakeBroadcastMeta(challenge);
           await telegramBot.broadcastChallenge({
             id: challenge.id,
             title: challenge.title,
@@ -7463,19 +7533,21 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
               username: admin?.username || undefined,
             },
             stake_amount: parseFloat(String(challenge.amount || '0')),
+            stake_display: stakeBroadcastMeta.stakeDisplay,
+            settlement_label: stakeBroadcastMeta.settlementLabel,
             status: challenge.status,
             end_time: challenge.dueDate,
             category: category,
           });
-          console.log("ðŸ“¤ Admin challenge broadcasted to Telegram successfully");
+          console.log("📤 Admin challenge broadcasted to Telegram successfully");
         } catch (error) {
-          console.error("âŒ Failed to broadcast admin challenge to Telegram:", error);
+          console.error("❌ Failed to broadcast admin challenge to Telegram:", error);
         }
       }
 
       res.json(challenge);
     } catch (error: any) {
-      console.error("âŒ Error creating admin challenge:", error);
+      console.error("❌ Error creating admin challenge:", error);
       console.error("Error details:", {
         message: error?.message,
         code: error?.code,
@@ -7970,7 +8042,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       if (currentBalance < amount) {
         return res.status(400).json({ 
-          message: `Insufficient balance. Have â‚¦${currentBalance.toLocaleString()}, need â‚¦${amount.toLocaleString()}` 
+          message: `Insufficient balance. Have ₦${currentBalance.toLocaleString()}, need ₦${amount.toLocaleString()}` 
         });
       }
 
@@ -7978,7 +8050,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       // TODO: Store and retrieve admin's bank account details
       // For now, return message that they need to set up their bank account
       
-      console.log(`Processing withdrawal for admin ${adminId}: â‚¦${amount}`);
+      console.log(`Processing withdrawal for admin ${adminId}: ₦${amount}`);
 
       // Deduct from balance first
       const newBalance = currentBalance - amount;
@@ -8059,7 +8131,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       if (bonusAmountNum > 0 && adminBalance < bonusAmountNum) {
         return res.status(400).json({ 
-          message: `Insufficient wallet balance. Need â‚¦${bonusAmountNum.toLocaleString()}, but only have â‚¦${adminBalance.toLocaleString()}` 
+          message: `Insufficient wallet balance. Need ₦${bonusAmountNum.toLocaleString()}, but only have ₦${adminBalance.toLocaleString()}` 
         });
       }
 
@@ -8988,7 +9060,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       res.json({
         success: true,
         config,
-        message: `Treasury config created: max risk â‚¦${maxTreasuryRisk}`,
+        message: `Treasury config created: max risk ₦${maxTreasuryRisk}`,
       });
     } catch (error) {
       console.error('Create Treasury config error:', error);

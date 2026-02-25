@@ -1,4 +1,4 @@
-import { Card, CardContent } from "@/components/ui/card";
+﻿import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -457,7 +457,7 @@ export function NotificationCard({ notification, onMarkAsRead }: NotificationCar
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="challengeAmount" className="text-xs font-medium">Stake (₦)</Label>
+                <Label htmlFor="challengeAmount" className="text-xs font-medium">Stake ()</Label>
                 <Input
                   id="challengeAmount"
                   type="number"
@@ -600,3 +600,4 @@ export function NotificationCard({ notification, onMarkAsRead }: NotificationCar
     </>
   );
 }
+
