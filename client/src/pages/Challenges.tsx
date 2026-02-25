@@ -42,16 +42,10 @@ import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useWallets } from "@privy-io/react-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { UserAvatar } from "@/components/UserAvatar";
-import {
-  executeOnchainEscrowStakeTx,
-  type OnchainRuntimeConfig,
-  type OnchainTokenSymbol,
-} from "@/lib/onchainEscrow";
 import {
   MessageCircle,
   Clock,
@@ -61,6 +55,8 @@ import {
   Users,
   Shield,
   Search,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -92,20 +88,15 @@ function ChallengeCardSkeleton() {
 const createChallengeSchema = z.object({
   // challenged is optional for open challenges; enforced client-side for direct mode
   challenged: z.string().optional(),
-  challengedWalletAddress: z.string().optional(),
   title: z.string().min(1, "").max(200, "Title too long"),
   category: z.string().min(1, ""),
   amount: z.string().min(1, ""),
   dueDate: z.string().optional(),
   challengerSide: z.enum(["YES", "NO"]).default("YES"), // Default to YES if not selected
-  chainId: z.string().optional(),
-  tokenSymbol: z.enum(["USDC", "USDT", "ETH"]).default("ETH"),
 });
 
 export default function Challenges() {
-  const isOnchainBuild = (import.meta as any).env?.VITE_APP_MODE === "onchain";
   const { user } = useAuth();
-  const { wallets } = useWallets();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -113,18 +104,13 @@ export default function Challenges() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
   const [showChat, setShowChat] = useState(false);
-  const [challengeStatusTab, setChallengeStatusTab] = useState<'all' | 'p2p' | 'open' | 'communities' | 'active' | 'pending' | 'finished'>('all');
+  const [challengeStatusTab, setChallengeStatusTab] = useState<'all' | 'p2p' | 'open' | 'updown' | 'communities' | 'active' | 'pending' | 'finished'>('all');
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [preSelectedUser, setPreSelectedUser] = useState<any>(null);
   const [visibleChallengeCount, setVisibleChallengeCount] = useState(12);
   useEffect(() => {
     if (preSelectedUser) setCreateMode('direct');
   }, [preSelectedUser]);
-  useEffect(() => {
-    if (isOnchainBuild && challengeStatusTab === "communities") {
-      setChallengeStatusTab("all");
-    }
-  }, [isOnchainBuild, challengeStatusTab]);
   const [selectedTab, setSelectedTab] = useState<string>('featured');
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -157,92 +143,13 @@ export default function Challenges() {
     resolver: zodResolver(createChallengeSchema),
     defaultValues: {
       challenged: "",
-      challengedWalletAddress: "",
       title: "",
       category: "Sport",
       amount: "",
       dueDate: "",
       challengerSide: "YES",
-      chainId: "",
-      tokenSymbol: "ETH",
     },
   });
-
-  const { data: onchainConfig } = useQuery<OnchainRuntimeConfig>({
-    queryKey: ["/api/onchain/config"],
-    queryFn: async () => await apiRequest("GET", "/api/onchain/config"),
-    retry: false,
-    enabled: isOnchainBuild,
-    staleTime: 1000 * 60 * 5,
-  });
-
-  const chainOptions = useMemo(
-    () =>
-      Object.values(onchainConfig?.chains || {}).sort(
-        (a, b) => Number(a.chainId) - Number(b.chainId),
-      ),
-    [onchainConfig],
-  );
-
-  const createEnabledChainOptions = useMemo(() => {
-    if (!isOnchainBuild) return chainOptions;
-    if (!onchainConfig?.contractEnabled) return chainOptions;
-    return chainOptions.filter(
-      (chain) => typeof chain.escrowContractAddress === "string" && chain.escrowContractAddress.trim().length > 0,
-    );
-  }, [chainOptions, isOnchainBuild, onchainConfig?.contractEnabled]);
-  const displayedCreateChainOptions =
-    createEnabledChainOptions.length > 0 ? createEnabledChainOptions : chainOptions;
-
-  const selectedChainId = Number(
-    form.watch("chainId") || onchainConfig?.defaultChainId || 0,
-  );
-  const selectedChain =
-    createEnabledChainOptions.find((chain) => Number(chain.chainId) === selectedChainId) ||
-    (onchainConfig?.defaultChainId
-      ? createEnabledChainOptions.find(
-          (chain) => Number(chain.chainId) === Number(onchainConfig.defaultChainId),
-        )
-      : undefined) ||
-    createEnabledChainOptions[0] ||
-    chainOptions.find((chain) => Number(chain.chainId) === selectedChainId) ||
-    chainOptions[0];
-
-  const tokenOptions = selectedChain
-    ? Object.values(selectedChain.tokens || {})
-    : [];
-
-  useEffect(() => {
-    if (!isOnchainBuild || !onchainConfig) return;
-
-    const existingChain = form.getValues("chainId");
-    const enabledChains = createEnabledChainOptions.length > 0
-      ? createEnabledChainOptions
-      : chainOptions;
-    const fallbackChainId =
-      enabledChains.find((chain) => Number(chain.chainId) === Number(onchainConfig.defaultChainId))
-        ?.chainId || enabledChains[0]?.chainId;
-    const hasExistingChain = enabledChains.some(
-      (chain) => Number(chain.chainId) === Number(existingChain),
-    );
-
-    if ((!existingChain || !hasExistingChain) && fallbackChainId) {
-      form.setValue("chainId", String(fallbackChainId), { shouldDirty: false });
-    }
-
-    const existingToken = form.getValues("tokenSymbol");
-    const availableTokens = tokenOptions.filter(
-      (token) => token.isNative || !!token.address,
-    );
-    const fallbackToken =
-      availableTokens.find((token) => token.symbol === onchainConfig.defaultToken)?.symbol ||
-      availableTokens[0]?.symbol ||
-      "ETH";
-    const hasToken = availableTokens.some((token) => token.symbol === existingToken);
-    if (!existingToken || !hasToken) {
-      form.setValue("tokenSymbol", fallbackToken, { shouldDirty: false });
-    }
-  }, [isOnchainBuild, onchainConfig, tokenOptions, form, createEnabledChainOptions, chainOptions]);
 
   const normalizeP2PStatus = (challenge: any) => {
     const rawStatus = String(challenge?.status || "").toLowerCase();
@@ -251,10 +158,7 @@ export default function Challenges() {
     const challenged = typeof challenge?.challenged === "string"
       ? challenge.challenged.trim()
       : challenge?.challenged;
-    const challengedWalletAddress = String(
-      challenge?.challengedWalletAddress || challenge?.challenged_wallet_address || "",
-    ).trim();
-    const hasDesignatedOpponent = !!challenged || !!challengedWalletAddress;
+    const hasDesignatedOpponent = !!challenged;
 
     if (rawStatus === "open" || rawStatus === "pending") {
       return hasDesignatedOpponent ? "pending" : "open";
@@ -263,12 +167,24 @@ export default function Challenges() {
     return rawStatus || "pending";
   };
 
+  const isBtcUpDownChallenge = (challenge: any) => {
+    if (!challenge) return false;
+    const title = String(challenge?.title || "").toLowerCase();
+    const category = String(challenge?.category || "").toLowerCase();
+    return (
+      challenge?.adminCreated === true &&
+      category === "crypto" &&
+      (title.includes("bitcoin") || title.includes("btc")) &&
+      (
+        title.includes("up or down") ||
+        title.includes("up/down") ||
+        (title.includes("up") && title.includes("down"))
+      )
+    );
+  };
+
   const { data: challenges = [], isLoading } = useQuery<any[]>({
-    queryKey: [
-      "/api/challenges",
-      isOnchainBuild,
-      Boolean(onchainConfig?.contractEnabled),
-    ],
+    queryKey: ["/api/challenges"],
     queryFn: async () => {
       try {
         // Always fetch public admin challenges + community-linked challenge metadata
@@ -340,24 +256,7 @@ export default function Challenges() {
           }
         }
 
-        const visibleChallenges = merged.filter((challenge: any) => {
-          if (!isOnchainBuild) return true;
-          if (challenge?.adminCreated) return true;
-
-          const settlementRail = String(
-            challenge?.settlementRail ?? challenge?.settlement_rail ?? "",
-          ).toLowerCase();
-          const isOnchainRail = settlementRail === "onchain" || settlementRail === "";
-          if (!isOnchainRail) return true;
-          if (!onchainConfig?.contractEnabled) return true;
-
-          const escrowTxHash = String(
-            challenge?.escrowTxHash ?? challenge?.escrow_tx_hash ?? "",
-          ).trim();
-          return /^0x[a-fA-F0-9]{64}$/.test(escrowTxHash);
-        });
-
-        return visibleChallenges.map((challenge: any) => ({
+        return merged.map((challenge: any) => ({
           ...challenge,
           community: communityByChallengeId.get(Number(challenge?.id)) || challenge?.community || null,
           status: normalizeP2PStatus(challenge),
@@ -470,46 +369,13 @@ export default function Challenges() {
 
   const createChallengeMutation = useMutation({
     mutationFn: async (data: z.infer<typeof createChallengeSchema>) => {
-      const challengeData: any = {
+      const challengeData = {
         ...data,
         amount: data.amount, // Keep as string for backend validation
-        chainId: isOnchainBuild ? Number(data.chainId) : undefined,
-        tokenSymbol: isOnchainBuild ? data.tokenSymbol : undefined,
         dueDate: data.dueDate
           ? new Date(data.dueDate).toISOString()
           : undefined,
       };
-
-      if (isOnchainBuild && onchainConfig?.contractEnabled) {
-        const selectedChainId = Number(data.chainId || onchainConfig.defaultChainId);
-        const selectedToken = (data.tokenSymbol ||
-          onchainConfig.defaultToken) as OnchainTokenSymbol;
-
-        const walletAddressCandidates = [
-          (user as any)?.walletAddress,
-          (user as any)?.primaryWalletAddress,
-          (user as any)?.wallet?.address,
-          Array.isArray((user as any)?.walletAddresses)
-            ? (user as any).walletAddresses[0]
-            : null,
-        ];
-        const preferredWalletAddress = walletAddressCandidates.find(
-          (entry) => typeof entry === "string" && entry.trim().length > 0,
-        ) as string | undefined;
-
-        const escrowTx = await executeOnchainEscrowStakeTx({
-          wallets: wallets as any,
-          preferredWalletAddress,
-          onchainConfig,
-          chainId: selectedChainId,
-          tokenSymbol: selectedToken,
-          amount: data.amount,
-        });
-
-        challengeData.escrowTxHash = escrowTx.escrowTxHash;
-        challengeData.walletAddress = escrowTx.walletAddress;
-      }
-
       await apiRequest("POST", "/api/challenges", challengeData);
     },
     onSuccess: () => {
@@ -534,29 +400,24 @@ export default function Challenges() {
         }, 500);
         return;
       }
-      const isWalletRequired = /WALLET_REQUIRED|Wallet required|Connect an EVM wallet/i.test(
-        error.message || "",
-      );
       toast({
-        title: isWalletRequired ? "Wallet required" : "Error",
-        description: isWalletRequired
-          ? "Connect an EVM wallet in Privy, then retry creating the challenge."
-          : error.message,
+        title: "Error",
+        description: error.message,
         variant: "destructive",
       });
     },
   });
 
   const categories = [
-    { id: "create", label: "Create", icon: "/assets/create.png", emoji: "✨", gradient: "from-green-400 to-emerald-500", isCreate: true, value: "create" },
-    { id: "all", label: "All", icon: "/assets/versus.svg", emoji: "🎯", gradient: "from-blue-400 to-purple-500", value: "all" },
-    { id: "sports", label: "Sports", icon: "/assets/sportscon.svg", emoji: "⚽", gradient: "from-green-400 to-blue-500", value: "sports" },
-    { id: "gaming", label: "Gaming", icon: "/assets/gamingsvg.svg", emoji: "🎮", gradient: "from-gray-400 to-gray-600", value: "gaming" },
-    { id: "crypto", label: "Crypto", icon: "/assets/cryptosvg.svg", emoji: "₿", gradient: "from-yellow-400 to-orange-500", value: "crypto" },
-    { id: "trading", label: "Trading", icon: "/assets/cryptosvg.svg", emoji: "📈", gradient: "from-yellow-400 to-orange-500", value: "trading" },
-    { id: "music", label: "Music", icon: "/assets/musicsvg.svg", emoji: "🎵", gradient: "from-blue-400 to-purple-500", value: "music" },
-    { id: "entertainment", label: "Entertainment", icon: "/assets/popcorn.svg", emoji: "🎬", gradient: "from-pink-400 to-red-500", value: "entertainment" },
-    { id: "politics", label: "Politics", icon: "/assets/poltiii.svg", emoji: "🗳️", gradient: "from-green-400 to-teal-500", value: "politics" },
+    { id: "create", label: "Create", icon: "/assets/create.png", emoji: "?", gradient: "from-green-400 to-emerald-500", isCreate: true, value: "create" },
+    { id: "all", label: "All", icon: "/assets/versus.svg", emoji: "??", gradient: "from-blue-400 to-purple-500", value: "all" },
+    { id: "sports", label: "Sports", icon: "/assets/sportscon.svg", emoji: "?", gradient: "from-green-400 to-blue-500", value: "sports" },
+    { id: "gaming", label: "Gaming", icon: "/assets/gamingsvg.svg", emoji: "??", gradient: "from-gray-400 to-gray-600", value: "gaming" },
+    { id: "crypto", label: "Crypto", icon: "/assets/cryptosvg.svg", emoji: "?", gradient: "from-yellow-400 to-orange-500", value: "crypto" },
+    { id: "trading", label: "Trading", icon: "/assets/cryptosvg.svg", emoji: "??", gradient: "from-yellow-400 to-orange-500", value: "trading" },
+    { id: "music", label: "Music", icon: "/assets/musicsvg.svg", emoji: "??", gradient: "from-blue-400 to-purple-500", value: "music" },
+    { id: "entertainment", label: "Entertainment", icon: "/assets/popcorn.svg", emoji: "??", gradient: "from-pink-400 to-red-500", value: "entertainment" },
+    { id: "politics", label: "Politics", icon: "/assets/poltiii.svg", emoji: "???", gradient: "from-green-400 to-teal-500", value: "politics" },
   ];
 
   const filteredChallenges = useMemo(() => challenges.filter((challenge: any) => {
@@ -594,6 +455,7 @@ export default function Challenges() {
       challengeStatusTab === 'all' ? true :
       challengeStatusTab === 'p2p' ? !isAdminCreated :
       challengeStatusTab === 'open' ? (normalizedStatus === 'open' && !isFinishedChallenge) :
+      challengeStatusTab === 'updown' ? isBtcUpDownChallenge(challenge) :
       challengeStatusTab === 'communities' ? isCommunityChallenge :
       challengeStatusTab === 'active' ? (normalizedStatus === 'active' && !isFinishedChallenge) :
       challengeStatusTab === 'pending' ? (normalizedStatus === 'pending' && !isFinishedChallenge) :
@@ -671,29 +533,11 @@ export default function Challenges() {
   }, [selectedTab, user, pendingChallenges.length, awaitingResolutionChallenges.length]);
 
   const onSubmit = (data: z.infer<typeof createChallengeSchema>) => {
-    const normalizedTargetWallet = String(data.challengedWalletAddress || "").trim().toLowerCase();
-    const hasTargetWallet = /^0x[a-f0-9]{40}$/.test(normalizedTargetWallet);
-
     // Ensure direct-mode has a challenged user selected
-    if (createMode === 'direct' && !data.challenged && !preSelectedUser && !normalizedTargetWallet) {
+    if (createMode === 'direct' && !data.challenged && !preSelectedUser) {
       toast({
-        title: "Select opponent",
-        description: "Select a friend or enter a wallet address to challenge.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (
-      createMode === "direct" &&
-      normalizedTargetWallet &&
-      !hasTargetWallet &&
-      !data.challenged &&
-      !preSelectedUser
-    ) {
-      toast({
-        title: "Invalid wallet",
-        description: "Enter a valid EVM wallet address (0x...).",
+        title: "Select a user",
+        description: "Please select a friend to challenge.",
         variant: "destructive",
       });
       return;
@@ -703,7 +547,7 @@ export default function Challenges() {
     const currentBalance =
       balance && typeof balance === "object" ? (balance as any).balance : balance;
 
-    if (!isOnchainBuild && amount > currentBalance) {
+    if (amount > currentBalance) {
       toast({
         title: "Insufficient Balance",
         description: "You don't have enough funds to create this challenge.",
@@ -714,74 +558,11 @@ export default function Challenges() {
 
     // Build payload depending on mode
     const payload: any = { ...data };
-    if (isOnchainBuild) {
-      if (!onchainConfig) {
-        toast({
-          title: "Network config loading",
-          description: "Please wait a moment and try again.",
-          variant: "destructive",
-        });
-        return;
-      }
-      if (!data.chainId) {
-        toast({
-          title: "Select chain",
-          description: "Choose Base, BSC or Arbitrum testnet.",
-          variant: "destructive",
-        });
-        return;
-      }
-      const selectedChainConfig = chainOptions.find(
-        (chain) => Number(chain.chainId) === Number(data.chainId),
-      );
-      const isChainEscrowConfigured =
-        !onchainConfig?.contractEnabled ||
-        !!selectedChainConfig?.escrowContractAddress;
-      if (!selectedChainConfig || !isChainEscrowConfigured) {
-        toast({
-          title: "Chain not configured",
-          description:
-            "This network is not fully configured for contract escrow yet. Select another chain.",
-          variant: "destructive",
-        });
-        return;
-      }
-      if (!data.tokenSymbol) {
-        toast({
-          title: "Select token",
-          description: "Choose a token for this challenge.",
-          variant: "destructive",
-        });
-        return;
-      }
-      const selectedToken = tokenOptions.find(
-        (token) => token.symbol === data.tokenSymbol,
-      );
-      if (!selectedToken || (!selectedToken.isNative && !selectedToken.address)) {
-        toast({
-          title: "Token not configured",
-          description: `${data.tokenSymbol} is not configured for this testnet yet.`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
     if (createMode === 'direct') {
-      const selectedUserId = preSelectedUser?.id || data.challenged;
-      if (selectedUserId) {
-        payload.challenged = selectedUserId;
-        payload.challengedWalletAddress = "";
-      } else if (hasTargetWallet) {
-        payload.challenged = "";
-        payload.challengedWalletAddress = normalizedTargetWallet;
-      } else {
-        payload.challenged = "";
-        payload.challengedWalletAddress = "";
-      }
+      payload.challenged = preSelectedUser?.id || data.challenged;
     } else {
       // open challenge: set challenged to empty string
       payload.challenged = "";
-      payload.challengedWalletAddress = "";
     }
 
     createChallengeMutation.mutate(payload);
@@ -792,8 +573,26 @@ export default function Challenges() {
     // This allows users to view the activity page even if they're not a participant.
     window.location.href = `/challenges/${challenge.id}/activity`;
   };
-
   const handleJoin = (challenge: any) => {
+    const title = String(challenge?.title || "").toLowerCase();
+    const category = String(challenge?.category || "").toLowerCase();
+    const isUpDownMarket =
+      challenge?.adminCreated === true &&
+      category === "crypto" &&
+      (title.includes("bitcoin") || title.includes("btc")) &&
+      (
+        title.includes("up or down") ||
+        title.includes("up/down") ||
+        (title.includes("up") && title.includes("down"))
+      );
+
+    if (isUpDownMarket) {
+      const selectedSideRaw = String(challenge?.selectedSide || "").trim().toUpperCase();
+      const selectedSide = selectedSideRaw === "NO" ? "NO" : "YES";
+      window.location.href = `/challenges/${challenge.id}/activity?side=${selectedSide}`;
+      return;
+    }
+
     setSelectedChallenge(challenge);
     setShowJoinModal(true);
   };
@@ -976,14 +775,25 @@ export default function Challenges() {
               >
                 Open
               </TabsTrigger>
-              {!isOnchainBuild && (
-                <TabsTrigger 
-                  value="communities" 
-                  className="text-xs px-3 py-1.5 rounded-full data-[state=active]:bg-[#ccff00] data-[state=active]:text-black whitespace-nowrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all h-auto"
-                >
-                  Communities
-                </TabsTrigger>
-              )}
+              <TabsTrigger
+                value="updown" 
+                className="relative text-xs px-3 py-1.5 rounded-full data-[state=active]:bg-[#ccff00] data-[state=active]:text-black whitespace-nowrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all h-auto"
+              >
+                Up/Down
+                <span className="pointer-events-none absolute -top-1 -right-2">
+                  <span className="relative inline-flex items-center gap-0 rounded-full border border-emerald-200 bg-white px-1 h-4 shadow-sm">
+                    <span className="absolute inset-0 rounded-full animate-ping bg-emerald-300/50" />
+                    <ArrowUp className="relative h-3 w-3 text-emerald-600" />
+                    <ArrowDown className="relative h-3 w-3 text-red-600" />
+                  </span>
+                </span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="communities" 
+                className="text-xs px-3 py-1.5 rounded-full data-[state=active]:bg-[#ccff00] data-[state=active]:text-black whitespace-nowrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all h-auto"
+              >
+                Communities
+              </TabsTrigger>
               <TabsTrigger 
                 value="active" 
                 className="text-xs px-3 py-1.5 rounded-full data-[state=active]:bg-[#ccff00] data-[state=active]:text-black whitespace-nowrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all h-auto"
@@ -1076,7 +886,7 @@ export default function Challenges() {
               </button>
             </div>
             {/* Challenge Preview Card */}
-            {((createMode === 'direct' ? (form.watch("challenged") || preSelectedUser || String(form.watch("challengedWalletAddress") || "").trim()) : true) && form.watch("title") && form.watch("amount")) && (
+            {((createMode === 'direct' ? (form.watch("challenged") || preSelectedUser) : true) && form.watch("title") && form.watch("amount")) && (
               <div className="mb-3">
                 <div className="hidden sm:block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Preview</div>
                 <ChallengePreviewCard
@@ -1090,22 +900,11 @@ export default function Challenges() {
                     id: '',
                     firstName: 'Open Challenge',
                     username: 'open'
-                  } : (
-                    preSelectedUser ||
-                    (form.watch("challenged") ? {
-                      id: form.watch("challenged"),
-                      firstName: "Selected User",
-                      username: "user"
-                    } : (String(form.watch("challengedWalletAddress") || "").trim() ? {
-                      id: String(form.watch("challengedWalletAddress") || "").trim(),
-                      firstName: "Wallet Target",
-                      username: String(form.watch("challengedWalletAddress") || "").trim().toLowerCase(),
-                    } : {
-                      id: "",
-                      firstName: "Opponent",
-                      username: "opponent",
-                    }))
-                  )}
+                  } : (preSelectedUser || {
+                    id: form.watch("challenged"),
+                    firstName: "Selected User",
+                    username: "user"
+                  })}
                   title={form.watch("title")}
                   description={form.watch("description")}
                   category={form.watch("category")}
@@ -1149,7 +948,7 @@ export default function Challenges() {
                           >
                             <FormControl>
                               <SelectTrigger className="h-10 rounded-lg text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-primary/50 transition-colors">
-                                <SelectValue placeholder="👥 Select a friend to challenge" />
+                                <SelectValue placeholder="?? Select a friend to challenge" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="z-[80] border-0 shadow-md bg-white dark:bg-slate-800 rounded-lg">
@@ -1190,27 +989,6 @@ export default function Challenges() {
                   />
                 )}
 
-                {isOnchainBuild && createMode === "direct" && !preSelectedUser && (
-                  <FormField
-                    control={form.control}
-                    name="challengedWalletAddress"
-                    render={({ field }) => (
-                      <FormItem className="space-y-1">
-                        <FormLabel className="sr-only">Opponent wallet address</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Or paste opponent wallet (0x...)"
-                            className="h-8 text-sm"
-                            value={field.value || ""}
-                            onChange={(e) => field.onChange(e.target.value)}
-                          />
-                        </FormControl>
-                        <FormMessage className="text-xs" />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
                 {preSelectedUser && (
                   <div className="flex items-center space-x-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
@@ -1228,7 +1006,7 @@ export default function Challenges() {
                           preSelectedUser.username}
                       </p>
                       <p className="text-xs text-slate-500">
-                        Level {preSelectedUser.level || 1} •{" "}
+                        Level {preSelectedUser.level || 1} �{" "}
                         {preSelectedUser.points || 0} pts
                       </p>
                     </div>
@@ -1256,71 +1034,6 @@ export default function Challenges() {
                 />
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
-                  {isOnchainBuild && (
-                    <>
-                      <FormField
-                        control={form.control}
-                        name="chainId"
-                        render={({ field }) => (
-                          <FormItem className="space-y-1">
-                            <FormLabel className="sr-only">Network</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger className="h-8 text-sm bg-transparent border-none focus:ring-0">
-                                  <SelectValue placeholder="Network" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent className="bg-white dark:bg-slate-800 border-none ring-0 shadow-none">
-                                {displayedCreateChainOptions.map((chain) => (
-                                  <SelectItem
-                                    key={chain.chainId}
-                                    value={String(chain.chainId)}
-                                  >
-                                    {chain.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage className="text-xs" />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="tokenSymbol"
-                        render={({ field }) => (
-                          <FormItem className="space-y-1">
-                            <FormLabel className="sr-only">Token</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger className="h-8 text-sm bg-transparent border-none focus:ring-0">
-                                  <SelectValue placeholder="Token" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent className="bg-white dark:bg-slate-800 border-none ring-0 shadow-none">
-                                {tokenOptions.map((token) => {
-                                  const isAvailable = token.isNative || !!token.address;
-                                  return (
-                                    <SelectItem
-                                      key={token.symbol}
-                                      value={token.symbol}
-                                      disabled={!isAvailable}
-                                    >
-                                      {token.symbol}
-                                      {!isAvailable ? " (not configured)" : ""}
-                                    </SelectItem>
-                                  );
-                                })}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage className="text-xs" />
-                          </FormItem>
-                        )}
-                      />
-                    </>
-                  )}
-
                   <FormField
                     control={form.control}
                     name="category"
@@ -1362,11 +1075,13 @@ export default function Challenges() {
                     name="amount"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                          <FormLabel className="sr-only">Stake</FormLabel>
+                        <FormLabel className="sr-only">
+                            Stake (?)
+                          </FormLabel>
                         <FormControl>
                           <Input
                             type="number"
-                            placeholder={isOnchainBuild ? "Stake amount*" : "₦500*"}
+                            placeholder="?500*"
                             className="h-8 text-sm"
                             {...field}
                           />
@@ -1403,9 +1118,7 @@ export default function Challenges() {
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Potential Win:</span>
                       <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                        {isOnchainBuild
-                          ? `${(parseFloat(form.watch("amount") || "0") * 2).toLocaleString()} ${form.watch("tokenSymbol") || onchainConfig?.defaultToken || "ETH"}`
-                          : `₦${(parseFloat(form.watch("amount") || "0") * 2).toLocaleString()}`}
+                        ?{(parseFloat(form.watch("amount") || "0") * 2).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -1508,3 +1221,10 @@ export default function Challenges() {
     </div>
   );
 }
+
+
+
+
+
+
+

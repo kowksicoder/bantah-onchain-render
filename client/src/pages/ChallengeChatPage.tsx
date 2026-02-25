@@ -7,12 +7,14 @@ import ProfileCard from "@/components/ProfileCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getChallengeChannel } from "@/lib/pusher";
 import { apiRequest } from "@/lib/queryClient";
-import { MessageCircle, Users, Activity, Send, Trophy, DollarSign, UserPlus, Zap, Heart, Share2, Reply, ArrowLeft, Lock, Pin, LogIn } from "lucide-react";
+import { MessageCircle, Users, Activity, Send, Trophy, DollarSign, UserPlus, Zap, Heart, Share2, Reply, ArrowLeft, Lock, Pin } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { UserAvatar } from "@/components/UserAvatar";
 import P2PChallengeTradePanel from "@/components/P2PChallengeTradePanel";
+import { JoinChallengeModal } from "@/components/JoinChallengeModal";
 
 interface ExtendedMessage {
   id: string;
@@ -74,18 +76,11 @@ interface Challenge {
     firstName?: string;
     profileImageUrl?: string;
   };
-  settlementRail?: string;
-  settlement_rail?: string;
-  chainId?: number;
-  chain_id?: number;
-  tokenSymbol?: string;
-  token_symbol?: string;
 }
 
 export default function ChallengeChatPage() {
   const params = useParams();
   const challengeId = params.id ? parseInt(params.id) : null;
-  const isOnchainBuild = (import.meta as any).env?.VITE_APP_MODE === "onchain";
   const { user, isAuthenticated, login } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -97,14 +92,15 @@ export default function ChallengeChatPage() {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [showHeaderProofMenu, setShowHeaderProofMenu] = useState(false);
   const [countdownNowMs, setCountdownNowMs] = useState<number>(() => Date.now());
-
-  const requireSignInForAction = (actionLabel: string) => {
-    toast({
-      title: "Sign in required",
-      description: `Please sign in to ${actionLabel}.`,
-    });
-    login();
-  };
+  const [showUpDownJoinModal, setShowUpDownJoinModal] = useState(false);
+  const [upDownJoinSide, setUpDownJoinSide] = useState<"YES" | "NO">("YES");
+  const [selectedQuickAmount, setSelectedQuickAmount] = useState<"+$1" | "+$5" | "+$10" | "+$100" | "Max" | null>(null);
+  const quickAmountOptions: Array<"+$1" | "+$5" | "+$10" | "+$100" | "Max"> = ["+$1", "+$5", "+$10", "+$100", "Max"];
+  const [upDownStakeAmount, setUpDownStakeAmount] = useState<number>(0);
+  const [upDownPastSelection, setUpDownPastSelection] = useState("Past");
+  const [upDownCountdownTargetMs, setUpDownCountdownTargetMs] = useState<number | null>(null);
+  const [showUpDownTradeModal, setShowUpDownTradeModal] = useState(false);
+  const [showUpDownCommentComposer, setShowUpDownCommentComposer] = useState(false);
 
   const getRelativeTime = (value: unknown, fallback = "just now") => {
     if (!value) return fallback;
@@ -127,6 +123,25 @@ export default function ChallengeChatPage() {
     const normalized = String(value).trim().toUpperCase();
     return normalized === "YES" || normalized === "NO" ? normalized : null;
   };
+  const isBtcUpDownChallenge = (input?: Partial<Challenge> | null) => {
+    if (!input) return false;
+    const title = String(input.title || "").toLowerCase();
+    const category = String(input.category || "").toLowerCase();
+    return (
+      category === "crypto" &&
+      (title.includes("bitcoin") || title.includes("btc")) &&
+      (
+        title.includes("up or down") ||
+        title.includes("up/down") ||
+        (title.includes("up") && title.includes("down"))
+      )
+    );
+  };
+  const renderSideLabel = (side: "YES" | "NO" | null, asUpDown: boolean) => {
+    if (!side) return null;
+    if (!asUpDown) return side;
+    return side === "YES" ? "UP" : "DOWN";
+  };
 
   const formatGameEndsCountdown = (value: unknown): string => {
     if (!value) return "Game ends in --";
@@ -139,22 +154,6 @@ export default function ChallengeChatPage() {
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
     return `Game ends in ${hours}h:${minutes}m:${seconds}s`;
-  };
-  const getChainLabel = (id: number | null): string => {
-    if (!id) return "";
-    if (id === 84532) return "Base Sepolia";
-    if (id === 97) return "BSC Testnet";
-    if (id === 421614) return "Arbitrum Sepolia";
-    return `Chain ${id}`;
-  };
-  const formatAssetAmount = (value: number): string => {
-    if (!Number.isFinite(value)) return "0";
-    const absolute = Math.abs(value);
-    const maxFractionDigits = absolute >= 1000 ? 2 : absolute >= 1 ? 4 : 8;
-    return value.toLocaleString(undefined, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: maxFractionDigits,
-    });
   };
 
   useEffect(() => {
@@ -170,7 +169,25 @@ export default function ChallengeChatPage() {
     enabled: !!challengeId,
     retry: false,
   });
-  
+  const isBtcUpDownMarket = isBtcUpDownChallenge(challenge);
+  const isAdminUpDownMarket = isBtcUpDownMarket && challenge?.adminCreated === true;
+  const minUpDownStakeAmount = Math.max(1, Number.parseInt(String(challenge?.amount || "0"), 10) || 0);
+
+  useEffect(() => {
+    if (!isAdminUpDownMarket) return;
+    setUpDownStakeAmount(minUpDownStakeAmount);
+    setSelectedQuickAmount(null);
+  }, [challenge?.id, isAdminUpDownMarket, minUpDownStakeAmount]);
+
+  useEffect(() => {
+    if (!isAdminUpDownMarket) return;
+    const params = new URLSearchParams(window.location.search);
+    const side = String(params.get("side") || "").toUpperCase();
+    if (side === "YES" || side === "NO") {
+      setUpDownJoinSide(side);
+    }
+  }, [challenge?.id, isAdminUpDownMarket]);
+
   const isAdminChallenge = challenge?.adminCreated === true;
   const isMatchedUserChallenge = !!(
     !isAdminChallenge &&
@@ -228,26 +245,252 @@ export default function ChallengeChatPage() {
   const creatorSide =
     creatorSidePrimary ||
     (challengedSideNormalized ? (challengedSideNormalized === "YES" ? "NO" : "YES") : null);
+  const creatorSideLabel = renderSideLabel(creatorSide, isBtcUpDownMarket);
   const creatorIsOpponent = !!(creatorUser?.id && creatorUser.id === opponentUser?.id);
-  const settlementRail = String(
-    challenge?.settlementRail ?? challenge?.settlement_rail ?? "",
-  ).toLowerCase();
-  const chainIdRaw = challenge?.chainId ?? challenge?.chain_id;
-  const chainId = Number.isFinite(Number(chainIdRaw)) ? Number(chainIdRaw) : null;
-  const tokenSymbol = String(
-    challenge?.tokenSymbol ?? challenge?.token_symbol ?? "",
-  ).toUpperCase();
-  const effectiveTokenSymbol = isOnchainBuild ? (tokenSymbol || "ETH") : tokenSymbol;
-  const isOnchainChallenge = isOnchainBuild;
-  const chainLabel = getChainLabel(chainId);
-  const stakeAmountValue = parseFloat(String(challenge?.amount || 0)) || 0;
-  const potentialWinValue = stakeAmountValue * 2;
-  const stakeDisplay = isOnchainChallenge && effectiveTokenSymbol
-    ? `${formatAssetAmount(stakeAmountValue)} ${effectiveTokenSymbol}`
-    : `NGN ${stakeAmountValue.toLocaleString()}`;
-  const winDisplay = isOnchainChallenge && effectiveTokenSymbol
-    ? `${formatAssetAmount(potentialWinValue)} ${effectiveTokenSymbol}`
-    : `NGN ${potentialWinValue.toLocaleString()}`;
+  const [btcSeries, setBtcSeries] = useState<number[]>([]);
+  const [btcPrice, setBtcPrice] = useState<number | null>(null);
+  const [btcPriceToBeat, setBtcPriceToBeat] = useState<number | null>(null);
+  const [btcFeedLoading, setBtcFeedLoading] = useState(false);
+  const [btcFeedError, setBtcFeedError] = useState<string | null>(null);
+  const roundDurationMs = 5 * 60 * 1000;
+  const futureTimeOptionCount = 37;
+  const currentRoundStartMs = Math.floor(countdownNowMs / roundDurationMs) * roundDurationMs;
+  const currentRoundEndMs = currentRoundStartMs + roundDurationMs;
+  const formatUsd = (value: number | null) => {
+    if (!Number.isFinite(value ?? NaN)) return "--";
+    return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  const formatEtDate = (ms: number) =>
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      month: "long",
+      day: "numeric",
+    }).format(new Date(ms));
+  const formatEtTime = (ms: number) =>
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+      .format(new Date(ms))
+      .replace(" ", "");
+  const upDownWindowLabel = `${formatEtDate(currentRoundStartMs)}, ${formatEtTime(currentRoundStartMs)}-${formatEtTime(currentRoundEndMs)} ET`;
+  const upDownTimeSlots = Array.from({ length: 4 }, (_, index) => {
+    const targetMs = currentRoundEndMs + index * roundDurationMs;
+    return { value: targetMs, label: formatEtTime(targetMs) };
+  });
+  const upDownFutureTimeOptions = Array.from({ length: futureTimeOptionCount }, (_, index) => {
+    const targetMs = currentRoundEndMs + index * roundDurationMs;
+    return { value: targetMs, label: formatEtTime(targetMs) };
+  });
+  const effectiveCountdownTargetMs = upDownCountdownTargetMs ?? currentRoundEndMs;
+  const upDownRemainingMs = Math.max(effectiveCountdownTargetMs - countdownNowMs, 0);
+  const upDownCountdown = (() => {
+    const totalSeconds = Math.floor(upDownRemainingMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+    }
+    return `${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+  })();
+  useEffect(() => {
+    if (!isAdminUpDownMarket) return;
+    const maxTargetMs = currentRoundEndMs + (futureTimeOptionCount - 1) * roundDurationMs;
+    setUpDownCountdownTargetMs((previous) => {
+      if (previous === null) return currentRoundEndMs;
+      if (previous < currentRoundEndMs || previous > maxTargetMs) return currentRoundEndMs;
+      return previous;
+    });
+  }, [isAdminUpDownMarket, currentRoundEndMs, roundDurationMs, futureTimeOptionCount]);
+  const upDownDirectionLabel = (() => {
+    if (btcPriceToBeat === null || btcPrice === null) return "--";
+    return btcPrice >= btcPriceToBeat ? "UP" : "DOWN";
+  })();
+  const upDownHeadline = (() => {
+    const title = String(challenge?.title || "").trim();
+    if (!title) return "BTC Up or Down - 5 minutes";
+    return title.toLowerCase().includes("minute") ? title : `${title} - 5 minutes`;
+  })();
+  const formatChartTime = (ms: number) =>
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(ms));
+  const formatPercentDelta = (value: number | null) => {
+    if (value === null || !Number.isFinite(value)) return "--";
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${value.toFixed(4)}%`;
+  };
+  const upDownPercentDelta = (() => {
+    if (btcPriceToBeat === null || btcPrice === null || btcPriceToBeat === 0) return null;
+    return ((btcPrice - btcPriceToBeat) / btcPriceToBeat) * 100;
+  })();
+  const estimatedUpContractPrice = (() => {
+    if (upDownPercentDelta === null || !Number.isFinite(upDownPercentDelta)) return 0.5;
+    const logistic = 1 / (1 + Math.exp(-(upDownPercentDelta / 0.112)));
+    return Math.min(0.9, Math.max(0.1, logistic));
+  })();
+  const selectedContractPrice = upDownJoinSide === "YES"
+    ? estimatedUpContractPrice
+    : (1 - estimatedUpContractPrice);
+  const upDownEnteredStake = upDownStakeAmount > 0 ? upDownStakeAmount : 0;
+  const upDownEstimatedToWin = upDownEnteredStake > 0
+    ? upDownEnteredStake * ((1 - selectedContractPrice) / selectedContractPrice)
+    : 0;
+  const chartSeries = (() => {
+    if (btcSeries.length >= 2) return btcSeries.slice(-45);
+    if (btcPriceToBeat !== null && btcPrice !== null) return [btcPriceToBeat, btcPrice];
+    if (btcPrice !== null) return [btcPrice, btcPrice];
+    return [];
+  })();
+  const chartWidth = 760;
+  const chartPlotHeight = 190;
+  const chartBottomPadding = 28;
+  const chartCanvasHeight = chartPlotHeight + chartBottomPadding;
+  const chartGeometry = (() => {
+    const allValues = [...chartSeries];
+    if (btcPriceToBeat !== null) allValues.push(btcPriceToBeat);
+    if (btcPrice !== null) allValues.push(btcPrice);
+    if (allValues.length === 0) {
+      return {
+        linePath: "",
+        areaPath: "",
+        yTicks: [] as Array<{ y: number; value: number }>,
+        xTicks: [] as Array<{ x: number; label: string }>,
+        currentY: null as number | null,
+        beatY: null as number | null,
+        latestPoint: null as { x: number; y: number } | null,
+      };
+    }
+
+    const sourceMin = Math.min(...allValues);
+    const sourceMax = Math.max(...allValues);
+    const dynamicPadding = Math.max((sourceMax - sourceMin) * 0.4, 8);
+    const minValue = sourceMin - dynamicPadding;
+    const maxValue = sourceMax + dynamicPadding;
+    const range = Math.max(maxValue - minValue, 1);
+    const toY = (value: number | null) => {
+      if (value === null || !Number.isFinite(value)) return null;
+      return chartPlotHeight - ((value - minValue) / range) * chartPlotHeight;
+    };
+
+    const points = chartSeries.map((value, index) => {
+      const x = chartSeries.length > 1 ? (index / (chartSeries.length - 1)) * chartWidth : chartWidth;
+      const y = chartPlotHeight - ((value - minValue) / range) * chartPlotHeight;
+      return { x, y, value };
+    });
+    const linePath = points
+      .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+      .join(" ");
+    const areaPath =
+      points.length >= 2
+        ? `${linePath} L ${points[points.length - 1].x.toFixed(2)} ${chartPlotHeight.toFixed(2)} L ${points[0].x.toFixed(2)} ${chartPlotHeight.toFixed(2)} Z`
+        : "";
+
+    const yTicks = Array.from({ length: 6 }, (_, index) => {
+      const ratio = index / 5;
+      return {
+        y: Number((ratio * chartPlotHeight).toFixed(2)),
+        value: maxValue - ratio * range,
+      };
+    });
+    const xTicks = Array.from({ length: 6 }, (_, index) => {
+      const ratio = index / 5;
+      return {
+        x: Number((ratio * chartWidth).toFixed(2)),
+        label: formatChartTime(currentRoundStartMs + ratio * roundDurationMs),
+      };
+    });
+
+    return {
+      linePath,
+      areaPath,
+      yTicks,
+      xTicks,
+      currentY: toY(btcPrice),
+      beatY: toY(btcPriceToBeat),
+      latestPoint: points[points.length - 1] || null,
+    };
+  })();
+
+  useEffect(() => {
+    if (!isAdminUpDownMarket) {
+      setBtcSeries([]);
+      setBtcPrice(null);
+      setBtcPriceToBeat(null);
+      setBtcFeedError(null);
+      setBtcFeedLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadBtc = async () => {
+      try {
+        setBtcFeedLoading(true);
+        const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=60");
+        if (!response.ok) {
+          throw new Error(`BTC feed unavailable (${response.status})`);
+        }
+        const raw = await response.json();
+        if (!Array.isArray(raw)) {
+          throw new Error("Invalid BTC feed payload");
+        }
+
+        const candles = raw
+          .map((item: any) => ({
+            openTime: Number(item?.[0]),
+            closeTime: Number(item?.[6]),
+            open: Number(item?.[1]),
+            close: Number(item?.[4]),
+          }))
+          .filter((item: any) =>
+            Number.isFinite(item.openTime) &&
+            Number.isFinite(item.closeTime) &&
+            Number.isFinite(item.open) &&
+            Number.isFinite(item.close),
+          );
+
+        if (candles.length === 0) {
+          throw new Error("No BTC candles available");
+        }
+
+        const latestClose = candles[candles.length - 1].close;
+        const roundCandle =
+          candles.find((candle: any) => candle.openTime === currentRoundStartMs) ||
+          candles.find((candle: any) => candle.openTime <= currentRoundStartMs && currentRoundStartMs < candle.closeTime) ||
+          candles[candles.length - 1];
+
+        if (!cancelled) {
+          setBtcSeries(candles.slice(-30).map((item: any) => item.close));
+          setBtcPrice(latestClose);
+          setBtcPriceToBeat(roundCandle?.open ?? null);
+          setBtcFeedError(null);
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setBtcFeedError(error?.message || "Live BTC feed unavailable");
+        }
+      } finally {
+        if (!cancelled) {
+          setBtcFeedLoading(false);
+        }
+      }
+    };
+
+    loadBtc();
+    const interval = window.setInterval(loadBtc, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isAdminUpDownMarket, currentRoundStartMs]);
   
   // Keep the selected tab valid as access context changes.
   useEffect(() => {
@@ -288,6 +531,12 @@ export default function ChallengeChatPage() {
     }
   }, [challengeId, toast]);
 
+  useEffect(() => {
+    if (!isAdminUpDownMarket || activeTab !== "comments") {
+      setShowUpDownCommentComposer(false);
+    }
+  }, [isAdminUpDownMarket, activeTab]);
+
   const messagesQueryKey = [`/api/challenges/${challengeId}/messages`];
   const { data: messages = [], refetch: refetchMessages } = useQuery<ExtendedMessage[]>({
     queryKey: messagesQueryKey,
@@ -312,6 +561,131 @@ export default function ChallengeChatPage() {
     enabled: !!challengeId,
     retry: false,
   });
+  const { data: walletBalance = 0 } = useQuery<number>({
+    queryKey: ["/api/wallet/balance"],
+    enabled: !!user?.id,
+    retry: false,
+    refetchInterval: 5000,
+  });
+
+  const handleQuickAmountPick = (option: "+$1" | "+$5" | "+$10" | "+$100" | "Max") => {
+    setSelectedQuickAmount(option);
+    setUpDownStakeAmount((prev) => {
+      const current = prev > 0 ? prev : minUpDownStakeAmount;
+      if (option === "Max") {
+        const maxFromWallet = Math.floor(Number(walletBalance || 0));
+        return maxFromWallet > 0 ? maxFromWallet : current;
+      }
+      const increment = Number.parseInt(option.replace("+$", ""), 10);
+      if (!Number.isFinite(increment) || increment <= 0) return current;
+      return current + increment;
+    });
+  };
+  const handleOpenUpDownJoin = (closeMobileTradeModal = false) => {
+    if (!isAuthenticated) {
+      if (closeMobileTradeModal) {
+        setShowUpDownTradeModal(false);
+      }
+      login();
+      return;
+    }
+    const effectiveStake = upDownStakeAmount > 0 ? upDownStakeAmount : minUpDownStakeAmount;
+    if (effectiveStake < minUpDownStakeAmount) {
+      toast({
+        title: "Invalid amount",
+        description: `Minimum entry is NGN ${minUpDownStakeAmount.toLocaleString()}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (closeMobileTradeModal) {
+      setShowUpDownTradeModal(false);
+    }
+    setShowUpDownJoinModal(true);
+  };
+  const renderUpDownTradeSection = (closeMobileTradeModal = false) => (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setUpDownJoinSide("YES")}
+          className={`h-11 rounded-full border text-base font-bold transition-colors ${
+            upDownJoinSide === "YES"
+              ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              : "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+          }`}
+        >
+          Up
+        </button>
+        <button
+          type="button"
+          onClick={() => setUpDownJoinSide("NO")}
+          className={`h-11 rounded-full border text-base font-bold transition-colors ${
+            upDownJoinSide === "NO"
+              ? "border-red-500 bg-red-500/15 text-red-700 dark:text-red-300"
+              : "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+          }`}
+        >
+          Down
+        </button>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex items-center justify-center">
+        <div className="w-full">
+          <div className="h-12 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 flex items-center justify-center">
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={upDownStakeAmount > 0 ? upDownStakeAmount : ""}
+              onChange={(e) => {
+                const nextValue = Number.parseInt(e.target.value, 10);
+                setSelectedQuickAmount(null);
+                if (!Number.isFinite(nextValue) || nextValue <= 0) {
+                  setUpDownStakeAmount(0);
+                  return;
+                }
+                setUpDownStakeAmount(nextValue);
+              }}
+              className="h-10 border-0 bg-transparent p-0 text-center text-2xl font-black text-slate-900 dark:text-slate-100 focus-visible:ring-0 focus-visible:ring-offset-0"
+              aria-label="Trade amount in NGN"
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">To win</span>
+            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+              {formatUsd(upDownEstimatedToWin)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-5 gap-2">
+        {quickAmountOptions.map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => handleQuickAmountPick(option)}
+            className={`h-9 rounded-md border text-xs font-bold transition-colors ${
+              selectedQuickAmount === option
+                ? "border-slate-900 dark:border-slate-100 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900"
+                : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
+            }`}
+            aria-label={`Quick amount ${option}`}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+
+      <Button
+        className="mt-5 h-12 text-base font-bold"
+        onClick={() => handleOpenUpDownJoin(closeMobileTradeModal)}
+      >
+        {isAuthenticated ? "Trade Now" : "Sign in to trade"}
+      </Button>
+    </>
+  );
   useEffect(() => {
     if (!challengeId) return;
     
@@ -433,10 +807,6 @@ export default function ChallengeChatPage() {
   };
 
   const handleVote = async (voteChoice: string) => {
-    if (!isAuthenticated) {
-      requireSignInForAction("vote on this challenge");
-      return;
-    }
     if (!isParticipant) return alert('Only participants can vote');
     try {
       // Ask user to pick proof file (simple prompt for demo)
@@ -476,10 +846,6 @@ export default function ChallengeChatPage() {
   };
 
   const handleOpenDispute = async () => {
-    if (!isAuthenticated) {
-      requireSignInForAction("open a dispute");
-      return;
-    }
     if (!challengeId || !isParticipant) return;
     const reason = window.prompt("State your dispute reason (optional):") || undefined;
     try {
@@ -522,10 +888,6 @@ export default function ChallengeChatPage() {
   };
 
   const handleQuickVote = async (voteChoice: string) => {
-    if (!isAuthenticated) {
-      requireSignInForAction("vote on this challenge");
-      return;
-    }
     if (!challengeId || !user?.id || !isParticipant) return;
     try {
       const res = await fetch(`/api/challenges/${challengeId}/proofs`, { credentials: 'include' });
@@ -568,10 +930,6 @@ export default function ChallengeChatPage() {
   };
 
   const handleReportChallenge = async () => {
-    if (!isAuthenticated) {
-      requireSignInForAction("report this challenge");
-      return;
-    }
     if (!challengeId || !isParticipant) return;
     const reason = window.prompt("State your report reason (optional):") || "";
     if (reason === null) return;
@@ -596,10 +954,6 @@ export default function ChallengeChatPage() {
   };
 
   const handleSendMessage = () => {
-    if (!isAuthenticated) {
-      requireSignInForAction("send messages");
-      return;
-    }
     const message = newMessage.trim();
     if (!message) return;
     sendMessageMutation.mutate({ message });
@@ -648,10 +1002,53 @@ export default function ChallengeChatPage() {
     }
   };
 
+  const handleShareChallenge = async () => {
+    if (!challengeId || !challenge) return;
+
+    const baseUrl = window.location.origin;
+    const shareUrl = `${baseUrl}/challenges/${challengeId}/activity`;
+    const shareTitle = challenge.title || "BTC Up or Down";
+    const shareText = `${shareTitle} • ${upDownWindowLabel}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      } catch (error: any) {
+        if (error?.name === "AbortError") return;
+      }
+    }
+
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        toast({
+          title: "Link copied",
+          description: "Challenge link copied to clipboard.",
+        });
+        return;
+      } catch {
+        // continue to fallback toast below
+      }
+    }
+
+    toast({
+      title: "Share unavailable",
+      description: "Could not open share or copy link on this device.",
+      variant: "destructive",
+    });
+  };
+
   if (!challengeId) return <div className="flex items-center justify-center h-[100dvh]">Challenge Not Found</div>;
   if (!challenge) return <div className="flex items-center justify-center h-[100dvh] bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300">Loading challenge...</div>;
 
   if (isPrivateTradeChallenge) {
+    const stakeAmount = parseFloat(String(challenge?.amount || 0)) || 0;
+    const potentialWin = stakeAmount * 2;
     const handleBack = () => {
       if (window.history.length > 1) {
         window.history.back();
@@ -687,9 +1084,9 @@ export default function ChallengeChatPage() {
                 <div className="min-w-0">
                   <p className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate flex items-center gap-1.5">
                     <span className="truncate">{opponentName || "Counterparty"}</span>
-                    {creatorIsOpponent && creatorSide && (
+                    {creatorIsOpponent && creatorSideLabel && (
                       <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${creatorSide === "YES" ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}>
-                        {creatorSide}
+                        {creatorSideLabel}
                       </span>
                     )}
                   </p>
@@ -700,27 +1097,11 @@ export default function ChallengeChatPage() {
                     </span>
                     <span>•</span>
                     <span className="truncate">{challenge?.title || "Challenge Chat"}</span>
-                    {!creatorIsOpponent && creatorSide && (
+                    {!creatorIsOpponent && creatorSideLabel && (
                       <>
                         <span>•</span>
                         <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${creatorSide === "YES" ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}>
-                          {creatorSide}
-                        </span>
-                      </>
-                    )}
-                    {isOnchainChallenge && chainLabel && (
-                      <>
-                        <span>•</span>
-                        <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] leading-none font-semibold bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
-                          {chainLabel}
-                        </span>
-                      </>
-                    )}
-                    {isOnchainChallenge && effectiveTokenSymbol && (
-                      <>
-                        <span>•</span>
-                        <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] leading-none font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                          {effectiveTokenSymbol}
+                          {creatorSideLabel}
                         </span>
                       </>
                     )}
@@ -729,8 +1110,8 @@ export default function ChallengeChatPage() {
               </div>
               <div className="text-right">
                 <div className="sm:hidden space-y-0.5 text-[10px] text-slate-600 dark:text-slate-300">
-                  <p><span className="font-semibold">Stake:</span> {stakeDisplay}</p>
-                  <p><span className="font-semibold">Win:</span> {winDisplay}</p>
+                  <p><span className="font-semibold">Stake:</span> NGN {stakeAmount.toLocaleString()}</p>
+                  <p><span className="font-semibold">Win:</span> NGN {potentialWin.toLocaleString()}</p>
                   <p>{formatGameEndsCountdown(challenge?.dueDate)}</p>
                 </div>
                 <div className="hidden sm:block text-xs text-slate-500 dark:text-slate-400">
@@ -755,11 +1136,11 @@ export default function ChallengeChatPage() {
                   <div className="grid grid-cols-2 gap-1.5">
                     <div className="rounded-lg border border-slate-200/80 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-900 p-1.5">
                       <p className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Stake</p>
-                      <p className="font-bold text-sm text-slate-900 dark:text-slate-100">{stakeDisplay}</p>
+                      <p className="font-bold text-sm text-slate-900 dark:text-slate-100">NGN {stakeAmount.toLocaleString()}</p>
                     </div>
                     <div className="rounded-lg border border-emerald-200/70 dark:border-emerald-900 bg-emerald-50/80 dark:bg-emerald-950/20 p-1.5">
                       <p className="text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Potential Win</p>
-                      <p className="font-bold text-sm text-emerald-700 dark:text-emerald-300">{winDisplay}</p>
+                      <p className="font-bold text-sm text-emerald-700 dark:text-emerald-300">NGN {potentialWin.toLocaleString()}</p>
                     </div>
                   </div>
                   <div className="mt-1.5 flex items-center justify-between rounded-lg border border-slate-200/80 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900 px-2 py-1">
@@ -919,15 +1300,6 @@ export default function ChallengeChatPage() {
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                         Only the challenger and accepted opponent can view and send messages here.
                       </p>
-                      {!isAuthenticated && (
-                        <Button
-                          onClick={() => login()}
-                          className="mt-4 h-8 px-4 text-xs font-semibold border-0"
-                        >
-                          <LogIn className="w-3.5 h-3.5 mr-1.5" />
-                          Sign In
-                        </Button>
-                      )}
                     </div>
                   </div>
                 ) : messages.length === 0 ? (
@@ -992,19 +1364,6 @@ export default function ChallengeChatPage() {
                   </div>
                 </div>
               )}
-              {!isAuthenticated && (
-                <div className="px-3 sm:px-4 py-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2">
-                    <p className="text-xs text-slate-600 dark:text-slate-300">
-                      Viewing is open. Sign in to chat, vote, upload proof, or dispute.
-                    </p>
-                    <Button onClick={() => login()} className="h-8 px-3 text-xs font-semibold border-0">
-                      <LogIn className="w-3.5 h-3.5 mr-1.5" />
-                      Sign In
-                    </Button>
-                  </div>
-                </div>
-              )}
             </section>
           </div>
 
@@ -1017,53 +1376,322 @@ export default function ChallengeChatPage() {
   return (
     <>
     <div className="h-[calc(100dvh-3rem)] md:h-[calc(100dvh-4rem)] min-h-[calc(100dvh-3rem)] md:min-h-[calc(100dvh-4rem)] overflow-hidden bg-slate-50 dark:bg-slate-900 flex flex-col">
-      <div className="h-full flex flex-col overflow-hidden max-w-4xl mx-auto w-full">
+      <div className={`h-full flex flex-col overflow-hidden ${isAdminUpDownMarket ? "max-w-6xl" : "max-w-4xl"} mx-auto w-full`}>
         {/* Challenge Banner */}
         {challenge && (
-          <div className="relative h-24 sm:h-28 bg-gradient-to-b from-slate-200 to-slate-100 dark:from-slate-800 dark:to-slate-900 overflow-hidden rounded-lg mx-2 mt-2">
-            {challenge.coverImageUrl ? (
-              <img
-                src={challenge.coverImageUrl}
-                alt={challenge.title}
-                className="w-full h-full object-cover rounded-lg"
-              />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center rounded-lg">
-                <div className="text-center">
-                  <Trophy className="w-8 h-8 text-white mx-auto mb-2 opacity-80" />
-                  <p className="text-white text-xs opacity-70">Challenge</p>
+          isAdminUpDownMarket ? (
+            <div className="mx-2 mt-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+              <div className="px-3 sm:px-4 py-2.5">
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-2.5 lg:gap-3">
+                  <div className="min-w-0 rounded-lg bg-slate-50/70 dark:bg-slate-900/30 p-2 sm:p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2 min-w-0">
+                        <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 text-amber-950 text-lg font-black flex items-center justify-center shadow-sm flex-shrink-0">
+                          ₿
+                          <span className="absolute -bottom-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 text-white text-[9px] font-black px-1">
+                            5
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <h1 className="text-base sm:text-lg font-bold leading-tight text-slate-900 dark:text-slate-100 truncate">
+                            {upDownHeadline}
+                          </h1>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{upDownWindowLabel}</p>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <button
+                          type="button"
+                          onClick={handleShareChallenge}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                          aria-label="Share"
+                        >
+                          <Share2 className="h-3.5 w-3.5" />
+                        </button>
+                        <p className="text-sm sm:text-base font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{upDownCountdown}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-end justify-between gap-3">
+                      <div>
+                        <p className={`text-xl sm:text-2xl font-black tabular-nums leading-none ${
+                          upDownDirectionLabel === "UP"
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : upDownDirectionLabel === "DOWN"
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-slate-900 dark:text-slate-100"
+                        }`}>
+                          {formatUsd(btcPrice)}
+                        </p>
+                        <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                          {btcFeedLoading ? "Loading live BTC feed..." : (btcFeedError ? "Live BTC feed unavailable right now." : "Resolution: UP when close >= open, else DOWN.")}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          upDownDirectionLabel === "UP"
+                            ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                            : upDownDirectionLabel === "DOWN"
+                              ? "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"
+                              : "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                        }`}>
+                          {upDownDirectionLabel}
+                        </span>
+                        <span className="rounded-full bg-slate-900 text-white text-[10px] font-bold px-2 py-0.5">
+                          {formatPercentDelta(upDownPercentDelta)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                      <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wide">price to beat</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">{formatUsd(btcPriceToBeat)}</span>
+                    </div>
+
+                    <div className="mt-2 h-[175px] sm:h-[200px] rounded-lg bg-white/70 dark:bg-slate-900/60 px-1.5 pt-1.5">
+                      {chartGeometry.linePath ? (
+                        <svg viewBox={`0 0 ${chartWidth} ${chartCanvasHeight}`} className="h-full w-full">
+                          <defs>
+                            <linearGradient id="btcAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.22" />
+                              <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.02" />
+                            </linearGradient>
+                          </defs>
+
+                          {chartGeometry.yTicks.map((tick, index) => (
+                            <g key={`y-grid-${index}`}>
+                              <line
+                                x1={0}
+                                y1={tick.y}
+                                x2={chartWidth}
+                                y2={tick.y}
+                                stroke="currentColor"
+                                className="text-slate-300 dark:text-slate-700"
+                                strokeDasharray="4 9"
+                                strokeOpacity="0.45"
+                              />
+                              <text
+                                x={chartWidth - 2}
+                                y={tick.y - 3}
+                                textAnchor="end"
+                                fontSize="10"
+                                fill="currentColor"
+                                className="fill-current text-slate-400 dark:text-slate-500 tabular-nums"
+                              >
+                                {formatUsd(tick.value)}
+                              </text>
+                            </g>
+                          ))}
+
+                          {chartGeometry.beatY !== null && (
+                            <>
+                              <line
+                                x1={0}
+                                y1={chartGeometry.beatY}
+                                x2={chartWidth}
+                                y2={chartGeometry.beatY}
+                                stroke="currentColor"
+                                className="text-slate-900 dark:text-slate-100"
+                                strokeWidth="1.5"
+                              />
+                              <text
+                                x={chartWidth / 2}
+                                y={Math.max(Math.min(chartGeometry.beatY - 7, chartPlotHeight - 8), 12)}
+                                textAnchor="middle"
+                                fontSize="12"
+                                fontWeight="700"
+                                fill="currentColor"
+                                className="fill-current text-slate-900 dark:text-slate-100 tabular-nums"
+                              >
+                                {`${formatUsd(btcPriceToBeat)} or above`}
+                              </text>
+                            </>
+                          )}
+
+                          {chartGeometry.currentY !== null && (
+                            <line
+                              x1={0}
+                              y1={chartGeometry.currentY}
+                              x2={chartWidth}
+                              y2={chartGeometry.currentY}
+                              stroke="#ef4444"
+                              strokeWidth="1.2"
+                              strokeDasharray="7 7"
+                              strokeOpacity="0.85"
+                            />
+                          )}
+
+                          <path d={chartGeometry.areaPath} fill="url(#btcAreaGradient)" />
+                          <path
+                            d={chartGeometry.linePath}
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+
+                          {chartGeometry.latestPoint && (
+                            <>
+                              <circle cx={chartGeometry.latestPoint.x} cy={chartGeometry.latestPoint.y} r="5.5" fill="#f8fafc" stroke="#f59e0b" strokeWidth="2.5" />
+                              <circle cx={chartGeometry.latestPoint.x} cy={chartGeometry.latestPoint.y} r="2.5" fill="#f59e0b" />
+                            </>
+                          )}
+
+                          {chartGeometry.currentY !== null && (
+                            <g>
+                              <rect
+                                x={chartWidth - 124}
+                                y={Math.max(chartGeometry.currentY - 14, 4)}
+                                width={118}
+                                height={22}
+                                rx={7}
+                                fill="#dc2626"
+                              />
+                              <text
+                                x={chartWidth - 65}
+                                y={Math.max(chartGeometry.currentY + 2, 18)}
+                                textAnchor="middle"
+                                fontSize="11"
+                                fontWeight="700"
+                                fill="#ffffff"
+                                className="tabular-nums"
+                              >
+                                {formatUsd(btcPrice)}
+                              </text>
+                            </g>
+                          )}
+
+                          {chartGeometry.xTicks.map((tick, index) => (
+                            <text
+                              key={`x-label-${index}`}
+                              x={tick.x}
+                              y={chartPlotHeight + 20}
+                              textAnchor={index === 0 ? "start" : index === chartGeometry.xTicks.length - 1 ? "end" : "middle"}
+                              fontSize="10"
+                              fill="currentColor"
+                              className="fill-current text-slate-400 dark:text-slate-500 tabular-nums"
+                            >
+                              {tick.label}
+                            </text>
+                          ))}
+                        </svg>
+                      ) : (
+                        <div className="h-full rounded-md bg-slate-100 dark:bg-slate-800 animate-pulse" />
+                      )}
+                    </div>
+
+                    <div className="mt-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 text-[11px] sm:flex-wrap sm:overflow-visible sm:pb-0">
+                      <div className="relative shrink-0">
+                        <select
+                          value={upDownPastSelection}
+                          onChange={(e) => setUpDownPastSelection(e.target.value)}
+                          className="h-7 appearance-none rounded-full bg-slate-100 dark:bg-slate-800 px-3 pr-6 font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600"
+                          aria-label="Past range"
+                        >
+                          <option value="Past">Past</option>
+                          <option value="Past 5m">Past 5m</option>
+                          <option value="Past 15m">Past 15m</option>
+                          <option value="Past 30m">Past 30m</option>
+                        </select>
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">▾</span>
+                      </div>
+                      {upDownTimeSlots.map((slot) => {
+                        const isSelectedSlot = effectiveCountdownTargetMs === slot.value;
+                        const isLiveSlot = slot.value === currentRoundEndMs;
+                        return (
+                          <button
+                            key={`updown-slot-${slot.value}`}
+                            type="button"
+                            onClick={() => setUpDownCountdownTargetMs(slot.value)}
+                            className={`shrink-0 inline-flex h-7 items-center gap-1.5 rounded-full px-3 font-semibold transition-colors ${
+                              isSelectedSlot
+                                ? "bg-slate-900 text-white"
+                                : isLiveSlot
+                                  ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800"
+                                  : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700"
+                            }`}
+                          >
+                            <span>{slot.label}</span>
+                            {isLiveSlot && (
+                              <span className={`inline-flex items-center gap-1 text-[9px] font-bold ${isSelectedSlot ? "text-red-200" : "text-red-600 dark:text-red-300"}`}>
+                                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500">
+                                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                                </span>
+                                LIVE
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                      <div className="relative shrink-0">
+                        <select
+                          value={String(effectiveCountdownTargetMs)}
+                          onChange={(e) => {
+                            const nextTargetMs = Number.parseInt(e.target.value, 10);
+                            if (Number.isFinite(nextTargetMs)) {
+                              setUpDownCountdownTargetMs(nextTargetMs);
+                            }
+                          }}
+                          className="h-7 appearance-none rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 pr-6 font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600"
+                          aria-label="Target time"
+                        >
+                          {upDownFutureTimeOptions.map((option) => (
+                            <option key={`updown-more-${option.value}`} value={String(option.value)}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">▾</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <aside className="hidden lg:flex min-w-[320px] flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+                    {renderUpDownTradeSection(false)}
+                  </aside>
                 </div>
-              </div>
-            )}
-            {/* Overlay */}
-            <div className="absolute inset-0 bg-black/20 dark:bg-black/40 rounded-lg"></div>
-            
-            {/* Challenge Info */}
-            <div className="absolute inset-0 flex flex-col justify-between p-2 sm:p-3">
-              <div className="text-white drop-shadow-lg">
-                <h1 className="text-sm sm:text-base font-bold truncate">{challenge.title}</h1>
-              </div>
-              <div className="text-white drop-shadow-lg text-[10px] sm:text-xs space-y-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="bg-white/20 px-2 py-0.5 rounded-full capitalize">{challenge.category}</span>
-                  <span className="bg-white/20 px-2 py-0.5 rounded-full font-bold">{stakeDisplay}</span>
-                  <span className="bg-white/20 px-2 py-0.5 rounded-full capitalize">{challenge.status}</span>
-                  {isOnchainChallenge && chainLabel && (
-                    <span className="bg-white/20 px-2 py-0.5 rounded-full">{chainLabel}</span>
-                  )}
-                  {isOnchainChallenge && effectiveTokenSymbol && (
-                    <span className="bg-white/20 px-2 py-0.5 rounded-full font-semibold">{effectiveTokenSymbol}</span>
-                  )}
-                  <span className="bg-white/20 px-2 py-0.5 rounded-full">
-                    {getRelativeTime(challenge.dueDate, "time unknown")}
-                  </span>
-                </div>
-                {challenge.description && (
-                  <p className="text-white/80 line-clamp-1">{challenge.description}</p>
-                )}
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="relative h-24 sm:h-28 bg-gradient-to-b from-slate-200 to-slate-100 dark:from-slate-800 dark:to-slate-900 overflow-hidden rounded-lg mx-2 mt-2">
+              {challenge.coverImageUrl ? (
+                <img
+                  src={challenge.coverImageUrl}
+                  alt={challenge.title}
+                  className="w-full h-full object-cover rounded-lg"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center rounded-lg">
+                  <div className="text-center">
+                    <Trophy className="w-8 h-8 text-white mx-auto mb-2 opacity-80" />
+                    <p className="text-white text-xs opacity-70">Challenge</p>
+                  </div>
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/20 dark:bg-black/40 rounded-lg"></div>
+
+              <div className="absolute inset-0 flex flex-col justify-between p-2 sm:p-3">
+                <div className="text-white drop-shadow-lg">
+                  <h1 className="text-sm sm:text-base font-bold truncate">{challenge.title}</h1>
+                </div>
+                <div className="text-white drop-shadow-lg text-[10px] sm:text-xs space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full capitalize">{challenge.category}</span>
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full font-bold">₦{parseInt(challenge.amount).toLocaleString()}</span>
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full capitalize">{challenge.status}</span>
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full">
+                      {getRelativeTime(challenge.dueDate, "time unknown")}
+                    </span>
+                  </div>
+                  {challenge.description && (
+                    <p className="text-white/80 line-clamp-1">{challenge.description}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
         )}
         
         <Tabs value={activeTab} onValueChange={(value: any) => setActiveTab(value)} className="flex-1 flex flex-col overflow-hidden">
@@ -1099,7 +1727,14 @@ export default function ChallengeChatPage() {
           <div className="flex-1 min-h-0 overflow-hidden bg-slate-50 dark:bg-slate-900">
             {(canAccessChat || canAccessComments) && (
             <TabsContent value="comments" className="m-0 p-4 h-full flex flex-col data-[state=inactive]:hidden">
-              <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
+              <div
+                className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1"
+                onScroll={(event) => {
+                  if (!isAdminUpDownMarket) return;
+                  const nextVisible = event.currentTarget.scrollTop > 96;
+                  setShowUpDownCommentComposer((prev) => (prev === nextVisible ? prev : nextVisible));
+                }}
+              >
                 {messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                     <MessageCircle className="w-12 h-12 mb-4 opacity-20" />
@@ -1297,7 +1932,10 @@ export default function ChallengeChatPage() {
           </div>
         </Tabs>
 
-        {isAuthenticated && activeTab === 'comments' && (canAccessChat || canAccessComments) && (
+        {isAuthenticated &&
+          activeTab === 'comments' &&
+          (canAccessChat || canAccessComments) &&
+          (!isAdminUpDownMarket || showUpDownCommentComposer) && (
           <div
             className="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-2 shrink-0"
             style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
@@ -1326,7 +1964,7 @@ export default function ChallengeChatPage() {
                   onClick={() => setReplyingTo(null)}
                   className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                 >
-                  âœ•
+                  x
                 </button>
               </div>
             )}
@@ -1351,24 +1989,65 @@ export default function ChallengeChatPage() {
             </div>
           </div>
         )}
-        {!isAuthenticated && activeTab === 'comments' && (canAccessChat || canAccessComments) && (
-          <div
-            className="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shrink-0"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
-          >
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2">
-              <p className="text-xs text-slate-600 dark:text-slate-300">
-                You can view this page without login. Sign in for actions.
-              </p>
-              <Button onClick={() => login()} className="h-8 px-3 text-xs font-semibold border-0">
-                <LogIn className="w-3.5 h-3.5 mr-1.5" />
-                Sign In
-              </Button>
+
+        {isAdminUpDownMarket && !(activeTab === "comments" && showUpDownCommentComposer) && (
+          <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 px-3">
+            <div className="mx-auto max-w-6xl pb-[calc(env(safe-area-inset-bottom)+0.65rem)]">
+              <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200/90 dark:border-slate-700/90 bg-white/95 dark:bg-slate-900/95 p-2 shadow-lg backdrop-blur">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUpDownJoinSide("YES");
+                    setShowUpDownTradeModal(true);
+                  }}
+                  className="h-11 rounded-full border border-emerald-500/70 bg-emerald-500/10 text-base font-bold text-emerald-700 dark:text-emerald-300"
+                >
+                  Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUpDownJoinSide("NO");
+                    setShowUpDownTradeModal(true);
+                  }}
+                  className="h-11 rounded-full border border-red-500/70 bg-red-500/10 text-base font-bold text-red-700 dark:text-red-300"
+                >
+                  Down
+                </button>
+              </div>
             </div>
           </div>
         )}
+
+        {isAdminUpDownMarket && (
+          <Dialog open={showUpDownTradeModal} onOpenChange={setShowUpDownTradeModal}>
+            <DialogContent className="w-[95vw] max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+              <DialogHeader className="pb-2">
+                <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Trade BTC Up / Down
+                </DialogTitle>
+              </DialogHeader>
+              {renderUpDownTradeSection(true)}
+            </DialogContent>
+          </Dialog>
+        )}
         
         {selectedProfileUserId && <ProfileCard userId={selectedProfileUserId} onClose={() => setSelectedProfileUserId(null)} />}
+        {isAdminUpDownMarket && (
+          <JoinChallengeModal
+            isOpen={showUpDownJoinModal}
+            onClose={() => setShowUpDownJoinModal(false)}
+            challenge={{
+              id: challenge.id,
+              title: challenge.title,
+              category: challenge.category,
+              amount: String(upDownStakeAmount > 0 ? upDownStakeAmount : minUpDownStakeAmount),
+              description: challenge.description,
+              selectedSide: upDownJoinSide,
+            }}
+            userBalance={Number(walletBalance || 0)}
+          />
+        )}
       </div>
     </div>
     </>

@@ -55,7 +55,7 @@ interface ChallengeCardProps {
     bonusSide?: string;
     bonusMultiplier?: string;
     bonusEndsAt?: string;
-    bonusAmount?: number; // Custom bonus amount in naira
+    bonusAmount?: number; // Custom bonus amount in wallet funds
     yesStakeTotal?: number;
     noStakeTotal?: number;
     coverImageUrl?: string;
@@ -106,6 +106,19 @@ interface ChallengeCardProps {
   onJoin?: (challenge: any) => void;
 }
 
+const isUpDownMarketChallenge = (challenge: any) => {
+  const isAdminCreated = challenge?.adminCreated === true;
+  if (!isAdminCreated) return false;
+  const title = String(challenge?.title || "").toLowerCase();
+  const category = String(challenge?.category || "").toLowerCase();
+  const hasBitcoin = title.includes("bitcoin") || title.includes("btc");
+  const hasDirectionPhrase =
+    title.includes("up or down") ||
+    title.includes("up/down") ||
+    (title.includes("up") && title.includes("down"));
+  return hasBitcoin && hasDirectionPhrase && category === "crypto";
+};
+
 export function ChallengeCard({
   challenge,
   onChatClick,
@@ -119,7 +132,11 @@ export function ChallengeCard({
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
-  const isOnchainBuild = (import.meta as any).env?.VITE_APP_MODE === "onchain";
+  const appModeRaw = String((import.meta as any).env?.VITE_APP_MODE || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .toLowerCase();
+  const isOnchainBuild = appModeRaw !== "offchain";
   const { data: onchainConfig } = useQuery<OnchainRuntimeConfig>({
     queryKey: ["/api/onchain/config"],
     queryFn: async () => await apiRequest("GET", "/api/onchain/config"),
@@ -209,7 +226,7 @@ export function ChallengeCard({
     
     // Original weak side bonus
     if (isBonusActive && challenge.bonusSide) {
-      const amount = challenge.bonusAmount ? `₦${challenge.bonusAmount.toLocaleString()}` : `${challenge.bonusMultiplier}x`;
+      const amount = challenge.bonusAmount ? `${challenge.bonusAmount.toLocaleString()}` : `${challenge.bonusMultiplier}x`;
       bonuses.push({
         type: "weak_side",
         label: amount,
@@ -249,7 +266,7 @@ export function ChallengeCard({
   ).toUpperCase();
   const stakeShareLabel = isOnchainBuild
     ? `${String(challenge.amount)} ${rawShareTokenSymbol || "ETH"}`
-    : `NGN ${String(challenge.amount)}`;
+    : `${String(challenge.amount)}`;
 
   // Generate sharing data for the challenge
   const challengeShareData = shareChallenge(
@@ -298,6 +315,7 @@ export function ChallengeCard({
           chainId: challengeChainId,
           tokenSymbol: challengeToken,
           amount: String(challenge.amount || "0"),
+          amountAtomic: String(challenge.stakeAtomic ?? (challenge as any).stake_atomic ?? ""),
         });
 
         payload.escrowTxHash = escrowTx.escrowTxHash;
@@ -617,11 +635,11 @@ export function ChallengeCard({
   const stakeDisplayValue =
     showOnchainMeta && !!effectiveTokenSymbol
       ? onchainStakeDisplayValue || "Unavailable"
-      : `NGN ${stakeAmount.toLocaleString()}`;
+      : `${stakeAmount.toLocaleString()}`;
   const winDisplayValue =
     showOnchainMeta && !!effectiveTokenSymbol
       ? onchainWinDisplayValue || "Unavailable"
-      : `NGN ${Math.round(potentialWinAmount).toLocaleString()}`;
+      : `${Math.round(potentialWinAmount).toLocaleString()}`;
 
   // For avatar, show the other user (opponent) if current user is involved, otherwise show challenger
   const otherUser =
@@ -672,6 +690,9 @@ export function ChallengeCard({
   };
 
   const isHeadToHeadMatched = !challenge.adminCreated && !!challenge.challenger && !!challenge.challenged;
+  const isUpDownMarket = isUpDownMarketChallenge(challenge);
+  const adminYesLabel = isUpDownMarket ? "Up" : "Yes";
+  const adminNoLabel = isUpDownMarket ? "Down" : "No";
   const hasJoined = user?.id === challenge.challenger || user?.id === challenge.challenged;
   const isAwaitingAcceptance = effectiveStatus === "open" || effectiveStatus === "pending";
   const challengedId = typeof (challenge as any).challenged === "string"
@@ -781,6 +802,15 @@ export function ChallengeCard({
               )}
               <div className="mt-0.5 flex items-center gap-1 text-[9px] font-semibold text-slate-400 dark:text-slate-500">
                 <span className="uppercase">{getCompactTimeAgo(challenge.createdAt)}</span>
+                {isUpDownMarket && (
+                  <>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                      BTC
+                      <span className="text-[8px] opacity-80">5m</span>
+                    </span>
+                  </>
+                )}
                 {showOnchainMeta && chainLabel && chainIconMeta && (
                   <>
                     <span>•</span>
@@ -950,7 +980,7 @@ export function ChallengeCard({
                     }`}
                     data-testid="button-challenge-yes"
                   >
-                    Yes
+                    {adminYesLabel}
                   </button>
                   <button
                     onClick={(e) => {
@@ -967,7 +997,7 @@ export function ChallengeCard({
                     }`}
                     data-testid="button-challenge-no"
                   >
-                    No
+                    {adminNoLabel}
                   </button>
                 </div>
               )}
@@ -975,16 +1005,18 @@ export function ChallengeCard({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-1 mb-1.5">
-          <Badge variant="outline" className="flex flex-col items-center py-0.5 px-2 bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-700 rounded-lg h-auto min-w-[60px] shadow-sm">
-            <span className="text-[8px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-tight mb-0">Stake</span>
-            <span className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-none">{stakeDisplayValue}</span>
-          </Badge>
-          <Badge variant="outline" className="flex flex-col items-center py-0.5 px-2 bg-emerald-50/40 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-900/50 rounded-lg h-auto min-w-[60px] shadow-sm">
-            <span className="text-[8px] text-emerald-600/70 dark:text-emerald-400/70 uppercase font-bold tracking-tight mb-0">Win</span>
-            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-none">{winDisplayValue}</span>
-          </Badge>
-        </div>
+        {!isUpDownMarket && (
+          <div className="flex items-center justify-between gap-1 mb-1.5">
+            <Badge variant="outline" className="flex flex-col items-center py-0.5 px-2 bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-700 rounded-lg h-auto min-w-[60px] shadow-sm">
+              <span className="text-[8px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-tight mb-0">Stake</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-none">{stakeDisplayValue}</span>
+            </Badge>
+            <Badge variant="outline" className="flex flex-col items-center py-0.5 px-2 bg-emerald-50/40 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-900/50 rounded-lg h-auto min-w-[60px] shadow-sm">
+              <span className="text-[8px] text-emerald-600/70 dark:text-emerald-400/70 uppercase font-bold tracking-tight mb-0">Win</span>
+              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-none">{winDisplayValue}</span>
+            </Badge>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-2 mt-auto pt-2 border-t border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3 min-w-0">
@@ -999,6 +1031,16 @@ export function ChallengeCard({
                 <span className="text-[10px] text-slate-700 dark:text-slate-300 font-bold">
                   {challenge.commentCount ?? 0}
                 </span>
+              </div>
+            )}
+
+            {challenge.adminCreated && isUpDownMarket && (
+              <div className="flex items-center gap-1.5 bg-red-50/70 dark:bg-red-900/30 px-2 py-1 rounded-full">
+                <span className="relative inline-flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+                </span>
+                <span className="text-[10px] font-bold text-red-600 dark:text-red-300">LIVE</span>
               </div>
             )}
 
@@ -1095,4 +1137,6 @@ export function ChallengeCard({
     </Card>
   );
 }
+
+
 
