@@ -540,7 +540,10 @@ export function ChallengeCard({
 
   const getChainLabel = (id: number | null) => {
     if (!id) return "";
+    if (id === 56) return "BNB Smart Chain";
     if (id === 84532) return "Base Sepolia";
+    if (id === 8453) return "Base";
+    if (id === 42161) return "Arbitrum One";
     if (id === 97) return "BSC Testnet";
     if (id === 421614) return "Arbitrum Sepolia";
     return `Chain ${id}`;
@@ -548,6 +551,13 @@ export function ChallengeCard({
   const chainLabel = getChainLabel(chainId);
   const getChainIconMeta = (id: number | null) => {
     if (!id) return null;
+    if (id === 56) {
+      return {
+        title: "BNB Smart Chain",
+        iconSrc: "/assets/chain-bsc.svg",
+        className: "border-amber-200 dark:border-amber-700/60",
+      };
+    }
     if (id === 84532) {
       return {
         title: "Base Sepolia",

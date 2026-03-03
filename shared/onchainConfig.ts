@@ -1,6 +1,11 @@
-export type OnchainTokenSymbol = "USDC" | "USDT" | "ETH";
+export type OnchainTokenSymbol = "USDC" | "USDT" | "ETH" | "BNB";
 export type OnchainChainKey =
+  | "base"
   | "base-sepolia"
+  | "arbitrum"
+  | "celo"
+  | "unichain"
+  | "bsc"
   | "bsc-testnet"
   | "arbitrum-sepolia"
   | "celo-sepolia"
@@ -45,12 +50,15 @@ export interface OnchainPublicConfig {
 
 export const DEFAULT_ONCHAIN_CHAIN_ID = 84532; // Base Sepolia
 
-export const DEFAULT_ONCHAIN_TOKENS: Record<OnchainTokenSymbol, OnchainTokenConfig> = {
+export const DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS: Record<
+  OnchainTokenSymbol,
+  OnchainTokenConfig
+> = {
   USDC: {
     symbol: "USDC",
     decimals: 6,
     address: null,
-  isNative: false,
+    isNative: false,
   },
   USDT: {
     symbol: "USDT",
@@ -64,9 +72,66 @@ export const DEFAULT_ONCHAIN_TOKENS: Record<OnchainTokenSymbol, OnchainTokenConf
     address: null,
     isNative: true,
   },
+  BNB: {
+    symbol: "BNB",
+    decimals: 18,
+    address: null,
+    isNative: false,
+  },
 };
 
+export const DEFAULT_ONCHAIN_BNB_NATIVE_TOKENS: Record<
+  OnchainTokenSymbol,
+  OnchainTokenConfig
+> = {
+  USDC: {
+    symbol: "USDC",
+    decimals: 6,
+    address: null,
+    isNative: false,
+  },
+  USDT: {
+    symbol: "USDT",
+    decimals: 6,
+    address: null,
+    isNative: false,
+  },
+  ETH: {
+    symbol: "ETH",
+    decimals: 18,
+    address: null,
+    isNative: false,
+  },
+  BNB: {
+    symbol: "BNB",
+    decimals: 18,
+    address: null,
+    isNative: true,
+  },
+};
+
+// Backward-compatible alias for existing imports.
+export const DEFAULT_ONCHAIN_TOKENS = DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS;
+
 export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChainConfig> = {
+  base: {
+    key: "base",
+    chainId: 8453,
+    name: "Base",
+    nativeSymbol: "ETH",
+    rpcUrl: "https://mainnet.base.org",
+    blockExplorerUrl: "https://basescan.org",
+    tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+  },
+  unichain: {
+    key: "unichain",
+    chainId: 130,
+    name: "Unichain",
+    nativeSymbol: "ETH",
+    rpcUrl: "https://mainnet.unichain.org",
+    blockExplorerUrl: "https://uniscan.xyz",
+    tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+  },
   "base-sepolia": {
     key: "base-sepolia",
     chainId: 84532,
@@ -74,7 +139,34 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     nativeSymbol: "ETH",
     rpcUrl: "https://sepolia.base.org",
     blockExplorerUrl: "https://sepolia.basescan.org",
-    tokens: DEFAULT_ONCHAIN_TOKENS,
+    tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+  },
+  arbitrum: {
+    key: "arbitrum",
+    chainId: 42161,
+    name: "Arbitrum One",
+    nativeSymbol: "ETH",
+    rpcUrl: "https://arb1.arbitrum.io/rpc",
+    blockExplorerUrl: "https://arbiscan.io",
+    tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+  },
+  bsc: {
+    key: "bsc",
+    chainId: 56,
+    name: "BNB Smart Chain",
+    nativeSymbol: "BNB",
+    rpcUrl: "https://bsc-dataseed.binance.org",
+    blockExplorerUrl: "https://bscscan.com",
+    tokens: DEFAULT_ONCHAIN_BNB_NATIVE_TOKENS,
+  },
+  celo: {
+    key: "celo",
+    chainId: 42220,
+    name: "Celo Mainnet",
+    nativeSymbol: "CELO",
+    rpcUrl: "https://forno.celo.org",
+    blockExplorerUrl: "https://celoscan.io",
+    tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
   },
   "bsc-testnet": {
     key: "bsc-testnet",
@@ -83,7 +175,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     nativeSymbol: "BNB",
     rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
     blockExplorerUrl: "https://testnet.bscscan.com",
-    tokens: DEFAULT_ONCHAIN_TOKENS,
+    tokens: DEFAULT_ONCHAIN_BNB_NATIVE_TOKENS,
   },
   "arbitrum-sepolia": {
     key: "arbitrum-sepolia",
@@ -92,7 +184,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     nativeSymbol: "ETH",
     rpcUrl: "https://sepolia-rollup.arbitrum.io/rpc",
     blockExplorerUrl: "https://sepolia.arbiscan.io",
-    tokens: DEFAULT_ONCHAIN_TOKENS,
+    tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
   },
   "celo-sepolia": {
     key: "celo-sepolia",
@@ -101,7 +193,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     nativeSymbol: "CELO",
     rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
     blockExplorerUrl: "https://celo-sepolia.blockscout.com",
-    tokens: DEFAULT_ONCHAIN_TOKENS,
+    tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
   },
   "unichain-sepolia": {
     key: "unichain-sepolia",
@@ -110,13 +202,14 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     nativeSymbol: "ETH",
     rpcUrl: "https://sepolia.unichain.org",
     blockExplorerUrl: "https://sepolia.uniscan.xyz",
-    tokens: DEFAULT_ONCHAIN_TOKENS,
+    tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
   },
 };
 
 export function normalizeOnchainTokenSymbol(input: unknown): OnchainTokenSymbol {
   const raw = String(input || "").trim().toUpperCase();
   if (raw === "USDT") return "USDT";
+  if (raw === "BNB") return "BNB";
   if (raw === "ETH") return "ETH";
   return "USDC";
 }

@@ -183,8 +183,10 @@ function resolveTokenFromLog(
   chain: OnchainChainConfig,
   tokenAddress: string | null,
 ): ResolvedToken | null {
+  const nativeToken = (Object.values(chain.tokens) as OnchainTokenConfig[]).find(
+    (token) => token.isNative,
+  );
   if (!tokenAddress) {
-    const nativeToken = chain.tokens.ETH as OnchainTokenConfig | undefined;
     if (!nativeToken) return null;
     return {
       symbol: nativeToken.symbol,
@@ -218,8 +220,10 @@ function resolveTokenFromMetadata(
   const decimalsRaw = payload.decimals;
   const decimals = Number.isFinite(Number(decimalsRaw)) ? Number(decimalsRaw) : null;
 
-  if (tokenSymbol === "ETH") {
-    const nativeToken = chain.tokens.ETH as OnchainTokenConfig | undefined;
+  const nativeToken = (Object.values(chain.tokens) as OnchainTokenConfig[]).find(
+    (token) => token.isNative,
+  );
+  if (chain.tokens[tokenSymbol]?.isNative) {
     if (!nativeToken) return null;
     return {
       symbol: nativeToken.symbol,

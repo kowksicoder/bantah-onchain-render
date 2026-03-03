@@ -6,7 +6,12 @@ import hardhatVerify from "@nomicfoundation/hardhat-verify";
 loadEnv();
 
 const adminPrivateKey = String(process.env.ADMIN_PRIVATE_KEY || "").trim();
-const deployerAccounts = adminPrivateKey ? [adminPrivateKey] : [];
+const useEnvAccounts =
+  String(process.env.HARDHAT_USE_ENV_ACCOUNTS || "")
+    .trim()
+    .toLowerCase() === "true";
+const deployerAccounts: "remote" | string[] =
+  useEnvAccounts && adminPrivateKey ? [adminPrivateKey] : "remote";
 
 export default defineConfig({
   plugins: [hardhatEthers, hardhatVerify],
@@ -20,10 +25,40 @@ export default defineConfig({
     },
   },
   networks: {
+    unichain: {
+      type: "http",
+      chainType: "l1",
+      url: process.env.ONCHAIN_UNICHAIN_MAINNET_RPC_URL || "https://mainnet.unichain.org",
+      accounts: deployerAccounts,
+    },
+    base: {
+      type: "http",
+      chainType: "l1",
+      url: process.env.ONCHAIN_BASE_MAINNET_RPC_URL || "https://mainnet.base.org",
+      accounts: deployerAccounts,
+    },
     baseSepolia: {
       type: "http",
       chainType: "l1",
       url: process.env.ONCHAIN_BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
+      accounts: deployerAccounts,
+    },
+    arbitrum: {
+      type: "http",
+      chainType: "l1",
+      url: process.env.ONCHAIN_ARBITRUM_MAINNET_RPC_URL || "https://arb1.arbitrum.io/rpc",
+      accounts: deployerAccounts,
+    },
+    celo: {
+      type: "http",
+      chainType: "l1",
+      url: process.env.ONCHAIN_CELO_MAINNET_RPC_URL || "https://forno.celo.org",
+      accounts: deployerAccounts,
+    },
+    bsc: {
+      type: "http",
+      chainType: "l1",
+      url: process.env.ONCHAIN_BSC_MAINNET_RPC_URL || "https://bsc-dataseed.binance.org",
       accounts: deployerAccounts,
     },
     bscTestnet: {
@@ -68,6 +103,28 @@ export default defineConfig({
     },
   },
   chainDescriptors: {
+    56: {
+      name: "BNB Smart Chain",
+      chainType: "generic",
+      blockExplorers: {
+        blockscout: {
+          name: "BSC Blockscout",
+          url: "https://bscscan.com",
+          apiUrl: "https://api.bscscan.com/api",
+        },
+      },
+    },
+    42220: {
+      name: "Celo Mainnet",
+      chainType: "generic",
+      blockExplorers: {
+        blockscout: {
+          name: "Celo Blockscout",
+          url: "https://explorer.celo.org",
+          apiUrl: "https://explorer.celo.org/api",
+        },
+      },
+    },
     11142220: {
       name: "Celo Sepolia",
       chainType: "generic",
@@ -95,6 +152,48 @@ export default defineConfig({
     etherscan: {
       enabled: true,
       apiKey: process.env.ETHERSCAN_API_KEY || "",
+      customChains: [
+        {
+          network: "arbitrum",
+          chainId: 42161,
+          urls: {
+            apiURL: "https://api.arbiscan.io/api",
+            browserURL: "https://arbiscan.io",
+          },
+        },
+        {
+          network: "base",
+          chainId: 8453,
+          urls: {
+            apiURL: "https://api.basescan.org/api",
+            browserURL: "https://basescan.org",
+          },
+        },
+        {
+          network: "celo",
+          chainId: 42220,
+          urls: {
+            apiURL: "https://api.celoscan.io/api",
+            browserURL: "https://celoscan.io",
+          },
+        },
+        {
+          network: "bsc",
+          chainId: 56,
+          urls: {
+            apiURL: "https://api.bscscan.com/api",
+            browserURL: "https://bscscan.com",
+          },
+        },
+        {
+          network: "unichain",
+          chainId: 130,
+          urls: {
+            apiURL: "https://api.uniscan.xyz/api",
+            browserURL: "https://uniscan.xyz",
+          },
+        },
+      ],
     },
     blockscout: {
       enabled: true,

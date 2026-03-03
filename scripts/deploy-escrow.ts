@@ -1,8 +1,14 @@
 import { network } from "hardhat";
+import { ethers } from "ethers";
 
 async function main() {
-  const { ethers } = await network.connect();
-  const [deployer] = await ethers.getSigners();
+  const { ethers: hardhatEthers } = await network.connect();
+  const provider = hardhatEthers.provider;
+  const adminPrivateKey = String(process.env.ADMIN_PRIVATE_KEY || "").trim();
+  if (!adminPrivateKey) {
+    throw new Error("No deployer account available. Set ADMIN_PRIVATE_KEY in .env");
+  }
+  const deployer = new ethers.Wallet(adminPrivateKey, provider);
   if (!deployer) {
     throw new Error("No deployer account available. Set ADMIN_PRIVATE_KEY in .env");
   }
@@ -22,9 +28,12 @@ async function main() {
     84532: "ONCHAIN_BASE_SEPOLIA_ESCROW_ADDRESS",
     97: "ONCHAIN_BSC_TESTNET_ESCROW_ADDRESS",
     421614: "ONCHAIN_ARBITRUM_SEPOLIA_ESCROW_ADDRESS",
+    56: "ONCHAIN_BSC_ESCROW_ADDRESS",
     44787: "ONCHAIN_CELO_ALFAJORES_ESCROW_ADDRESS",
+    42220: "ONCHAIN_CELO_ESCROW_ADDRESS",
     11142220: "ONCHAIN_CELO_SEPOLIA_ESCROW_ADDRESS",
     1301: "ONCHAIN_UNICHAIN_SEPOLIA_ESCROW_ADDRESS",
+    130: "ONCHAIN_UNICHAIN_ESCROW_ADDRESS",
   };
   const escrowEnvKey =
     escrowEnvKeyByChainId[chainId] || `ONCHAIN_${chainName.toUpperCase()}_ESCROW_ADDRESS`;
@@ -33,7 +42,7 @@ async function main() {
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Owner: ${owner}`);
 
-  const EscrowFactory = await ethers.getContractFactory("BantahEscrow");
+  const EscrowFactory = await hardhatEthers.getContractFactory("BantahEscrow", deployer);
   const escrow = await EscrowFactory.deploy(owner);
   await escrow.waitForDeployment();
 

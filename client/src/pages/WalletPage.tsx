@@ -254,6 +254,7 @@ export default function WalletPage() {
     const chainId = Number(selectedChain?.chainId || 0);
     if (chainId === 84532) return "https://app.uniswap.org/#/swap?chain=base";
     if (chainId === 421614) return "https://app.uniswap.org/#/swap?chain=arbitrum";
+    if (chainId === 56) return "https://pancakeswap.finance/swap?chain=bsc";
     if (chainId === 97) return "https://pancakeswap.finance/swap?chain=bscTestnet";
     return "https://app.uniswap.org/#/swap";
   })();

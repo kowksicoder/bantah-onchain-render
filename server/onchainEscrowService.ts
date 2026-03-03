@@ -269,7 +269,8 @@ export async function verifyEscrowTransaction(
   }
 
   const txValue = parseHexToBigInt(tx?.value) ?? 0n;
-  if (params.tokenSymbol === "ETH" && txValue <= 0n) {
+  const isNativeStakeToken = params.tokenSymbol === "ETH" || params.tokenSymbol === "BNB";
+  if (isNativeStakeToken && txValue <= 0n) {
     throw new Error("Native-token escrow transaction must include a positive value");
   }
 

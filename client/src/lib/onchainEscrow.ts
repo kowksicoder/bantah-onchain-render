@@ -1,6 +1,6 @@
 import { encodeFunctionData, parseAbi, parseUnits, toHex } from "viem";
 
-export type OnchainTokenSymbol = "USDC" | "USDT" | "ETH";
+export type OnchainTokenSymbol = "USDC" | "USDT" | "ETH" | "BNB";
 
 export type OnchainTokenConfig = {
   symbol: OnchainTokenSymbol;

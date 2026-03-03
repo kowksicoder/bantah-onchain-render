@@ -55,7 +55,7 @@ export default function HelpSupport() {
       id: "1",
       question: "How do I fund my onchain challenge stake?",
       answer:
-        "Connect your EVM wallet, switch to a supported chain, and make sure you hold the token you want to stake (ETH/USDC/USDT depending on the challenge). Escrow is confirmed through an onchain transaction.",
+        "Connect your EVM wallet, switch to a supported chain, and make sure you hold the token you want to stake (ETH/BNB/USDC/USDT depending on the challenge). Escrow is confirmed through an onchain transaction.",
       category: "payments",
       popularity: 95,
     },

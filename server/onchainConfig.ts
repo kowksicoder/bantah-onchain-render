@@ -98,6 +98,7 @@ function withEnvChainOverride(chain: OnchainChainConfig): OnchainChainConfig {
     USDC: withEnvTokenOverride(chain, "USDC", chain.tokens.USDC),
     USDT: withEnvTokenOverride(chain, "USDT", chain.tokens.USDT),
     ETH: withEnvTokenOverride(chain, "ETH", chain.tokens.ETH),
+    BNB: withEnvTokenOverride(chain, "BNB", chain.tokens.BNB),
   };
 
   return {
