@@ -1,0 +1,13 @@
+api/
+server/
+contracts/
+scripts/
+migrations/
+tests/
+docs/
+dist/
+artifacts/
+cache/
+*.log
+*.db
+*.sql
