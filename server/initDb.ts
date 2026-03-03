@@ -56,6 +56,22 @@ export async function initializeDatabase() {
       `CREATE INDEX IF NOT EXISTS idx_challenges_settlement_rail ON challenges(settlement_rail)`,
       `CREATE INDEX IF NOT EXISTS idx_challenges_chain_id ON challenges(chain_id)`,
       `CREATE INDEX IF NOT EXISTS idx_challenges_challenged_wallet_address ON challenges(challenged_wallet_address)`,
+      `CREATE TABLE IF NOT EXISTS onchain_challenge_metadata (
+        metadata_hash varchar primary key,
+        chain_id integer,
+        escrow_tx_hash varchar,
+        challenge_id integer,
+        payload jsonb not null,
+        created_at timestamp default now(),
+        updated_at timestamp default now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_onchain_metadata_escrow_tx_hash ON onchain_challenge_metadata(escrow_tx_hash)`,
+      `CREATE INDEX IF NOT EXISTS idx_onchain_metadata_challenge_id ON onchain_challenge_metadata(challenge_id)`,
+      `CREATE TABLE IF NOT EXISTS onchain_indexer_state (
+        chain_id integer primary key,
+        last_block bigint not null,
+        updated_at timestamp default now()
+      )`,
     ];
 
     for (const statement of onchainStatements) {

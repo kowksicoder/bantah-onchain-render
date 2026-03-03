@@ -8,6 +8,10 @@ import { PrivyAuthMiddleware } from "./privyAuth";
 import { verifyPrivyToken } from "./privyAuth";
 import { getOnchainServerConfig } from "./onchainConfig";
 import { verifyEscrowTransaction, assertAllowedStakeToken } from "./onchainEscrowService";
+import {
+  logOnchainChallengeCreated,
+  upsertOnchainChallengeMetadata,
+} from "./onchainMetadata";
 import { db, pool } from "./db";
 import { insertEventSchema, insertChallengeSchema, insertNotificationSchema } from "@shared/schema";
 import {
@@ -3584,12 +3588,12 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
       const stakeAtomic = toAtomicUnits(parsedAmount, tokenConfig.decimals);
       let creatorEscrowTxHash: string | null = null;
+      const creatorWallet = normalizeEvmAddress(req.user.walletAddress);
       const challengedWalletAddress = normalizeEvmAddress(
         (req.body as any)?.challengedWalletAddress,
       );
 
       if (ONCHAIN_CONFIG.contractEnabled) {
-        const creatorWallet = normalizeEvmAddress(req.user.walletAddress);
         if (!creatorWallet) {
           return res.status(403).json({
             message: "Wallet required. Connect an EVM wallet to continue.",
@@ -3690,6 +3694,59 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       };
       const challengeScanUrl = getChallengeScanUrl(challengeMeta, creatorEscrowTxHash);
       const telegramBot = getTelegramBot();
+
+      // Persist onchain metadata for indexers and optionally log metadata hash onchain
+      try {
+        const metadataPayload = {
+          version: 1,
+          challengeId: challenge.id,
+          chainId: Number(challengeMeta.chainId || chainConfig.chainId),
+          escrowTxHash: challengeMeta.escrowTxHash ?? null,
+          challengerWallet: creatorWallet,
+          challengerUserId: challenge.challenger ?? null,
+          challengedUserId: challenge.challenged ?? null,
+          challengedWalletAddress: challenge.challengedWalletAddress ?? null,
+          title: challenge.title,
+          description: challenge.description ?? null,
+          category: challenge.category,
+          amount: parseFloat(String(challenge.amount || 0)) || 0,
+          challengerSide: challenge.challengerSide ?? null,
+          dueDate: challenge.dueDate ? new Date(challenge.dueDate).toISOString() : null,
+          settlementRail: challenge.settlementRail ?? "onchain",
+          tokenSymbol: challenge.tokenSymbol ?? tokenSymbol,
+          tokenAddress: challenge.tokenAddress ?? tokenConfig.address ?? null,
+          decimals: Number(challenge.decimals ?? tokenConfig.decimals ?? 0) || null,
+          stakeAtomic: challenge.stakeAtomic ?? stakeAtomic,
+          adminCreated: challenge.adminCreated ?? false,
+          createdAt: challenge.createdAt ? new Date(challenge.createdAt).toISOString() : null,
+        };
+
+        const metadataRecord = await upsertOnchainChallengeMetadata({
+          payload: metadataPayload,
+          chainId: metadataPayload.chainId,
+          escrowTxHash: metadataPayload.escrowTxHash,
+          challengeId: challenge.id,
+        });
+
+        const metadataLoggerEnabled = String(process.env.ONCHAIN_METADATA_LOGGER_ENABLED || "")
+          .trim()
+          .toLowerCase();
+        const shouldLogMetadata =
+          metadataLoggerEnabled === "true" ||
+          metadataLoggerEnabled === "1" ||
+          metadataLoggerEnabled === "yes";
+
+        if (shouldLogMetadata && metadataPayload.escrowTxHash) {
+          await logOnchainChallengeCreated({
+            chain: chainConfig,
+            metadataHash: metadataRecord.metadataHash,
+            challengeId: challenge.id,
+            challengeType: "challenge",
+          });
+        }
+      } catch (metadataError) {
+        console.error("⚠️ Failed to persist/log onchain metadata:", metadataError);
+      }
 
       // Only create notification for challenged user if there is a challenged user (not open challenge)  
       if (challenge.challenged && challenged) {

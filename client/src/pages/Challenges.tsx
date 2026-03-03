@@ -183,6 +183,15 @@ export default function Challenges() {
     );
   };
 
+
+  const isFiveMinuteChallenge = (challenge: any) => {
+    if (!challenge) return false;
+    const title = String(challenge?.title || "");
+    const description = String(challenge?.description || "");
+    const text = `${title} ${description}`;
+    return /\b5\s*(m|min|mins|minute|minutes)\b/i.test(text);
+  };
+
   const { data: challenges = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/challenges"],
     queryFn: async () => {
@@ -421,6 +430,7 @@ export default function Challenges() {
   ];
 
   const filteredChallenges = useMemo(() => challenges.filter((challenge: any) => {
+    if (isFiveMinuteChallenge(challenge)) return false;
     const searchLower = searchTerm ? searchTerm.toLowerCase() : "";
     const matchesSearch =
       !searchTerm ||

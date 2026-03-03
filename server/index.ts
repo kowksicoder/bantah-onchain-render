@@ -186,6 +186,14 @@ app.use((req, res, next) => {
       console.error("❌ Failed to initialize database:", err);
     }
 
+    // Onchain indexer (optional)
+    try {
+      const { startOnchainIndexer } = await import("./onchainIndexer");
+      startOnchainIndexer();
+    } catch (err) {
+      console.error("⚠️ Failed to start onchain indexer:", err);
+    }
+
     // Notification service
     try {
       const { storage } = await import("./storage");
