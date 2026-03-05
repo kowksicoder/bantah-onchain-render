@@ -1,7 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatDistanceToNow } from "date-fns";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -658,9 +657,6 @@ export function ChallengeCard({
       : user?.id === challenge.challenged
         ? challenge.challengerUser
         : challenge.challengerUser;
-  const timeAgo = formatDistanceToNow(new Date(challenge.createdAt), {
-    addSuffix: true,
-  });
 
   // Helper function to get status text for the card
   const getStatusText = () => {
@@ -697,6 +693,52 @@ export function ChallengeCard({
 
     const diffWeeks = Math.floor(diffDays / 7);
     return `${diffWeeks}w`;
+  };
+
+  const getOrdinalDay = (day: number) => {
+    const remainder = day % 100;
+    if (remainder >= 11 && remainder <= 13) return `${day}th`;
+    switch (day % 10) {
+      case 1:
+        return `${day}st`;
+      case 2:
+        return `${day}nd`;
+      case 3:
+        return `${day}rd`;
+      default:
+        return `${day}th`;
+    }
+  };
+
+  const getChallengeEndsLabel = (dueDate?: string, createdAt?: string) => {
+    if (!dueDate) {
+      return createdAt ? `Created ${getCompactTimeAgo(createdAt)}` : "No end date";
+    }
+
+    const due = new Date(dueDate);
+    const dueMs = due.getTime();
+    if (Number.isNaN(dueMs)) {
+      return createdAt ? `Created ${getCompactTimeAgo(createdAt)}` : "No end date";
+    }
+
+    const nowMs = Date.now();
+    const diffMs = dueMs - nowMs;
+
+    if (diffMs <= 0) {
+      return `Ended ${getOrdinalDay(due.getDate())} ${due.toLocaleString("en-US", { month: "long" })}`;
+    }
+
+    const minutesLeft = Math.ceil(diffMs / 60000);
+    if (minutesLeft < 60) {
+      return `Ends in ${minutesLeft}m`;
+    }
+
+    const hoursLeft = Math.ceil(diffMs / 3600000);
+    if (hoursLeft <= 24) {
+      return `Ends in ${hoursLeft}h`;
+    }
+
+    return `Ends ${getOrdinalDay(due.getDate())} ${due.toLocaleString("en-US", { month: "long" })}`;
   };
 
   const isHeadToHeadMatched = !challenge.adminCreated && !!challenge.challenger && !!challenge.challenged;
@@ -811,7 +853,7 @@ export function ChallengeCard({
                 </button>
               )}
               <div className="mt-0.5 flex items-center gap-1 text-[9px] font-semibold text-slate-400 dark:text-slate-500">
-                <span className="uppercase">{getCompactTimeAgo(challenge.createdAt)}</span>
+                <span>{getChallengeEndsLabel(challenge.dueDate, challenge.createdAt)}</span>
                 {isUpDownMarket && (
                   <>
                     <span>•</span>

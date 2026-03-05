@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -293,7 +293,7 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
             </Badge>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Ã—
+            Close
           </Button>
         </div>
 
@@ -504,4 +504,5 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
   </div>
 );
 }
+
 

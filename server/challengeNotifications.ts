@@ -237,8 +237,6 @@ export async function notifyDisputeResolved(
 export const challengeNotifications = {
   notifyProofUploaded,
   notifyVoteSubmitted,
-  notifyProofUploaded,
-  notifyVoteSubmitted,
   notifyAutoReleased,
   notifyDisputeOpened,
   notifyDisputeResolved,

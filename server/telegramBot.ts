@@ -1673,14 +1673,15 @@ Example:
       return;
     }
 
-    const [wallet] = await db
-      .select()
-      .from(schema.wallets)
-      .where(eq(schema.wallets.userId, creator.id))
-      .limit(1);
-
-    if (!wallet || wallet.balance < amount) {
-      await this.sendMessage(chatId, `❌ Insufficient balance. You have ₦${wallet?.balance?.toLocaleString() || 0}`);
+    const currentBalance = Number.parseFloat(String((creator as any)?.balance ?? "0"));
+    if (!Number.isFinite(currentBalance) || currentBalance < amount) {
+      await this.sendMessage(
+        chatId,
+        `❌ Insufficient balance. You have ₦${Math.max(
+          0,
+          Number.isFinite(currentBalance) ? currentBalance : 0,
+        ).toLocaleString()}`,
+      );
       return;
     }
 
@@ -2061,3 +2062,4 @@ export function createTelegramBot(): TelegramBotService | null {
 export function getTelegramBot(): TelegramBotService | null {
   return telegramBot;
 }
+

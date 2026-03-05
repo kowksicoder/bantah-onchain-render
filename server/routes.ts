@@ -12,7 +12,8 @@ import {
   logOnchainChallengeCreated,
   upsertOnchainChallengeMetadata,
 } from "./onchainMetadata";
-import { db, pool } from "./db";
+import { getOnchainIndexerHealthSnapshot } from "./onchainIndexer";
+import { DB_IDENTITY, db, pool } from "./db";
 import { insertEventSchema, insertChallengeSchema, insertNotificationSchema } from "@shared/schema";
 import {
   normalizeEvmAddress,
@@ -104,7 +105,7 @@ import axios from "axios";
 import fs from "fs/promises";
 import path from "path";
 // express-fileupload removed — multer handles file uploads in server/index.ts
-import { adminAuth } from "./adminAuth";
+import { adminAuth, generateAdminToken } from "./adminAuth";
 import { desc, or, not, isNull, count, sum, avg } from "drizzle-orm";
 import type { NextFunction } from "express";
 
@@ -250,6 +251,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   });
 
   app.get("/api/onchain/status", (_req, res) => {
+    const indexer = getOnchainIndexerHealthSnapshot();
     const chains = Object.values(ONCHAIN_CONFIG.chains).map((chain) => ({
       chainId: chain.chainId,
       name: chain.name,
@@ -271,6 +273,21 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     if (ONCHAIN_CONFIG.executionMode === "contract" && contractConfiguredChains === 0) {
       warnings.push("Execution mode is contract but no chain has ONCHAIN_*_ESCROW_ADDRESS configured.");
     }
+    if (indexer.enabled) {
+      for (const chain of indexer.chains) {
+        if (typeof chain.lagBlocks === "number" && chain.lagBlocks > 200) {
+          warnings.push(
+            `Indexer lag is high on chainId ${chain.chainId} (${chain.lagBlocks} blocks behind).`,
+          );
+        }
+        if (chain.lastError) {
+          warnings.push(`Indexer reported an error on chainId ${chain.chainId}: ${chain.lastError}`);
+        }
+      }
+    }
+    if (DB_IDENTITY.isLocal && process.env.NODE_ENV === "production") {
+      warnings.push("Production instance is connected to a local database host.");
+    }
 
     res.json({
       appMode: "onchain",
@@ -280,6 +297,13 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       contractConfiguredChains,
       totalEnabledChains: chains.length,
       chains,
+      database: {
+        host: DB_IDENTITY.host,
+        database: DB_IDENTITY.database,
+        port: DB_IDENTITY.port,
+        isLocal: DB_IDENTITY.isLocal,
+      },
+      indexer,
       warnings,
     });
   });
@@ -3130,8 +3154,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(401).json({ message: 'Invalid admin credentials' });
       }
 
-      // Generate admin token
-      const adminToken = `admin_${user.id}_${Date.now()}`;
+      // Generate signed admin token
+      const adminToken = generateAdminToken(user.id);
 
       res.json({
         token: adminToken,

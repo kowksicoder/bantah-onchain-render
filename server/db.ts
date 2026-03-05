@@ -9,11 +9,46 @@ if (!process.env.DATABASE_URL) {
 }
 
 const isProd = process.env.NODE_ENV === 'production';
+const databaseUrl = String(process.env.DATABASE_URL || "").trim();
+
+type DatabaseIdentity = {
+  host: string;
+  database: string;
+  port: number | null;
+  isLocal: boolean;
+};
+
+function parseDatabaseIdentity(connectionString: string): DatabaseIdentity {
+  try {
+    const parsed = new URL(connectionString);
+    const host = parsed.hostname || "unknown";
+    const database = parsed.pathname?.replace(/^\//, "") || "unknown";
+    const port = parsed.port ? Number(parsed.port) : null;
+    const normalizedHost = host.toLowerCase();
+    const isLocal =
+      normalizedHost === "localhost" ||
+      normalizedHost === "127.0.0.1" ||
+      normalizedHost === "::1";
+    return { host, database, port: Number.isFinite(port as number) ? port : null, isLocal };
+  } catch {
+    return { host: "unknown", database: "unknown", port: null, isLocal: false };
+  }
+}
+
+export const DB_IDENTITY = parseDatabaseIdentity(databaseUrl);
+
+const requireRemoteDb = isProd || String(process.env.REQUIRE_REMOTE_DATABASE || "").toLowerCase() === "true";
+if (requireRemoteDb && DB_IDENTITY.isLocal) {
+  throw new Error(
+    `Refusing to start with local DATABASE_URL in ${isProd ? "production" : "remote-required"} mode. ` +
+      "Set DATABASE_URL to a remote managed database (Railway/Supabase).",
+  );
+}
 
 // Session Pooler configuration for Supabase
 // This works with IPv4 networks (like Codespaces)
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: databaseUrl,
   ssl: {
     rejectUnauthorized: isProd ? true : false,
   },
@@ -23,7 +58,10 @@ export const pool = new Pool({
 });
 
 pool.on('connect', () => {
-  // Database connected
+  console.log(
+    `[db] connected host=${DB_IDENTITY.host} db=${DB_IDENTITY.database}` +
+      `${DB_IDENTITY.port ? ` port=${DB_IDENTITY.port}` : ""}`,
+  );
 });
 
 pool.on('error', (err) => {

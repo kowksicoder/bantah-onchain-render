@@ -55,6 +55,41 @@ type IndexerRuntimeConfig = {
   dueHours: number;
 };
 
+type ChainSyncStats = {
+  chainId: number;
+  chainName: string;
+  safeLatest: number;
+  processedThrough: number;
+  created: number;
+  skipped: number;
+  durationMs: number;
+};
+
+type ChainIndexerHealth = {
+  chainId: number;
+  chainName: string;
+  rpcConfigured: boolean;
+  escrowConfigured: boolean;
+  running: boolean;
+  lastStartedAt: string | null;
+  lastCompletedAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  safeLatest: number | null;
+  processedThrough: number | null;
+  lagBlocks: number | null;
+  createdLastRun: number;
+  skippedLastRun: number;
+  durationMsLastRun: number | null;
+};
+
+const indexerHealthState = {
+  enabled: false,
+  startedAt: null as string | null,
+  pollIntervalMs: null as number | null,
+  chains: new Map<number, ChainIndexerHealth>(),
+};
+
 type ResolvedToken = {
   symbol: OnchainTokenSymbol;
   decimals: number;
@@ -106,13 +141,50 @@ function buildRuntimeConfig(): IndexerRuntimeConfig {
   return {
     pollIntervalMs: Math.max(5000, Math.floor(parseNumber(process.env.ONCHAIN_INDEXER_POLL_INTERVAL_MS, 30000))),
     backfillBlocks: Math.max(0, Math.floor(parseNumber(process.env.ONCHAIN_INDEXER_BACKFILL_BLOCKS, 5000))),
-    batchSize: Math.max(100, Math.floor(parseNumber(process.env.ONCHAIN_INDEXER_BATCH_SIZE, 1000))),
+    // Some RPC providers (especially free tiers) require very small eth_getLogs block ranges.
+    batchSize: Math.max(1, Math.floor(parseNumber(process.env.ONCHAIN_INDEXER_BATCH_SIZE, 1000))),
     confirmations: Math.max(0, Math.floor(parseNumber(process.env.ONCHAIN_INDEXER_CONFIRMATIONS, 2))),
     category: String(process.env.ONCHAIN_INDEXER_CATEGORY || "crypto").trim() || "crypto",
     titlePrefix: String(process.env.ONCHAIN_INDEXER_TITLE_PREFIX || "Onchain Challenge").trim() || "Onchain Challenge",
     adminCreated: parseBool(process.env.ONCHAIN_INDEXER_ADMIN_CREATED, true),
     requireKnownWallet: parseBool(process.env.ONCHAIN_INDEXER_REQUIRE_KNOWN_WALLET, false),
     dueHours: Math.max(0, Math.floor(parseNumber(process.env.ONCHAIN_INDEXER_DUE_HOURS, 0))),
+  };
+}
+
+function getOrCreateChainHealth(chain: OnchainChainConfig): ChainIndexerHealth {
+  const existing = indexerHealthState.chains.get(chain.chainId);
+  if (existing) return existing;
+
+  const created: ChainIndexerHealth = {
+    chainId: chain.chainId,
+    chainName: chain.name,
+    rpcConfigured: Boolean(chain.rpcUrl),
+    escrowConfigured: Boolean(normalizeEvmAddress(chain.escrowContractAddress)),
+    running: false,
+    lastStartedAt: null,
+    lastCompletedAt: null,
+    lastSuccessAt: null,
+    lastError: null,
+    safeLatest: null,
+    processedThrough: null,
+    lagBlocks: null,
+    createdLastRun: 0,
+    skippedLastRun: 0,
+    durationMsLastRun: null,
+  };
+  indexerHealthState.chains.set(chain.chainId, created);
+  return created;
+}
+
+export function getOnchainIndexerHealthSnapshot() {
+  return {
+    enabled: indexerHealthState.enabled,
+    startedAt: indexerHealthState.startedAt,
+    pollIntervalMs: indexerHealthState.pollIntervalMs,
+    chains: Array.from(indexerHealthState.chains.values()).sort(
+      (left, right) => left.chainId - right.chainId,
+    ),
   };
 }
 
@@ -529,13 +601,35 @@ async function syncChain(
   chain: OnchainChainConfig,
   provider: ethers.JsonRpcProvider,
   runtime: IndexerRuntimeConfig,
-): Promise<void> {
+): Promise<ChainSyncStats> {
+  const startedAt = Date.now();
   const escrowAddress = normalizeEvmAddress(chain.escrowContractAddress);
-  if (!escrowAddress) return;
+  if (!escrowAddress) {
+    return {
+      chainId: chain.chainId,
+      chainName: chain.name,
+      safeLatest: 0,
+      processedThrough: 0,
+      created: 0,
+      skipped: 0,
+      durationMs: Date.now() - startedAt,
+    };
+  }
 
   const latest = await provider.getBlockNumber();
   const safeLatest = Math.max(0, latest - runtime.confirmations);
-  if (safeLatest <= 0) return;
+  if (safeLatest <= 0) {
+    const storedLast = await getLastProcessedBlock(chain.chainId);
+    return {
+      chainId: chain.chainId,
+      chainName: chain.name,
+      safeLatest: 0,
+      processedThrough: storedLast ?? 0,
+      created: 0,
+      skipped: 0,
+      durationMs: Date.now() - startedAt,
+    };
+  }
 
   const startOverrideByChain = parseOptionalNumber(
     process.env[`ONCHAIN_INDEXER_START_BLOCK_${chain.chainId}`],
@@ -546,10 +640,21 @@ async function syncChain(
     ? stored + 1
     : startOverrideByChain ?? startOverrideGlobal ?? Math.max(0, safeLatest - runtime.backfillBlocks);
 
-  if (initialStart > safeLatest) return;
+  if (initialStart > safeLatest) {
+    return {
+      chainId: chain.chainId,
+      chainName: chain.name,
+      safeLatest,
+      processedThrough: stored ?? safeLatest,
+      created: 0,
+      skipped: 0,
+      durationMs: Date.now() - startedAt,
+    };
+  }
 
   const blockCache = new Map<number, Date>();
   let cursor = initialStart;
+  let processedThrough = stored ?? Math.max(0, initialStart - 1);
   let created = 0;
   let skipped = 0;
 
@@ -647,6 +752,7 @@ async function syncChain(
     }
 
     await setLastProcessedBlock(chain.chainId, end);
+    processedThrough = end;
     cursor = end + 1;
   }
 
@@ -655,12 +761,28 @@ async function syncChain(
       `[onchain-indexer] ${chain.name}: created=${created} skipped=${skipped} latest=${safeLatest}`,
     );
   }
+
+  return {
+    chainId: chain.chainId,
+    chainName: chain.name,
+    safeLatest,
+    processedThrough,
+    created,
+    skipped,
+    durationMs: Date.now() - startedAt,
+  };
 }
 
 export function startOnchainIndexer(): void {
-  if (!parseBool(process.env.ONCHAIN_INDEXER_ENABLED, false)) return;
+  const enabled = parseBool(process.env.ONCHAIN_INDEXER_ENABLED, false);
+  indexerHealthState.enabled = enabled;
+  indexerHealthState.startedAt = enabled ? new Date().toISOString() : null;
+  indexerHealthState.pollIntervalMs = null;
+  indexerHealthState.chains.clear();
+  if (!enabled) return;
 
   const runtime = buildRuntimeConfig();
+  indexerHealthState.pollIntervalMs = runtime.pollIntervalMs;
   const config = getOnchainServerConfig();
   const chains = Object.values(config.chains).filter(
     (chain) => Boolean(chain.rpcUrl) && Boolean(chain.escrowContractAddress),
@@ -674,6 +796,7 @@ export function startOnchainIndexer(): void {
   const inFlight = new Map<number, boolean>();
 
   for (const chain of chains) {
+    const health = getOrCreateChainHealth(chain);
     const provider = new ethers.JsonRpcProvider(chain.rpcUrl, chain.chainId, {
       staticNetwork: true,
     });
@@ -681,9 +804,28 @@ export function startOnchainIndexer(): void {
     const tick = async () => {
       if (inFlight.get(chain.chainId)) return;
       inFlight.set(chain.chainId, true);
+      const runStartedAt = new Date();
+      health.running = true;
+      health.lastStartedAt = runStartedAt.toISOString();
+      health.lastError = null;
+
       try {
-        await syncChain(chain, provider, runtime);
-      } catch (error) {
+        const stats = await syncChain(chain, provider, runtime);
+        const runCompletedAt = new Date();
+        health.running = false;
+        health.lastCompletedAt = runCompletedAt.toISOString();
+        health.lastSuccessAt = runCompletedAt.toISOString();
+        health.safeLatest = stats.safeLatest;
+        health.processedThrough = stats.processedThrough;
+        health.lagBlocks = Math.max(0, stats.safeLatest - stats.processedThrough);
+        health.createdLastRun = stats.created;
+        health.skippedLastRun = stats.skipped;
+        health.durationMsLastRun = stats.durationMs;
+      } catch (error: any) {
+        const runCompletedAt = new Date();
+        health.running = false;
+        health.lastCompletedAt = runCompletedAt.toISOString();
+        health.lastError = String(error?.message || error || "unknown_error");
         console.error(`[onchain-indexer] ${chain.name} sync error:`, error);
       } finally {
         inFlight.set(chain.chainId, false);

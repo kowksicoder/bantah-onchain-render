@@ -2041,7 +2041,7 @@ export class DatabaseStorage implements IStorage {
       .from(challengeMessages)
       .innerJoin(users, eq(challengeMessages.userId, users.id))
       .where(eq(challengeMessages.challengeId, challengeId))
-      .orderBy(desc(challengeMessages.createdAt));
+      .orderBy(challengeMessages.createdAt);
   }
 
   async createChallengeMessage(challengeId: number, userId: string, message: string): Promise<ChallengeMessage> {
@@ -4682,83 +4682,6 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getFriends(userId: string): Promise<(Friend & { requester: User, addressee: User })[]> {
-    const friendList = await this.db
-      .select()
-      .from(friends)
-      .where(or(eq(friends.requesterId, userId), eq(friends.addresseeId, userId)));
-
-    const results = [];
-    for (const friend of friendList) {
-      const requester = await this.getUser(friend.requesterId);
-      const addressee = await this.getUser(friend.addresseeId);
-      if (requester && addressee) {
-        results.push({ ...friend, requester, addressee });
-      }
-    }
-    return results;
-  }
-
-  async sendFriendRequest(requesterId: string, addresseeId: string): Promise<Friend> {
-    const [friendRequest] = await this.db
-      .insert(friends)
-      .values({
-        requesterId,
-        addresseeId,
-        status: "pending",
-      })
-      .returning();
-    return friendRequest;
-  }
-
-  async acceptFriendRequest(id: number): Promise<Friend> {
-    const [friend] = await this.db
-      .update(friends)
-      .set({
-        status: "accepted",
-        acceptedAt: new Date(),
-      })
-      .where(eq(friends.id, id))
-      .returning();
-    return friend;
-  }
-
-  async toggleFollow(followerId: string, followingId: string): Promise<{ action: 'followed' | 'unfollowed' }> {
-    // Basic implementation for now
-    return { action: 'followed' };
-  }
-
-  async getNotifications(userId: string, limit = 50): Promise<Notification[]> {
-    return await this.db
-      .select()
-      .from(notifications)
-      .where(eq(notifications.userId, userId))
-      .orderBy(desc(notifications.createdAt))
-      .limit(limit);
-  }
-
-  async createNotification(notification: InsertNotification): Promise<Notification> {
-    const id = `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const [newNotif] = await this.db
-      .insert(notifications)
-      .values({
-        id,
-        ...notification,
-        createdAt: new Date(),
-      })
-      .returning();
-    return newNotif;
-  }
-
-  async markNotificationRead(id: string): Promise<Notification> {
-    const [updated] = await this.db
-      .update(notifications)
-      .set({ read: true })
-      .where(eq(notifications.id, id))
-      .returning();
-    return updated;
-  }
-
   async registerSigningPublicKey(userId: string, publicKeyBase64: string): Promise<any> {
     const res: any = await pool.query(`UPDATE users SET signing_pubkey = $1 WHERE id = $2 RETURNING id, signing_pubkey`, [publicKeyBase64, userId]);
     return res.rows[0];
@@ -4807,32 +4730,6 @@ export class DatabaseStorage implements IStorage {
     return res.rows || [];
   }
 
-  async getChallengeMessages(challengeId: number): Promise<any[]> {
-    const res: any = await pool.query(`
-      SELECT 
-        cm.*, 
-        u.username, 
-        u.first_name,
-        u.profile_image_url
-      FROM challenge_messages cm
-      LEFT JOIN users u ON cm.user_id = u.id
-      WHERE cm.challenge_id = $1
-      ORDER BY cm.created_at ASC
-    `, [String(challengeId)]);
-    const rows = res.rows || [];
-    return rows.map((row: any) => ({
-      ...row,
-      challengeId: row.challenge_id ?? row.challengeId,
-      userId: row.user_id ?? row.userId,
-      createdAt: row.created_at ?? row.createdAt,
-      user: {
-        id: row.user_id ?? row.userId,
-        username: row.username ?? null,
-        firstName: row.first_name ?? null,
-        profileImageUrl: row.profile_image_url ?? null,
-      },
-    }));
-  }
 }
 
 export const storage = new DatabaseStorage();
