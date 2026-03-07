@@ -1,4 +1,5 @@
 import { encodeFunctionData, parseAbi, parseUnits, toHex } from "viem";
+import { Attribution } from "ox/erc8021";
 
 export type OnchainTokenSymbol = "USDC" | "USDT" | "ETH" | "BNB";
 
@@ -50,6 +51,19 @@ const escrowNativeAbi = parseAbi([
   "function lockStakeNative() payable returns (bool)",
 ]);
 
+const BASE_ATTRIBUTION_CHAIN_IDS = new Set<number>([8453, 84532]);
+const BASE_BUILDER_CODE = String(
+  (import.meta as any)?.env?.VITE_BASE_BUILDER_CODE || "bc_f32lu290",
+).trim();
+const BASE_BUILDER_DATA_SUFFIX = (() => {
+  if (!BASE_BUILDER_CODE) return null;
+  try {
+    return Attribution.toDataSuffix({ codes: [BASE_BUILDER_CODE] });
+  } catch {
+    return null;
+  }
+})();
+
 function normalizeAddress(input: unknown): `0x${string}` | null {
   if (typeof input !== "string") return null;
   const value = input.trim().toLowerCase();
@@ -70,6 +84,26 @@ function ensureHexQuantity(value: bigint): `0x${string}` {
     throw new Error("Negative transaction value is invalid");
   }
   return toHex(value);
+}
+
+function appendBuilderDataSuffix(
+  data: `0x${string}`,
+  chainId?: number,
+): `0x${string}` {
+  if (!chainId || !BASE_ATTRIBUTION_CHAIN_IDS.has(Number(chainId))) {
+    return data;
+  }
+  if (!BASE_BUILDER_DATA_SUFFIX) {
+    return data;
+  }
+
+  const normalizedData = String(data).toLowerCase();
+  const suffixWithoutPrefix = BASE_BUILDER_DATA_SUFFIX.slice(2).toLowerCase();
+  if (normalizedData.endsWith(suffixWithoutPrefix)) {
+    return data;
+  }
+
+  return `${data}${BASE_BUILDER_DATA_SUFFIX.slice(2)}` as `0x${string}`;
 }
 
 function resolveChainConfig(config: OnchainRuntimeConfig, chainId: number): OnchainChainConfig {
@@ -193,8 +227,13 @@ async function sendTransactionAndWait(params: {
   to: string;
   data?: `0x${string}`;
   value?: bigint;
+  chainId?: number;
   timeoutMs?: number;
 }): Promise<`0x${string}`> {
+  const txData = appendBuilderDataSuffix(
+    params.data || "0x",
+    params.chainId,
+  );
   const txHash = normalizeHash(
     await params.provider.request({
       method: "eth_sendTransaction",
@@ -202,7 +241,7 @@ async function sendTransactionAndWait(params: {
         {
           from: params.from,
           to: params.to,
-          data: params.data || "0x",
+          data: txData,
           value:
             params.value === undefined
               ? "0x0"
@@ -303,6 +342,7 @@ export async function executeOnchainEscrowStakeTx(params: {
       to: escrowAddress,
       data: nativeStakeData,
       value: amountAtomic,
+      chainId: chainConfig.chainId,
     });
     return { escrowTxHash, walletAddress: sender };
   }
@@ -322,6 +362,7 @@ export async function executeOnchainEscrowStakeTx(params: {
     from: sender,
     to: tokenAddress,
     data: approveData,
+    chainId: chainConfig.chainId,
   });
 
   const erc20MethodSignature =
@@ -337,6 +378,7 @@ export async function executeOnchainEscrowStakeTx(params: {
     to: escrowAddress,
     data: escrowData,
     value: BigInt(0),
+    chainId: chainConfig.chainId,
   });
 
   return { approveTxHash, escrowTxHash, walletAddress: sender };
@@ -384,6 +426,7 @@ export async function executeOnchainSettleTx(params: {
     to: escrowAddress,
     data: settleData,
     value: BigInt(0),
+    chainId: chainConfig.chainId,
   });
 
   return { settleTxHash, walletAddress: sender };

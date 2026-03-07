@@ -94,6 +94,7 @@
     "node-telegram-bot-api": "^0.66.0",
     "openai": "^5.10.2",
     "openid-client": "^6.6.2",
+    "ox": "^0.14.0",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
     "passport-openidconnect": "^0.1.2",
