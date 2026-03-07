@@ -8,8 +8,8 @@
     "version": "1",
     "name": "Bantah",
     "homeUrl": "https://onchain.bantah.fun/",
-    "iconUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
-    "imageUrl": "https://onchain.bantah.fun/assets/bantahpreview.jpg",
+    "iconUrl": "https://onchain.bantah.fun/assets/base-icon-1024.png",
+    "imageUrl": "https://onchain.bantah.fun/assets/base-image-1200x630.png",
     "splashImageUrl": "https://onchain.bantah.fun/assets/base-splash-200.png",
     "splashBackgroundColor": "#0f172a",
     "primaryCategory": "finance",
@@ -30,8 +30,8 @@
     "version": "1",
     "name": "Bantah",
     "homeUrl": "https://onchain.bantah.fun/",
-    "iconUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
-    "imageUrl": "https://onchain.bantah.fun/assets/bantahpreview.jpg",
+    "iconUrl": "https://onchain.bantah.fun/assets/base-icon-1024.png",
+    "imageUrl": "https://onchain.bantah.fun/assets/base-image-1200x630.png",
     "splashImageUrl": "https://onchain.bantah.fun/assets/base-splash-200.png",
     "splashBackgroundColor": "#0f172a"
   }
