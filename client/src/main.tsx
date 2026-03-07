@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { pushNotificationService } from "./lib/pushNotifications";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 // Initialize push notifications
 pushNotificationService.initialize().catch(console.error);
@@ -24,3 +25,10 @@ if (botpressEnabled) {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+// Signal readiness when running inside Base/Farcaster mini app hosts.
+setTimeout(() => {
+  sdk.actions.ready().catch(() => {
+    // Ignore outside mini app environments.
+  });
+}, 0);

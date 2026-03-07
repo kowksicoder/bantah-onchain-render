@@ -25,6 +25,7 @@
     "node": "20.x"
   },
   "dependencies": {
+    "@farcaster/miniapp-sdk": "^0.2.3",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@privy-io/react-auth": "^3.3.0",
