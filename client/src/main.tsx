@@ -27,8 +27,25 @@ if (botpressEnabled) {
 createRoot(document.getElementById("root")!).render(<App />);
 
 // Signal readiness when running inside Base/Farcaster mini app hosts.
-setTimeout(() => {
-  sdk.actions.ready().catch(() => {
-    // Ignore outside mini app environments.
-  });
-}, 0);
+const signalMiniAppReady = () => {
+  let attempts = 0;
+  const maxAttempts = 20;
+
+  const attemptReady = async () => {
+    attempts += 1;
+    try {
+      await sdk.actions.ready();
+      return;
+    } catch {
+      // Ignore outside mini app environments.
+    }
+
+    if (attempts < maxAttempts) {
+      setTimeout(attemptReady, 300);
+    }
+  };
+
+  setTimeout(attemptReady, 0);
+};
+
+signalMiniAppReady();
