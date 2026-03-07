@@ -1,25 +1,23 @@
 {
+  "accountAssociation": {
+    "header": "eyJmaWQiOi0xLCJ0eXBlIjoiYXV0aCIsImtleSI6IjB4ZDJDRkM4RTI3MTU4QTcyOGM3MWI0NWIyRDgwODFDMjQwQjI4Y0I2YiJ9",
+    "payload": "eyJkb21haW4iOiJvbmNoYWluLmJhbnRhaC5mdW4ifQ",
+    "signature": "AAAAAAAAAAAAAAAAyhG94Fl3s2MRZwKIYr4qFzl2yhEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiSCrVbLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAul7REO_bo9AFv8iC11NYrLu4WEIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASQ_-6NvAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAoob1UV27RqD_0GCB9Cm2sQxMJ_MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAPhSELIcxQMC9He6VmhtIBncm2etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBKYBjSCuGlIcO-BXzJIQK2ArVJIb9yol9ReFeb4Bl4Vc-PhQ7vyuW0ZgG7MmlAm2ieutqdcDOZOpjkA8_rk87dBwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZJJkkmSSZJJkkmSSZJJkkmSSZJJkkmSSZJJkkmSSZJI"
+  },
   "miniapp": {
     "version": "1",
-    "name": "Bantah Onchain",
+    "name": "Bantah",
     "homeUrl": "https://onchain.bantah.fun/",
     "iconUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
+    "imageUrl": "https://onchain.bantah.fun/assets/bantahblue.svg",
     "splashImageUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
     "splashBackgroundColor": "#0f172a",
-    "subtitle": "Onchain challenge arena",
-    "description": "Create and settle social prediction challenges onchain with wallet-based escrow.",
     "primaryCategory": "finance",
-    "tags": ["prediction", "social", "onchain", "crypto", "challenges"],
-    "tagline": "Chat, challenge, settle onchain",
-    "heroImageUrl": "https://onchain.bantah.fun/assets/default-event-banner.png",
-    "ogTitle": "Bantah Onchain",
-    "ogDescription": "Create and join onchain prediction challenges with transparent escrow and settlement.",
-    "ogImageUrl": "https://onchain.bantah.fun/assets/default-event-banner.png",
-    "screenshotUrls": [
-      "https://onchain.bantah.fun/assets/default-event-banner.png",
-      "https://onchain.bantah.fun/assets/leaderboard.png",
-      "https://onchain.bantah.fun/assets/create.png"
-    ],
+    "tags": ["prediction", "social", "finance", "p2p", "challenges"],
+    "subtitle": "P2P challenge arena",
+    "tagline": "Predict challenge earn",
+    "description": "Create join and settle social prediction challenges with wallet escrow on Base and multichain networks.",
+    "noindex": false,
     "requiredChains": ["eip155:8453", "eip155:42161", "eip155:130", "eip155:42220", "eip155:56"],
     "requiredCapabilities": [
       "actions.signIn",
@@ -30,9 +28,10 @@
   },
   "frame": {
     "version": "1",
-    "name": "Bantah Onchain",
+    "name": "Bantah",
     "homeUrl": "https://onchain.bantah.fun/",
     "iconUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
+    "imageUrl": "https://onchain.bantah.fun/assets/bantahblue.svg",
     "splashImageUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
     "splashBackgroundColor": "#0f172a"
   }
