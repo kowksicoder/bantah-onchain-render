@@ -8,15 +8,14 @@
     "version": "1",
     "name": "Bantah",
     "homeUrl": "https://onchain.bantah.fun/",
-    "iconUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
-    "imageUrl": "https://onchain.bantah.fun/assets/bantahblue.svg",
-    "splashImageUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
+    "iconUrl": "https://onchain.bantah.fun/assets/bantahblue.svg",
+    "imageUrl": "https://onchain.bantah.fun/assets/bantahpreview.jpg",
+    "splashImageUrl": "https://onchain.bantah.fun/assets/base-splash-200.png",
     "splashBackgroundColor": "#0f172a",
     "primaryCategory": "finance",
     "tags": ["prediction", "social", "finance", "p2p", "challenges"],
     "subtitle": "P2P challenge arena",
-    "tagline": "Predict challenge earn",
-    "description": "Create join and settle social prediction challenges with wallet escrow on Base and multichain networks.",
+    "description": "Create join and settle social prediction challenges with wallet escrow.",
     "noindex": false,
     "requiredChains": ["eip155:8453", "eip155:42161", "eip155:130", "eip155:42220", "eip155:56"],
     "requiredCapabilities": [
@@ -30,9 +29,9 @@
     "version": "1",
     "name": "Bantah",
     "homeUrl": "https://onchain.bantah.fun/",
-    "iconUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
-    "imageUrl": "https://onchain.bantah.fun/assets/bantahblue.svg",
-    "splashImageUrl": "https://onchain.bantah.fun/assets/bantahlogo.png",
+    "iconUrl": "https://onchain.bantah.fun/assets/bantahblue.svg",
+    "imageUrl": "https://onchain.bantah.fun/assets/bantahpreview.jpg",
+    "splashImageUrl": "https://onchain.bantah.fun/assets/base-splash-200.png",
     "splashBackgroundColor": "#0f172a"
   }
 }
