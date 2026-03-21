@@ -1,5 +1,6 @@
 import { PrivyClient } from '@privy-io/server-auth';
 import { normalizeEvmAddress, parseWalletAddresses } from '@shared/onchainConfig';
+import { getDelegatedAgentAuth, isAgentToken } from './agentAuth';
 
 const PRIVY_APP_ID = process.env.PRIVY_APP_ID || 'cmc9a12oh01lnky0m1agzgdoc';
 const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || 'HkeiV3uHt5F9uJhJGFjUSbsAFujpjTQFQGzhbMVa9X2aMFaeU3xuSBycAxogfLYM39jjeZVDyUTGv6zSMZ42YbR';
@@ -158,6 +159,27 @@ async function upsertPrivyUser(verifiedClaims: any) {
   }
 }
 
+function toAuthenticatedUser(dbUser: any) {
+  return {
+    id: dbUser.id,
+    email: dbUser.email || '',
+    firstName: dbUser.firstName,
+    lastName: dbUser.lastName,
+    username: dbUser.username,
+    walletAddress:
+      normalizeEvmAddress((dbUser as any)?.primaryWalletAddress) ||
+      parseWalletAddresses((dbUser as any)?.walletAddresses)[0] ||
+      undefined,
+    isAdmin: dbUser.isAdmin || false,
+    claims: {
+      sub: dbUser.id,
+      email: dbUser.email,
+      first_name: dbUser.firstName,
+      last_name: dbUser.lastName,
+    }
+  };
+}
+
 export async function PrivyAuthMiddleware(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
 
@@ -180,9 +202,25 @@ export async function PrivyAuthMiddleware(req: any, res: any, next: any) {
     return res.status(401).json({ message: 'Authorization header missing' });
   }
 
-  const token = authHeader.replace('Bearer ', '');
+  const token = authHeader.replace('Bearer ', '').trim();
 
   try {
+    const delegatedAgentAuth = await getDelegatedAgentAuth(token);
+    if (delegatedAgentAuth) {
+      req.user = toAuthenticatedUser(delegatedAgentAuth.user);
+      req.agentAuth = {
+        serviceId: delegatedAgentAuth.agentAuth.serviceId,
+        scopes: delegatedAgentAuth.agentAuth.scopes,
+        actingAsUserId: delegatedAgentAuth.agentAuth.actingAsUserId,
+        audience: delegatedAgentAuth.agentAuth.audience,
+      };
+      return next();
+    }
+
+    if (isAgentToken(token)) {
+      return res.status(401).json({ message: 'Invalid or expired agent token' });
+    }
+
     const verifiedClaims = await verifyPrivyToken(token);
 
     const userId = verifiedClaims?.userId || verifiedClaims?.sub;
@@ -198,24 +236,7 @@ export async function PrivyAuthMiddleware(req: any, res: any, next: any) {
 
     // Attach user to request with proper structure for routes
     // Privy auth structure - set both id and claims for compatibility
-    req.user = {
-      id: dbUser.id,
-      email: dbUser.email || '',
-      firstName: dbUser.firstName,
-      lastName: dbUser.lastName,
-      username: dbUser.username,
-      walletAddress:
-        normalizeEvmAddress((dbUser as any)?.primaryWalletAddress) ||
-        parseWalletAddresses((dbUser as any)?.walletAddresses)[0] ||
-        undefined,
-      isAdmin: dbUser.isAdmin || false,
-      claims: {
-        sub: dbUser.id,
-        email: dbUser.email,
-        first_name: dbUser.firstName,
-        last_name: dbUser.lastName,
-      }
-    };
+    req.user = toAuthenticatedUser(dbUser);
 
     next();
   } catch (error) {

@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { setupAuth, isAdmin, hashPassword } from "./auth";
 import { PrivyAuthMiddleware } from "./privyAuth";
 import { verifyPrivyToken } from "./privyAuth";
+import { getDelegatedAgentUserIdFromAuthHeader } from "./agentAuth";
 import { getOnchainServerConfig } from "./onchainConfig";
 import { verifyEscrowTransaction, assertAllowedStakeToken } from "./onchainEscrowService";
 import {
@@ -169,8 +170,16 @@ function getUserId(req: AuthenticatedRequest): string {
 }
 
 async function getOptionalPrivyUserId(req: Request): Promise<string | null> {
+  const existingUserId =
+    (req as any)?.user?.id || (req as any)?.user?.claims?.sub || null;
+  if (typeof existingUserId === "string" && existingUserId) {
+    return existingUserId;
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const delegatedAgentUserId = await getDelegatedAgentUserIdFromAuthHeader(authHeader);
+  if (delegatedAgentUserId) return delegatedAgentUserId;
   const token = authHeader.replace("Bearer ", "").trim();
   if (!token) return null;
   try {
@@ -3392,11 +3401,12 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     try {
       // Check if requesting all challenges (public feed) or user-specific challenges
       const feedType = req.query.feed as string;
-      const hasAuthedUser = Boolean(req.user?.id);
+      const optionalUserId = await getOptionalPrivyUserId(req);
+      const hasAuthedUser = Boolean(optionalUserId);
       const challenges =
         feedType === 'all' || !hasAuthedUser
           ? await storage.getAllChallengesFeed(100)
-          : await storage.getChallenges(getUserId(req));
+          : await storage.getChallenges(optionalUserId as string);
       res.json(challenges);
     } catch (error) {
       console.error("Error fetching challenges:", error);
@@ -5616,11 +5626,12 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
   app.get('/api/wallet/balance', async (req: AuthenticatedRequest, res) => {
     try {
-      if (!req.user?.id) {
+      const optionalUserId = await getOptionalPrivyUserId(req);
+      if (!optionalUserId) {
         return res.json({ balance: 0, coins: 0 });
       }
 
-      const userId = getUserId(req);
+      const userId = optionalUserId;
       console.log(`Fetching balance for user: ${userId}`);
 
       const balance = await storage.getUserBalance(userId);

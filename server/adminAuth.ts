@@ -2,6 +2,7 @@
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import { storage } from "./storage";
+import { getDelegatedAgentAuth, hasAgentScope, isAgentToken } from "./agentAuth";
 
 interface AdminAuthRequest extends Request {
   adminUser?: any;
@@ -162,6 +163,30 @@ export const adminAuth = async (req: AdminAuthRequest, res: Response, next: Next
     
     if (!adminToken) {
       return res.status(401).json({ message: 'Admin authentication required' });
+    }
+
+    const delegatedAgentAuth = await getDelegatedAgentAuth(adminToken.trim());
+    if (delegatedAgentAuth) {
+      if (!delegatedAgentAuth.user?.isAdmin) {
+        return res.status(403).json({ message: 'Admin access denied' });
+      }
+      if (!hasAgentScope(delegatedAgentAuth.agentAuth, 'admin:access')) {
+        return res.status(403).json({ message: 'Agent token missing admin scope' });
+      }
+
+      req.adminUser = delegatedAgentAuth.user;
+      req.user = delegatedAgentAuth.user;
+      (req as any).agentAuth = {
+        serviceId: delegatedAgentAuth.agentAuth.serviceId,
+        scopes: delegatedAgentAuth.agentAuth.scopes,
+        actingAsUserId: delegatedAgentAuth.agentAuth.actingAsUserId,
+        audience: delegatedAgentAuth.agentAuth.audience,
+      };
+      return next();
+    }
+
+    if (isAgentToken(adminToken.trim())) {
+      return res.status(401).json({ message: 'Invalid or expired agent token' });
     }
 
     const verifiedToken = verifyAdminToken(adminToken);
