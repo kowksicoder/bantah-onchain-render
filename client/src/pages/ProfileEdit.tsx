@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Camera, Mail, Lock, ArrowLeft, Check, Save } from "lucide-react";
 import { getAvatarUrl } from "@/utils/avatarUtils";
+import { uploadImage } from "@/lib/uploadImage";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ProfileFormData {
@@ -30,6 +31,7 @@ export default function ProfileEdit() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   const [formData, setFormData] = useState<ProfileFormData>({
     firstName: "",
@@ -183,35 +185,25 @@ export default function ProfileEdit() {
     }
 
     setImageLoading(true);
-    
+
     try {
-      // For now, convert to base64 data URL
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        setFormData(prev => ({ ...prev, profileImageUrl: dataUrl }));
-        setImageLoading(false);
-        toast({
-          title: "Avatar Updated",
-          description: "Your new profile photo has been uploaded!",
-        });
-      };
-      reader.onerror = () => {
-        toast({
-          title: "Upload Error",
-          description: "Failed to upload image",
-          variant: "destructive",
-        });
-        setImageLoading(false);
-      };
-      reader.readAsDataURL(file);
+      const imageUrl = await uploadImage(file);
+      setFormData(prev => ({ ...prev, profileImageUrl: imageUrl }));
+      toast({
+        title: "Avatar Updated",
+        description: "Your new profile photo is ready to save.",
+      });
     } catch (error) {
       toast({
         title: "Upload Error",
-        description: "Failed to upload image",
+        description: error instanceof Error ? error.message : "Failed to upload image",
         variant: "destructive",
       });
+    } finally {
       setImageLoading(false);
+      if (e.target) {
+        e.target.value = "";
+      }
     }
   };
 
@@ -316,8 +308,10 @@ export default function ProfileEdit() {
                 </AnimatePresence>
 
                 {/* Edit icon positioned directly on the edge of the avatar */}
-                <motion.label 
+                <motion.button
+                  type="button"
                   className="absolute bottom-0 right-0 p-1.5 bg-primary rounded-full cursor-pointer shadow-lg border-2 border-white dark:border-slate-800"
+                  onClick={() => fileInputRef.current?.click()}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                   animate={{ 
@@ -333,14 +327,15 @@ export default function ProfileEdit() {
                   ) : (
                     <Camera className="w-3.5 h-3.5 text-white" />
                   )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    disabled={imageLoading || updateProfileMutation.isPending}
-                  />
-                </motion.label>
+                </motion.button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                  disabled={imageLoading || updateProfileMutation.isPending}
+                />
               </motion.div>
             </div>
           </motion.div>

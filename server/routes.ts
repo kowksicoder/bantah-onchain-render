@@ -1,6 +1,8 @@
 ﻿import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import fs from "fs";
+import path from "path";
 import Pusher from "pusher";
 import { storage } from "./storage";
 import { setupAuth, isAdmin, hashPassword } from "./auth";
@@ -8673,46 +8675,51 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
-  // Image upload route for event banners
-  app.post('/api/upload/image', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+  // Image upload route for event banners and profile photos
+  app.post('/api/upload/image', PrivyAuthMiddleware, async (req, res, next) => {
+    try {
+      if (!upload || typeof upload.single !== "function") {
+        return res.status(500).json({ message: "Upload middleware unavailable" });
+      }
+      return upload.single("image")(req, res, next);
+    } catch (error) {
+      return next(error);
+    }
+  }, async (req: AuthenticatedRequest, res) => {
     try {
       const userId = req.user?.id || req.user?.claims?.sub;
+      const imageFile = (req as any).file;
 
-      if (!req.files || !req.files.image) {
+      if (!imageFile) {
         return res.status(400).json({ message: 'No image file provided' });
       }
 
-      const imageFile = Array.isArray(req.files.image) ? req.files.image[0] : req.files.image;
-
-      // Validate file type
       const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedTypes.includes(imageFile.mimetype)) {
+      if (!allowedTypes.includes(String(imageFile.mimetype || '').toLowerCase())) {
         return res.status(400).json({ message: 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.' });
       }
 
-      // Validate file size (5MB limit)
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (imageFile.size > maxSize) {
+      const maxSize = 5 * 1024 * 1024;
+      if (Number(imageFile.size || 0) > maxSize) {
         return res.status(400).json({ message: 'File too large. Maximum size is 5MB.' });
       }
 
-      // Generate unique filename
-      const fileExtension = imageFile.name.split('.').pop();
+      const fileExtension = String(imageFile.originalname || imageFile.filename || 'image.png').split('.').pop();
       const uniqueFilename = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExtension}`;
-      const uploadPath = `./attached_assets/${uniqueFilename}`;
+      const uploadDir = path.resolve('./attached_assets');
+      const uploadPath = path.join(uploadDir, uniqueFilename);
 
-      // Move file to upload directory
-      await imageFile.mv(uploadPath);
+      await fs.promises.mkdir(uploadDir, { recursive: true });
+      await fs.promises.writeFile(uploadPath, imageFile.buffer);
 
-      // Return the image URL
       const imageUrl = `/attached_assets/${uniqueFilename}`;
 
       console.log(`Image uploaded successfully: ${imageUrl} by user ${userId}`);
 
-      res.json({ 
-        success: true, 
-        imageUrl: imageUrl,
-        filename: uniqueFilename
+      res.json({
+        success: true,
+        imageUrl,
+        filename: uniqueFilename,
       });
     } catch (error) {
       console.error('Error uploading image:', error);

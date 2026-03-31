@@ -14,7 +14,7 @@ export function setAuthToken(token: string | null) {
 }
 
 // Get the cached auth token that was set by useAuth hook
-function getAuthToken(): string | null {
+export function getAuthToken(): string | null {
   return cachedAuthToken;
 }
 

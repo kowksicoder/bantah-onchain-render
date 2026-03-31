@@ -7,7 +7,6 @@ import { MobileNavigation } from "@/components/MobileNavigation";
 import { ChallengeCard } from "@/components/ChallengeCard";
 import { ChallengeChat } from "@/components/ChallengeChat";
 import { JoinChallengeModal } from "@/components/JoinChallengeModal";
-import { ChallengePreviewCard } from "@/components/ChallengePreviewCard";
 import { BantMap } from "@/components/BantMap";
 import { Button } from "@/components/ui/button";
 import CategoryBar from "@/components/CategoryBar";
@@ -36,7 +35,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
@@ -60,6 +58,10 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  type OnchainRuntimeConfig,
+  type OnchainTokenSymbol,
+} from "@/lib/onchainEscrow";
 
 function ChallengeCardSkeleton() {
   return (
@@ -90,10 +92,57 @@ const createChallengeSchema = z.object({
   challenged: z.string().optional(),
   title: z.string().min(1, "").max(200, "Title too long"),
   category: z.string().min(1, ""),
+  tokenSymbol: z.enum(["USDC", "USDT", "ETH", "BNB"]).default("USDC"),
   amount: z.string().min(1, ""),
   dueDate: z.string().optional(),
   challengerSide: z.enum(["YES", "NO"]).default("YES"), // Default to YES if not selected
 });
+
+const legacyTokenVisuals: Record<
+  OnchainTokenSymbol,
+  { glyph: string; badgeClassName: string; ringClassName: string }
+> = {
+  USDC: {
+    glyph: "C",
+    badgeClassName: "bg-gradient-to-br from-blue-500 to-cyan-400 text-white",
+    ringClassName: "ring-blue-200/70 dark:ring-blue-400/20",
+  },
+  USDT: {
+    glyph: "T",
+    badgeClassName: "bg-gradient-to-br from-emerald-500 to-teal-400 text-white",
+    ringClassName: "ring-emerald-200/70 dark:ring-emerald-400/20",
+  },
+  ETH: {
+    glyph: "Ξ",
+    badgeClassName: "bg-gradient-to-br from-slate-700 to-slate-500 text-white",
+    ringClassName: "ring-slate-200/70 dark:ring-slate-400/20",
+  },
+  BNB: {
+    glyph: "B",
+    badgeClassName: "bg-gradient-to-br from-amber-400 to-yellow-300 text-slate-900",
+    ringClassName: "ring-amber-200/80 dark:ring-amber-300/20",
+  },
+};
+
+const tokenVisuals: Record<OnchainTokenSymbol, { src: string; alt: string }> = {
+  USDC: { src: "/assets/token-usdc.svg", alt: "USDC logo" },
+  USDT: { src: "/assets/token-usdt.svg", alt: "USDT logo" },
+  ETH: { src: "/assets/token-eth.svg", alt: "ETH logo" },
+  BNB: { src: "/assets/token-bnb.svg", alt: "BNB logo" },
+};
+
+function TokenMark({ token }: { token: OnchainTokenSymbol }) {
+  const visual = tokenVisuals[token];
+
+  return (
+    <img
+      src={visual.src}
+      alt={visual.alt}
+      className="h-5 w-5 rounded-full object-contain"
+      loading="lazy"
+    />
+  );
+}
 
 export default function Challenges() {
   const { user } = useAuth();
@@ -144,7 +193,8 @@ export default function Challenges() {
     defaultValues: {
       challenged: "",
       title: "",
-      category: "Sport",
+      category: "sports",
+      tokenSymbol: "USDC",
       amount: "",
       dueDate: "",
       challengerSide: "YES",
@@ -302,6 +352,42 @@ export default function Challenges() {
     retry: false,
   });
 
+  const { data: onchainConfig } = useQuery<OnchainRuntimeConfig>({
+    queryKey: ["/api/onchain/config"],
+    queryFn: async () => await apiRequest("GET", "/api/onchain/config"),
+    retry: false,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const tokenOptions = useMemo<OnchainTokenSymbol[]>(() => {
+    const defaultChain =
+      onchainConfig?.chains?.[String(onchainConfig.defaultChainId)] ||
+      Object.values(onchainConfig?.chains || {})[0];
+
+    const configuredTokens = Object.keys(defaultChain?.tokens || {});
+    const normalized = configuredTokens.filter((token): token is OnchainTokenSymbol =>
+      ["USDC", "USDT", "ETH", "BNB"].includes(token),
+    );
+
+    return normalized.length > 0 ? normalized : ["USDC", "USDT", "ETH", "BNB"];
+  }, [onchainConfig]);
+
+  const selectedTokenSymbol =
+    (form.watch("tokenSymbol") as OnchainTokenSymbol | undefined) ||
+    onchainConfig?.defaultToken ||
+    "USDC";
+
+  useEffect(() => {
+    if (!onchainConfig?.defaultToken) return;
+    const current = form.getValues("tokenSymbol");
+    if (!current || !tokenOptions.includes(current as OnchainTokenSymbol)) {
+      form.setValue("tokenSymbol", onchainConfig.defaultToken, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [form, onchainConfig, tokenOptions]);
+
   // Real-time listeners for challenge updates via Pusher
   useEffect(() => {
     const globalChannel = getGlobalChannel();
@@ -378,8 +464,14 @@ export default function Challenges() {
 
   const createChallengeMutation = useMutation({
     mutationFn: async (data: z.infer<typeof createChallengeSchema>) => {
+      const selectedChainId =
+        Number(onchainConfig?.defaultChainId) ||
+        Number(Object.keys(onchainConfig?.chains || {})[0]) ||
+        84532;
       const challengeData = {
         ...data,
+        chainId: selectedChainId,
+        tokenSymbol: data.tokenSymbol || onchainConfig?.defaultToken || "USDC",
         amount: data.amount, // Keep as string for backend validation
         dueDate: data.dueDate
           ? new Date(data.dueDate).toISOString()
@@ -418,15 +510,15 @@ export default function Challenges() {
   });
 
   const categories = [
-    { id: "create", label: "Create", icon: "/assets/create.png", emoji: "", gradient: "from-green-400 to-emerald-500", isCreate: true, value: "create" },
-    { id: "all", label: "All", icon: "/assets/versus.svg", emoji: "", gradient: "from-blue-400 to-purple-500", value: "all" },
-    { id: "sports", label: "Sports", icon: "/assets/sportscon.svg", emoji: "", gradient: "from-green-400 to-blue-500", value: "sports" },
-    { id: "gaming", label: "Gaming", icon: "/assets/gamingsvg.svg", emoji: "", gradient: "from-gray-400 to-gray-600", value: "gaming" },
-    { id: "crypto", label: "Crypto", icon: "/assets/cryptosvg.svg", emoji: "", gradient: "from-yellow-400 to-orange-500", value: "crypto" },
-    { id: "trading", label: "Trading", icon: "/assets/cryptosvg.svg", emoji: "", gradient: "from-yellow-400 to-orange-500", value: "trading" },
-    { id: "music", label: "Music", icon: "/assets/musicsvg.svg", emoji: "", gradient: "from-blue-400 to-purple-500", value: "music" },
-    { id: "entertainment", label: "Entertainment", icon: "/assets/popcorn.svg", emoji: "", gradient: "from-pink-400 to-red-500", value: "entertainment" },
-    { id: "politics", label: "Politics", icon: "/assets/poltiii.svg", emoji: "", gradient: "from-green-400 to-teal-500", value: "politics" },
+    { id: "create", label: "Create", icon: "/assets/create.png", emoji: "✨", gradient: "from-green-400 to-emerald-500", isCreate: true, value: "create" },
+    { id: "all", label: "All", icon: "/assets/versus.svg", emoji: "🌐", gradient: "from-blue-400 to-purple-500", value: "all" },
+    { id: "sports", label: "Sports", icon: "/assets/sportscon.svg", emoji: "⚽", gradient: "from-green-400 to-blue-500", value: "sports" },
+    { id: "gaming", label: "Gaming", icon: "/assets/gamingsvg.svg", emoji: "🎮", gradient: "from-gray-400 to-gray-600", value: "gaming" },
+    { id: "crypto", label: "Crypto", icon: "/assets/cryptosvg.svg", emoji: "₿", gradient: "from-yellow-400 to-orange-500", value: "crypto" },
+    { id: "trading", label: "Trading", icon: "/assets/cryptosvg.svg", emoji: "📈", gradient: "from-yellow-400 to-orange-500", value: "trading" },
+    { id: "music", label: "Music", icon: "/assets/musicsvg.svg", emoji: "🎵", gradient: "from-blue-400 to-purple-500", value: "music" },
+    { id: "entertainment", label: "Entertainment", icon: "/assets/popcorn.svg", emoji: "🍿", gradient: "from-pink-400 to-red-500", value: "entertainment" },
+    { id: "politics", label: "Politics", icon: "/assets/poltiii.svg", emoji: "🗳️", gradient: "from-green-400 to-teal-500", value: "politics" },
   ];
 
   const filteredChallenges = useMemo(() => challenges.filter((challenge: any) => {
@@ -842,9 +934,9 @@ export default function Challenges() {
             }
           }}
         >
-          <DialogContent className="sm:max-w-sm max-w-[90vw] max-h-[75vh] overflow-y-auto p-4">
-            <DialogHeader className="pb-2">
-              <DialogTitle className="text-base sm:text-lg flex items-center justify-center space-x-2">
+          <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] top-auto bottom-3 translate-y-0 rounded-[24px] border-0 bg-white p-3 pb-4 shadow-2xl max-h-[calc(100dvh-4.5rem)] overflow-y-auto scrollbar-hide sm:max-w-sm sm:top-[50%] sm:bottom-auto sm:translate-y-[-50%] dark:bg-slate-900">
+            <DialogHeader className="pb-1">
+              <DialogTitle className="flex items-center justify-center space-x-2 text-[15px] sm:text-base">
                 {preSelectedUser ? (
                   <>
                     <UserAvatar
@@ -861,7 +953,7 @@ export default function Challenges() {
                 ) : (
                   <>
                     <img src="/assets/bantahblue.svg" alt="Bantah" className="h-6 w-6" />
-                    <span>Create a challenge</span>
+                    <span>Create a Challenge</span>
                   </>
                 )}
               </DialogTitle>
@@ -869,12 +961,12 @@ export default function Challenges() {
                 Create a new challenge or challenge a specific user to test your predictions and win rewards.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center justify-center space-x-2 mb-3">
+            <div className="mb-2 flex items-center justify-center space-x-2">
               <button
                 type="button"
                 onClick={() => setCreateMode('open')}
                 className={cn(
-                  "flex-1 px-3 py-1 rounded-full text-sm font-medium",
+                  "flex-1 rounded-full px-3 py-1 text-xs font-semibold",
                   createMode === 'open'
                     ? 'bg-[#ccff00] text-black'
                     : 'bg-transparent text-slate-600 dark:text-slate-300 border border-transparent hover:bg-slate-100'
@@ -886,7 +978,7 @@ export default function Challenges() {
                 type="button"
                 onClick={() => setCreateMode('direct')}
                 className={cn(
-                  "flex-1 px-3 py-1 rounded-full text-sm font-medium",
+                  "flex-1 rounded-full px-3 py-1 text-xs font-semibold",
                   createMode === 'direct'
                     ? 'bg-[#ccff00] text-black'
                     : 'bg-transparent text-slate-600 dark:text-slate-300 border border-transparent hover:bg-slate-100'
@@ -895,39 +987,14 @@ export default function Challenges() {
                 P2P
               </button>
             </div>
-            {/* Challenge Preview Card */}
-            {((createMode === 'direct' ? (form.watch("challenged") || preSelectedUser) : true) && form.watch("title") && form.watch("amount")) && (
-              <div className="mb-3">
-                <div className="hidden sm:block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Preview</div>
-                <ChallengePreviewCard
-                  challenger={{
-                    id: user?.id || '',
-                    firstName: (user as any)?.firstName,
-                    username: (user as any)?.username,
-                    profileImageUrl: (user as any)?.profileImageUrl
-                  }}
-                  challenged={createMode === 'open' ? {
-                    id: '',
-                    firstName: 'Open Challenge',
-                    username: 'open'
-                  } : (preSelectedUser || {
-                    id: form.watch("challenged"),
-                    firstName: "Selected User",
-                    username: "user"
-                  })}
-                  title={form.watch("title")}
-                  description={form.watch("description")}
-                  category={form.watch("category")}
-                  amount={form.watch("amount")}
-                  dueDate={form.watch("dueDate")}
-                />
-              </div>
-            )}
+            <p className="mb-1 hidden text-center text-[10px] leading-tight text-slate-500 dark:text-slate-400 sm:block">
+              Open: Anyone can join • P2P: Direct challenger
+            </p>
 
             <Form {...form}>
               <form
                 onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-2"
+                className="space-y-2.5"
               >
                 {!preSelectedUser && createMode === 'direct' && (
                   <FormField
@@ -949,15 +1016,15 @@ export default function Challenges() {
 
                       return (
                         <FormItem className="space-y-1">
-                          <FormLabel className="sr-only">
-                            Challenge Friend
+                          <FormLabel className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
+                            Direct Challenger
                           </FormLabel>
                           <Select
                             onValueChange={field.onChange}
                             value={field.value}
                           >
                             <FormControl>
-                              <SelectTrigger className="h-10 rounded-lg text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-primary/50 transition-colors">
+                              <SelectTrigger className="h-9 rounded-xl border-transparent bg-slate-50/90 text-sm transition-colors focus:ring-2 focus:ring-primary/50 dark:bg-slate-800/80">
                                 <SelectValue placeholder="Select a friend to challenge" />
                               </SelectTrigger>
                             </FormControl>
@@ -1000,8 +1067,8 @@ export default function Challenges() {
                 )}
 
                 {preSelectedUser && (
-                  <div className="flex items-center space-x-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
+                  <div className="flex items-center space-x-2 rounded-lg bg-blue-50 p-1.5 dark:bg-blue-900/20">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-[11px] font-bold text-white">
                       {(
                         preSelectedUser.firstName ||
                         preSelectedUser.username ||
@@ -1015,8 +1082,8 @@ export default function Challenges() {
                         {preSelectedUser.firstName ||
                           preSelectedUser.username}
                       </p>
-                      <p className="text-xs text-slate-500">
-                        Level {preSelectedUser.level || 1} �{" "}
+                      <p className="text-[11px] text-slate-500">
+                        Level {preSelectedUser.level || 1} -{" "}
                         {preSelectedUser.points || 0} pts
                       </p>
                     </div>
@@ -1027,14 +1094,14 @@ export default function Challenges() {
                   control={form.control}
                   name="title"
                   render={({ field }) => (
-                    <FormItem className="space-y-1">
-                      <FormLabel className="sr-only">
-                        Challenge Title
+                    <FormItem className="space-y-0.5">
+                      <FormLabel className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
+                        Market Question
                       </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="What's the challenge? *"
-                          className="h-8 text-sm"
+                          placeholder="Will BTC be above $70k by May 1?"
+                          className="h-9 rounded-xl border-transparent bg-slate-50/90 text-sm dark:bg-slate-800/80"
                           {...field}
                         />
                       </FormControl>
@@ -1043,59 +1110,59 @@ export default function Challenges() {
                   )}
                 />
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                <div className="grid grid-cols-2 gap-1.5">
                   <FormField
                     control={form.control}
                     name="category"
                     render={({ field }) => (
                       <FormItem className="space-y-1">
-                        <FormLabel className="sr-only">
+                        <FormLabel className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
                           Category
                         </FormLabel>
+                        {(() => {
+                          const selectedCategoryOption = categories.find(
+                            (category) => category.value === field.value,
+                          );
+
+                          return (
                         <Select
                           onValueChange={field.onChange}
                           defaultValue={field.value}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-8 text-sm bg-transparent border-none focus:ring-0">
-                              <SelectValue placeholder="Select a category *" />
+                            <SelectTrigger className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0">
+                              {selectedCategoryOption ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm" aria-hidden="true">
+                                    {selectedCategoryOption.emoji}
+                                  </span>
+                                  <span>{selectedCategoryOption.label}</span>
+                                </div>
+                              ) : (
+                                <SelectValue placeholder="Select a category" />
+                              )}
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent className="bg-white dark:bg-slate-800 border-none ring-0 shadow-none">
+                          <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
                             {categories.map((category) => (
                               <SelectItem
                                 key={category.value}
                                 value={category.value}
                               >
                                 <div className="flex items-center space-x-2">
-                                  {category.emoji ? <span>{category.emoji}</span> : null}
+                                  {category.emoji ? (
+                                    <span className="text-sm" aria-hidden="true">
+                                      {category.emoji}
+                                    </span>
+                                  ) : null}
                                   <span>{category.label}</span>
                                 </div>
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                        <FormMessage className="text-xs" />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="amount"
-                    render={({ field }) => (
-                      <FormItem className="space-y-1">
-                        <FormLabel className="sr-only">
-                            Stake (NGN)
-                          </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            placeholder="500"
-                            className="h-8 text-sm"
-                            {...field}
-                          />
-                        </FormControl>
+                          );
+                        })()}
                         <FormMessage className="text-xs" />
                       </FormItem>
                     )}
@@ -1105,14 +1172,14 @@ export default function Challenges() {
                     control={form.control}
                     name="dueDate"
                     render={({ field }) => (
-                      <FormItem className="space-y-1 col-span-2 sm:col-span-1">
-                        <FormLabel className="sr-only">
-                          End Date
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
+                          Deadline (optional)
                         </FormLabel>
                         <FormControl>
                           <Input
                             type="datetime-local"
-                            className="h-7 text-sm"
+                            className="h-9 rounded-xl border-transparent bg-slate-50/90 text-sm dark:bg-slate-800/80"
                             {...field}
                             min={new Date().toISOString().slice(0, 16)}
                           />
@@ -1123,16 +1190,77 @@ export default function Challenges() {
                   />
                 </div>
 
-                {form.watch("amount") && (
-                  <div className="bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 p-2 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Potential Win:</span>
-                      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                        NGN {(parseFloat(form.watch("amount") || "0") * 2).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
+                    Currency & Stake
+                  </p>
+                  <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-1.5">
+                    <FormField
+                      control={form.control}
+                      name="tokenSymbol"
+                      render={({ field }) => (
+                        <FormItem className="space-y-0">
+                          <FormLabel className="sr-only">Token</FormLabel>
+                          {(() => {
+                            const selectedToken = (field.value || selectedTokenSymbol) as OnchainTokenSymbol;
+
+                            return (
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0">
+                                {selectedToken ? (
+                                  <div className="flex items-center gap-2">
+                                    <TokenMark token={selectedToken} />
+                                    <span>{selectedToken}</span>
+                                  </div>
+                                ) : (
+                                  <SelectValue placeholder="Token" />
+                                )}
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
+                              {tokenOptions.map((token) => (
+                                <SelectItem key={token} value={token}>
+                                  <div className="flex items-center gap-2">
+                                    <TokenMark token={token} />
+                                    <span>{token}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                            );
+                          })()}
+                          <FormMessage className="text-xs" />
+                        </FormItem>
+                      )}
+                    />
+
+                  <FormField
+                    control={form.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem className="space-y-0">
+                        <FormLabel className="sr-only">
+                          Stake amount
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder="500"
+                            className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus-visible:ring-0 dark:focus-visible:ring-offset-0"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                </div>
 
                 <FormField
                   control={form.control}
@@ -1146,7 +1274,7 @@ export default function Challenges() {
                             type="button"
                             onClick={() => field.onChange("YES")}
                             className={cn(
-                              "flex-1 py-1 rounded-lg text-xs font-semibold border-2 transition-colors",
+                              "flex-1 rounded-lg border-2 py-1 text-xs font-semibold transition-colors",
                               field.value === "YES"
                                 ? "bg-blue-600 text-white border-blue-600"
                                 : "bg-white text-blue-600 border-blue-300 hover:bg-blue-50 dark:bg-slate-800 dark:text-blue-400 dark:border-blue-600"
@@ -1158,7 +1286,7 @@ export default function Challenges() {
                             type="button"
                             onClick={() => field.onChange("NO")}
                             className={cn(
-                              "flex-1 py-1 rounded-lg text-xs font-semibold border-2 transition-colors",
+                              "flex-1 rounded-lg border-2 py-1 text-xs font-semibold transition-colors",
                               field.value === "NO"
                                 ? "bg-red-600 text-white border-red-600"
                                 : "bg-white text-red-600 border-red-300 hover:bg-red-50 dark:bg-slate-800 dark:text-red-400 dark:border-red-600"
@@ -1168,28 +1296,50 @@ export default function Challenges() {
                           </button>
                         </div>
                       </FormControl>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 text-center mt-1">Opponent takes opposite</p>
+                      <p className="mt-0.5 text-center text-[11px] text-slate-500 dark:text-slate-400">Opponent takes opposite side</p>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
                 />
 
-                <div className="flex space-x-2 pt-2">
+                <div className="grid grid-cols-3 gap-1 rounded-xl border-0 bg-slate-50/90 px-2 py-1.5 dark:bg-slate-900/70">
+                  <div className="text-center">
+                    <p className="text-[9px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Position</p>
+                    <p className="text-[11px] font-semibold leading-tight text-slate-900 dark:text-slate-100">
+                      {form.watch("challengerSide")}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[9px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Stake</p>
+                    <p className="truncate text-[11px] font-semibold leading-tight text-slate-900 dark:text-slate-100">
+                      {form.watch("amount") ? `${Number(form.watch("amount") || 0).toLocaleString()} ${selectedTokenSymbol}` : `0 ${selectedTokenSymbol}`}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[9px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
+                    <p className="text-[11px] font-semibold leading-tight text-slate-900 dark:text-slate-100">
+                      {createMode === "open" ? "Open" : "P2P"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex space-x-2 pt-1">
                   <Button
+                    type="button"
                     onClick={() => setIsCreateDialogOpen(false)}
-                    className="flex-1 bg-slate-100 text-slate-700 hover:bg-slate-200 h-8 text-sm"
+                    className="h-9 flex-1 rounded-xl bg-slate-100 text-sm text-slate-700 hover:bg-slate-200"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="submit"
                     disabled={createChallengeMutation.isPending}
-                    className="flex-1 h-8 text-sm text-black hover:opacity-90"
+                    className="h-9 flex-1 rounded-xl text-sm text-black hover:opacity-90"
                     style={{ backgroundColor: '#ccff00' }}
                   >
                     {createChallengeMutation.isPending
                       ? "Creating..."
-                      : "Challenge"}
+                      : "Create Challenge"}
                   </Button>
                 </div>
               </form>

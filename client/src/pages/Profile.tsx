@@ -117,7 +117,7 @@ export default function Profile() {
                     {/* Edit profile button */}
                     <button
                       type="button"
-                      onClick={() => navigate("/Profile/edit")}
+                      onClick={() => navigate("/profile/edit")}
                       className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#CCFF00] text-black shadow hover:bg-[#e6ff70] transition"
                       aria-label="Edit Profile"
                     >

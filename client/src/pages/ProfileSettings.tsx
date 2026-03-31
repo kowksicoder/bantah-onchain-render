@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
@@ -15,6 +15,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest } from "@/lib/queryClient";
+import { uploadImage } from "@/lib/uploadImage";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { formatDistanceToNow } from "date-fns";
@@ -38,6 +39,9 @@ export default function ProfileSettings() {
   const { settings: notificationSettings, updateSetting, isUpdating } = useNotificationSettings();
   const { theme, toggleTheme } = useTheme();
   const { user: privyUser, linkEmail } = usePrivy();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState(user?.profileImageUrl || "");
+  const [isImageUploading, setIsImageUploading] = useState(false);
 
   const form = useForm<z.infer<typeof updateProfileSchema>>({
     resolver: zodResolver(updateProfileSchema),
@@ -52,7 +56,10 @@ export default function ProfileSettings() {
   const updateProfileMutation = useMutation({
     mutationFn: async (data: z.infer<typeof updateProfileSchema>) => {
       // Server exposes PUT /api/profile for updates
-      const response = await apiRequest("PUT", "/api/profile", data);
+      const response = await apiRequest("PUT", "/api/profile", {
+        ...data,
+        profileImageUrl,
+      });
       return response;
     },
     onSuccess: (data) => {
@@ -64,6 +71,7 @@ export default function ProfileSettings() {
       // Reset form to server values (use returned user object if available)
       if (data && typeof data === 'object') {
         const updated = data as any;
+        setProfileImageUrl(updated.profileImageUrl || user?.profileImageUrl || "");
         form.reset({
           firstName: updated.firstName || updated.first_name || user?.firstName || "",
           lastName: updated.lastName || updated.last_name || user?.lastName || "",
@@ -151,6 +159,50 @@ export default function ProfileSettings() {
     });
   };
 
+  const handlePhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please select an image smaller than 5MB",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file type",
+        description: "Please select a valid image file",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    setIsImageUploading(true);
+    try {
+      const imageUrl = await uploadImage(file);
+      setProfileImageUrl(imageUrl);
+      toast({
+        title: "Photo Uploaded",
+        description: "Your new profile photo is ready to save.",
+      });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Failed to upload image",
+        variant: "destructive",
+      });
+    } finally {
+      setIsImageUploading(false);
+      event.target.value = "";
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -189,8 +241,8 @@ export default function ProfileSettings() {
             <CardContent className="pt-0">
               <div className="flex items-center space-x-4 sm:space-x-6 mb-4 sm:mb-6">
                 <Avatar className="w-16 h-16 sm:w-20 sm:h-20">
-                  <AvatarImage 
-                    src={user.profileImageUrl || undefined} 
+                  <AvatarImage
+                    src={profileImageUrl || undefined}
                     alt={user.firstName || user.username || 'User'} 
                   />
                   <AvatarFallback className="text-base sm:text-lg">
@@ -198,11 +250,29 @@ export default function ProfileSettings() {
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <Button variant="outline" size="sm">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isImageUploading || updateProfileMutation.isPending}
+                  >
                     <i className="fas fa-camera mr-1 sm:mr-2"></i>
-                    <span className="hidden sm:inline">Change Photo</span>
-                    <span className="sm:hidden">Change</span>
+                    <span className="hidden sm:inline">
+                      {isImageUploading ? "Uploading..." : "Change Photo"}
+                    </span>
+                    <span className="sm:hidden">
+                      {isImageUploading ? "Uploading..." : "Change"}
+                    </span>
                   </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoChange}
+                    disabled={isImageUploading || updateProfileMutation.isPending}
+                  />
                   <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
                     JPG, PNG or GIF. Max size 2MB.
                   </p>
