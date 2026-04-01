@@ -105,6 +105,8 @@ export function ChallengeIntentCard({
         return '🎯';
       case 'prediction':
         return '🔮';
+      case 'polymarket':
+        return 'PM';
       default:
         return '⚡';
     }

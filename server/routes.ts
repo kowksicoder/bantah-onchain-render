@@ -1347,6 +1347,121 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
+  app.get('/api/polymarket/markets', async (req, res) => {
+    try {
+      const limitRaw = Number(req.query.limit ?? 20);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20;
+      const active = String(req.query.active ?? "true") === "false" ? "false" : "true";
+      const closed = String(req.query.closed ?? "false") === "true" ? "true" : "false";
+
+      const params = new URLSearchParams({
+        active,
+        closed,
+        limit: String(limit),
+      });
+
+      const url = `https://gamma-api.polymarket.com/markets?${params.toString()}`;
+      const response = await axios.get(url, { timeout: 15000 });
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(response.data);
+    } catch (error) {
+      console.error("Error fetching Polymarket markets:", error);
+      res.status(502).json({ message: "Failed to fetch Polymarket markets" });
+    }
+  });
+
+  app.post('/api/polymarket/challenges/ensure', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const marketId = String(req.body?.marketId || "").trim();
+      const question = String(req.body?.question || "").trim();
+      const stakeAmountRaw = Number.parseInt(String(req.body?.stakeAmount || ""), 10);
+      if (!marketId || !question) {
+        return res.status(400).json({ message: "marketId and question are required" });
+      }
+      if (!Number.isFinite(stakeAmountRaw) || stakeAmountRaw <= 0) {
+        return res.status(400).json({ message: "stakeAmount must be a positive number" });
+      }
+
+      const stakeAmount = Math.floor(stakeAmountRaw);
+      const slug = typeof req.body?.slug === "string" ? req.body.slug.trim() : null;
+      const sourceUrl = typeof req.body?.sourceUrl === "string" ? req.body.sourceUrl.trim() : null;
+      const resolutionSource =
+        typeof req.body?.resolutionSource === "string" ? req.body.resolutionSource.trim() : null;
+      const endDateRaw = typeof req.body?.endDate === "string" ? req.body.endDate.trim() : "";
+      const endDate = endDateRaw ? new Date(endDateRaw) : null;
+      const dueDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : null;
+      const coverImageUrl = typeof req.body?.image === "string" ? req.body.image.trim() : null;
+
+      const existing = await db
+        .select()
+        .from(challenges)
+        .where(
+          and(
+            eq(challenges.adminCreated, true),
+            eq(challenges.category, "polymarket"),
+            eq(challenges.amount, stakeAmount),
+            eq(challenges.status, "open"),
+            sql`(${challenges.evidence} ->> 'source') = 'polymarket'`,
+            sql`(${challenges.evidence} ->> 'marketId') = ${marketId}`,
+          ),
+        )
+        .limit(1);
+
+      if (existing?.[0]) {
+        return res.json(existing[0]);
+      }
+
+      const defaultChainId = Number(
+        ONCHAIN_CONFIG.defaultChainId || ONCHAIN_CONFIG.chainId,
+      );
+      const chainConfig =
+        ONCHAIN_CONFIG.chains[String(defaultChainId)] ||
+        Object.values(ONCHAIN_CONFIG.chains)[0];
+      if (!chainConfig) {
+        return res.status(400).json({ message: "Onchain config unavailable" });
+      }
+
+      const tokenSymbol = normalizeOnchainTokenSymbol(
+        ONCHAIN_CONFIG.defaultToken || "USDC",
+      ) as OnchainTokenSymbol;
+      const tokenConfig = chainConfig.tokens[tokenSymbol];
+      if (!tokenConfig) {
+        return res.status(400).json({ message: "Unsupported token configuration" });
+      }
+
+      const evidence = {
+        source: "polymarket",
+        marketId,
+        slug,
+        sourceUrl,
+        resolutionSource,
+        endDate: endDateRaw || null,
+      };
+
+      const challenge = await storage.createAdminChallenge({
+        title: question,
+        description: null,
+        category: "polymarket",
+        amount: stakeAmount,
+        status: "open",
+        dueDate,
+        coverImageUrl,
+        settlementRail: "onchain",
+        chainId: chainConfig.chainId,
+        tokenSymbol,
+        tokenAddress: tokenConfig.isNative ? null : tokenConfig.address,
+        decimals: tokenConfig.decimals,
+        stakeAtomic: toAtomicUnits(stakeAmount, tokenConfig.decimals),
+        evidence,
+      });
+
+      res.json(challenge);
+    } catch (error: any) {
+      console.error("Error ensuring Polymarket challenge:", error);
+      res.status(500).json({ message: error?.message || "Failed to prepare challenge" });
+    }
+  });
+
   // Groups listing
   app.get('/api/groups', async (_req, res) => {
     try {

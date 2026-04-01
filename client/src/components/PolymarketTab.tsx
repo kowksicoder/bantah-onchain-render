@@ -1,25 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, TrendingDown, Search, ExternalLink } from 'lucide-react';
+import { TrendingUp, TrendingDown, Search, Share2 } from 'lucide-react';
 
-interface PolymarketEvent {
+export interface PolymarketMarket {
   id: string;
-  title: string;
-  description: string;
-  markets: PolymarketMarket[];
-  startDate: string;
-  endDate: string;
-  category: string;
-  active: boolean;
-}
-
-interface PolymarketMarket {
-  id: string;
+  slug?: string;
   question: string;
   description: string;
   outcomes: string[];
@@ -30,154 +18,255 @@ interface PolymarketMarket {
   marketMakerAddress: string;
   endDate: string | null;
   category: string;
+  image?: string;
+  icon?: string;
+  sourceUrl?: string;
+  resolutionSource?: string;
 }
 
-interface PolymarketResponse {
-  events: PolymarketEvent[];
-  markets: PolymarketMarket[];
-}
+type PolymarketTabProps = {
+  onQuickBet?: (market: PolymarketMarket, side: "YES" | "NO") => void;
+  searchTerm?: string;
+};
+
+const parseStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.map((entry) => String(entry));
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map((entry) => String(entry));
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const parseNumberArray = (value: unknown): number[] => {
+  if (Array.isArray(value)) return value.map((entry) => Number(entry) || 0);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map((entry) => Number(entry) || 0);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const pickFirstValidImage = (candidates: unknown[]): string => {
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (!trimmed) continue;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  }
+  return "";
+};
 
 const PolymarketCardSkeleton = () => (
-  <Card className="border border-slate-200 dark:border-slate-800 overflow-hidden min-h-[200px] bg-white dark:bg-slate-900 shadow-sm rounded-2xl animate-pulse">
-    <CardContent className="p-4 flex flex-col h-full space-y-4">
+  <Card className="border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 shadow-sm rounded-2xl animate-pulse">
+    <div className="h-24 w-full bg-slate-100 dark:bg-slate-800" />
+    <CardContent className="p-3 space-y-3">
       <div className="space-y-2">
-        <Skeleton className="h-5 w-3/4 rounded-full bg-slate-200 dark:bg-slate-800" />
-        <Skeleton className="h-4 w-full rounded-full bg-slate-100 dark:bg-slate-800/50" />
+        <Skeleton className="h-4 w-5/6 rounded-full bg-slate-200 dark:bg-slate-800" />
+        <Skeleton className="h-3 w-2/3 rounded-full bg-slate-100 dark:bg-slate-800/50" />
       </div>
-      <div className="space-y-2">
-        <Skeleton className="h-4 w-1/2 rounded-full bg-slate-100 dark:bg-slate-800/50" />
-        <Skeleton className="h-4 w-2/3 rounded-full bg-slate-100 dark:bg-slate-800/50" />
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-3 w-12 rounded-full bg-slate-100 dark:bg-slate-800/50" />
+        <Skeleton className="h-3 w-14 rounded-full bg-slate-100 dark:bg-slate-800/50" />
       </div>
-      <div className="pt-2 flex justify-between items-center">
+      <div className="flex items-center justify-between">
         <Skeleton className="h-6 w-16 rounded-lg bg-slate-200 dark:bg-slate-800" />
-        <Skeleton className="h-4 w-12 rounded-full bg-slate-100 dark:bg-slate-800/50" />
+        <Skeleton className="h-6 w-16 rounded-lg bg-slate-200 dark:bg-slate-800" />
       </div>
     </CardContent>
   </Card>
 );
 
-const PolymarketMarketCard: React.FC<{ market: PolymarketMarket }> = ({ market }) => {
-  const bestPrice = Math.max(...market.prices);
-  const worstPrice = Math.min(...market.prices);
+const PolymarketMarketCard: React.FC<{
+  market: PolymarketMarket;
+  onQuickBet?: (market: PolymarketMarket, side: "YES" | "NO") => void;
+}> = ({ market, onQuickBet }) => {
+  const marketLink = market.sourceUrl || (market.slug ? `https://polymarket.com/market/${market.slug}` : `https://polymarket.com/market/${market.id}`);
+
+  const outcomes = market.outcomes.slice(0, 2);
+  const extraOutcomeCount = Math.max(0, market.outcomes.length - outcomes.length);
+  const volumeLabel = Number.isFinite(market.volume)
+    ? new Intl.NumberFormat("en-US", {
+        notation: "compact",
+        maximumFractionDigits: 0,
+      }).format(market.volume)
+    : "--";
+  const formatEndLabel = (value: string | null) => {
+    if (!value) return "--";
+    const end = new Date(value);
+    if (Number.isNaN(end.getTime())) return "--";
+    const now = new Date();
+    const days = Math.ceil((end.getTime() - now.getTime()) / 86400000);
+    if (days >= 0 && days <= 30) return `${days}d`;
+    if (days < 0) return "Ended";
+    return `${end.getDate()}/${end.getMonth() + 1}`;
+  };
+  const endLabel = formatEndLabel(market.endDate);
 
   return (
-    <Card className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm rounded-xl hover:shadow-md transition-shadow">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-sm font-semibold text-slate-900 dark:text-slate-100 line-clamp-2">
-              {market.question}
-            </CardTitle>
-            <CardDescription className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-              {market.category}
-            </CardDescription>
+    <Card className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm rounded-2xl overflow-hidden hover:shadow-md transition-shadow">
+      <CardContent className="p-3 space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800">
+            {market.image ? (
+              <img src={market.image} alt={market.question} className="h-full w-full object-cover" loading="lazy" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">PM</div>
+            )}
           </div>
-          <Badge
-            variant={market.active ? "default" : "secondary"}
-            className={`text-xs px-2 py-1 ${
-              market.active
-                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-            }`}
-          >
-            {market.active ? 'Active' : market.closed ? 'Closed' : 'Pending'}
-          </Badge>
+          <div className="flex-1 space-y-1">
+            <div className="flex items-start justify-between gap-2">
+              <CardTitle className="text-xs font-semibold text-slate-900 dark:text-slate-100 line-clamp-2">
+                {market.question}
+              </CardTitle>
+              <button
+                type="button"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                onClick={() => window.open(marketLink, '_blank')}
+                aria-label="Share market"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-600 dark:text-slate-400" />
+          </div>
         </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-600 dark:text-slate-400">Volume</span>
-            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              ${market.volume.toLocaleString()}
-            </span>
-          </div>
 
-          <div className="space-y-2">
-            {market.outcomes.map((outcome, index) => (
-              <div key={outcome} className="flex items-center justify-between">
-                <span className="text-xs text-slate-700 dark:text-slate-300 truncate flex-1 mr-2">
-                  {outcome}
-                </span>
-                <div className="flex items-center space-x-1">
-                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    {(market.prices[index] * 100).toFixed(1)}%
-                  </span>
-                  {market.prices[index] > 0.5 ? (
-                    <TrendingUp className="w-3 h-3 text-green-600" />
-                  ) : (
-                    <TrendingDown className="w-3 h-3 text-red-600" />
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-xs text-slate-600 dark:text-slate-400">
-              {market.endDate ? `Ends ${new Date(market.endDate).toLocaleDateString()}` : 'No end date'}
+        <div className="flex flex-wrap justify-center gap-2">
+          {outcomes.map((outcome, index) => {
+            const price = market.prices[index] ?? 0;
+            const normalized = outcome.toLowerCase();
+            const isYes = normalized === "yes";
+            const isNo = normalized === "no";
+            const baseClass = "h-7 px-3 text-[10px] font-semibold text-white border-0";
+            const colorClass = isYes
+              ? "bg-emerald-500 hover:bg-emerald-500"
+              : isNo
+                ? "bg-rose-500 hover:bg-rose-500"
+                : "bg-slate-500 hover:bg-slate-500";
+            return (
+              <Button
+                key={`${market.id}-${outcome}`}
+                size="sm"
+                className={`${baseClass} ${colorClass}`}
+                onClick={() => {
+                  if (!onQuickBet) return;
+                  const side = isNo ? "NO" : "YES";
+                  onQuickBet(market, side);
+                }}
+              >
+                {outcome} {(price * 100).toFixed(0)}%
+              </Button>
+            );
+          })}
+          {extraOutcomeCount > 0 ? (
+            <span className="inline-flex items-center rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[10px] text-slate-500 dark:border-slate-700">
+              +{extraOutcomeCount}
             </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 px-2 text-xs"
-              onClick={() => window.open(`https://polymarket.com/market/${market.id}`, '_blank')}
-            >
-              <ExternalLink className="w-3 h-3 mr-1" />
-              View
-            </Button>
-          </div>
+          ) : null}
+        </div>
+
+        <div className="relative flex items-center justify-center pt-1">
+          <span className="absolute left-0 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+            Vol. {volumeLabel === "--" ? volumeLabel : `$${volumeLabel}`}
+          </span>
+          <span className="absolute right-0 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+            {endLabel}
+          </span>
         </div>
       </CardContent>
     </Card>
   );
 };
 
-export const PolymarketTab: React.FC = () => {
-  const [searchTerm, setSearchTerm] = useState('');
+export const PolymarketTab: React.FC<PolymarketTabProps> = ({ onQuickBet, searchTerm = '' }) => {
 
-  // Fetch markets from Polymarket CLOB API
+  // Fetch markets from Polymarket via Bantah API proxy
   const { data, isLoading, error } = useQuery({
     queryKey: ['polymarket-markets'],
     queryFn: async () => {
       try {
-        console.log('Fetching Polymarket data from CLOB API...');
+        console.log('Fetching Polymarket data from Bantah API proxy...');
 
-        const response = await fetch('https://clob.polymarket.com/markets?active=true&closed=false&limit=20');
+        const response = await fetch('/api/polymarket/markets?active=true&closed=false&limit=20');
 
         if (!response.ok) {
           throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
 
         const result = await response.json();
+        const rawMarkets = Array.isArray(result) ? result : result ? [result] : [];
 
-        if (!result || !result.data || !Array.isArray(result.data)) {
+        if (!rawMarkets.length) {
           throw new Error('Invalid API response format');
         }
 
-        console.log('Polymarket CLOB API success, markets found:', result.data.length);
+        console.log('Polymarket API success, markets found:', rawMarkets.length);
 
         // Transform the data to match our interface
-        const transformedMarkets = result.data.map((market: any) => {
-          // Extract prices from tokens
-          const prices = market.tokens?.map((token: any) => token.price || 0) || [0, 0];
+        const transformedMarkets = rawMarkets.map((market: any) => {
+          const outcomes = parseStringArray(market.outcomes);
+          const prices = parseNumberArray(market.outcomePrices);
+          const normalizedPrices = outcomes.length
+            ? outcomes.map((_, index) => Number(prices[index] || 0))
+            : prices;
+          const id = String(market.id || market.conditionId || market.condition_id || market.slug || `market_${Math.random()}`);
+          const slug = market.slug ? String(market.slug) : undefined;
+          const question =
+            market.question ||
+            market.title ||
+            (slug ? slug.replace(/-/g, " ") : "Unknown Question");
+          const image = pickFirstValidImage([
+            market.image,
+            market.icon,
+            market.events?.[0]?.image,
+            market.events?.[0]?.icon,
+          ]);
+          const icon = pickFirstValidImage([
+            market.icon,
+            market.image,
+            market.events?.[0]?.icon,
+            market.events?.[0]?.image,
+          ]);
 
           return {
-            id: market.condition_id || market.id || `market_${Math.random()}`,
-            question: market.question || 'Unknown Question',
+            id,
+            slug,
+            question,
             description: market.description || '',
-            outcomes: market.outcomes || ['Yes', 'No'],
-            prices: prices,
-            volume: parseFloat(market.volume) || 0,
-            active: market.active || false,
-            closed: market.closed || false,
-            marketMakerAddress: market.fpmm || '',
-            endDate: market.end_date_iso || null,
-            category: market.tags?.[0] || 'Other'
+            outcomes: outcomes.length ? outcomes : ['Yes', 'No'],
+            prices: normalizedPrices.length ? normalizedPrices : [0, 0],
+            volume: Number(market.volumeNum ?? market.volume ?? 0),
+            active: Boolean(market.active ?? market.is_active ?? false),
+            closed: Boolean(market.closed ?? market.is_closed ?? false),
+            marketMakerAddress: market.marketMakerAddress || market.market_maker_address || market.fpmm || '',
+            endDate: market.endDate || market.end_date_iso || market.endDateIso || market.end_date || null,
+            category: market.groupItemTitle || market.events?.[0]?.title || market.category || 'Polymarket',
+            image,
+            icon,
+            sourceUrl: slug ? `https://polymarket.com/market/${slug}` : `https://polymarket.com/market/${id}`,
+            resolutionSource: market.resolutionSource || market.resolution_source || "",
           };
         });
 
-        return transformedMarkets as PolymarketMarket[];
+        const dedupedMarkets: PolymarketMarket[] = [];
+        const seen = new Set<string>();
+        transformedMarkets.forEach((market) => {
+          const key = market.id || market.slug || market.question;
+          if (seen.has(key)) return;
+          seen.add(key);
+          dedupedMarkets.push(market);
+        });
+
+        return dedupedMarkets as PolymarketMarket[];
 
       } catch (error) {
         console.error('Error fetching Polymarket data:', error);
@@ -209,31 +298,18 @@ export const PolymarketTab: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Search */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-          <Input
-            placeholder="Search markets..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 h-10"
-          />
-        </div>
-      </div>
-
+    <div className="space-y-3">
       {/* Markets Grid */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
           {[...Array(6)].map((_, i) => (
             <PolymarketCardSkeleton key={i} />
           ))}
         </div>
       ) : filteredMarkets.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
           {filteredMarkets.map((market) => (
-            <PolymarketMarketCard key={market.id} market={market} />
+            <PolymarketMarketCard key={market.id} market={market} onQuickBet={onQuickBet} />
           ))}
         </div>
       ) : (

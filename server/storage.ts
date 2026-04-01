@@ -1799,6 +1799,13 @@ export class DatabaseStorage implements IStorage {
         noStakeTotal: challengeData.noStakeTotal || 0,
         dueDate: (challengeData as any).dueDate || null,
         coverImageUrl: (challengeData as any).coverImageUrl || null,
+        settlementRail: (challengeData as any).settlementRail || null,
+        chainId: (challengeData as any).chainId || null,
+        tokenSymbol: (challengeData as any).tokenSymbol || null,
+        tokenAddress: (challengeData as any).tokenAddress || null,
+        decimals: (challengeData as any).decimals || null,
+        stakeAtomic: (challengeData as any).stakeAtomic || null,
+        evidence: (challengeData as any).evidence || null,
       };
 
       console.log('Inserting challenge with values:', insertValues);

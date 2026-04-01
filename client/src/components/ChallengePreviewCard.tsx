@@ -46,6 +46,7 @@ export function ChallengePreviewCard({
       case 'trading': return '📈';
       case 'fitness': return '🏃';
       case 'skill': return '🧠';
+      case 'polymarket': return 'PM';
       default: return '⭐';
     }
   };

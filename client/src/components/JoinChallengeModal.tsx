@@ -132,18 +132,20 @@ export function JoinChallengeModal({
     challenge?.tokenSymbol || challenge?.token_symbol || onchainConfig?.defaultToken || "ETH",
   ).toUpperCase();
 
-  const getCategoryEmoji = (category: string) => {
+  const getCategoryEmoji = (category?: string | null) => {
     const cats: Record<string, string> = {
       crypto: "BTC",
       sports: "SPORT",
       gaming: "GAME",
       music: "MUSIC",
       politics: "POL",
+      polymarket: "PM",
       tech: "TECH",
       lifestyle: "LIFE",
       entertainment: "ENT",
     };
-    return cats[category.toLowerCase()] || "CH";
+    const key = String(category || "").toLowerCase().trim();
+    return cats[key] || "CH";
   };
 
   const updateChallengesCache = (challengeSnapshot?: any) => {
@@ -247,6 +249,10 @@ export function JoinChallengeModal({
         });
         payload.escrowTxHash = escrowTx.escrowTxHash;
         payload.walletAddress = escrowTx.walletAddress;
+        toast({
+          title: "Escrow locked",
+          description: `${stakeAmount.toLocaleString()} ${tokenSymbol} secured in escrow.`,
+        });
       }
 
       return await apiRequest("POST", `/api/challenges/${challenge.id}/queue/join`, payload);

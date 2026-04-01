@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useWallets } from "@privy-io/react-auth";
 import { cn } from "@/lib/utils";
 import { getGlobalChannel } from "@/lib/pusher";
 import { MobileNavigation } from "@/components/MobileNavigation";
@@ -10,6 +11,7 @@ import { JoinChallengeModal } from "@/components/JoinChallengeModal";
 import { BantMap } from "@/components/BantMap";
 import { Button } from "@/components/ui/button";
 import CategoryBar from "@/components/CategoryBar";
+import PolymarketTab, { type PolymarketMarket } from "@/components/PolymarketTab";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -44,6 +46,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { UserAvatar } from "@/components/UserAvatar";
+import { PlayfulLoadingOverlay } from "@/components/ui/playful-loading";
 import {
   MessageCircle,
   Clock,
@@ -61,6 +64,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   type OnchainRuntimeConfig,
   type OnchainTokenSymbol,
+  executeOnchainEscrowStakeTx,
 } from "@/lib/onchainEscrow";
 
 function ChallengeCardSkeleton() {
@@ -146,6 +150,7 @@ function TokenMark({ token }: { token: OnchainTokenSymbol }) {
 
 export default function Challenges() {
   const { user } = useAuth();
+  const { wallets } = useWallets();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -153,10 +158,17 @@ export default function Challenges() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
   const [showChat, setShowChat] = useState(false);
-  const [challengeStatusTab, setChallengeStatusTab] = useState<'all' | 'p2p' | 'open' | 'updown' | 'communities' | 'active' | 'pending' | 'finished'>('all');
+  const [challengeStatusTab, setChallengeStatusTab] = useState<'all' | 'polymarket' | 'p2p' | 'open' | 'updown' | 'communities' | 'active' | 'pending' | 'finished'>('all');
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [preSelectedUser, setPreSelectedUser] = useState<any>(null);
   const [visibleChallengeCount, setVisibleChallengeCount] = useState(12);
+  const [showPolymarketBetModal, setShowPolymarketBetModal] = useState(false);
+  const [polymarketBet, setPolymarketBet] = useState<{
+    market: PolymarketMarket;
+    side: "YES" | "NO";
+  } | null>(null);
+  const [polymarketStake, setPolymarketStake] = useState("");
+  const [isPolymarketEnsuring, setIsPolymarketEnsuring] = useState(false);
   useEffect(() => {
     if (preSelectedUser) setCreateMode('direct');
   }, [preSelectedUser]);
@@ -509,7 +521,7 @@ export default function Challenges() {
     },
   });
 
-  const categories = [
+  const categoryTabs = [
     { id: "create", label: "Create", icon: "/assets/create.png", emoji: "✨", gradient: "from-green-400 to-emerald-500", isCreate: true, value: "create" },
     { id: "all", label: "All", icon: "/assets/versus.svg", emoji: "🌐", gradient: "from-blue-400 to-purple-500", value: "all" },
     { id: "sports", label: "Sports", icon: "/assets/sportscon.svg", emoji: "⚽", gradient: "from-green-400 to-blue-500", value: "sports" },
@@ -520,6 +532,23 @@ export default function Challenges() {
     { id: "entertainment", label: "Entertainment", icon: "/assets/popcorn.svg", emoji: "🍿", gradient: "from-pink-400 to-red-500", value: "entertainment" },
     { id: "politics", label: "Politics", icon: "/assets/poltiii.svg", emoji: "🗳️", gradient: "from-green-400 to-teal-500", value: "politics" },
   ];
+
+  const categoryOptions = [
+    { value: "polymarket", label: "Polymarket", emoji: "PM" },
+    ...categoryTabs.filter((item) => !item.isCreate).map((item) => ({
+      value: item.value || item.id,
+      label: item.label,
+      emoji: item.emoji,
+    })),
+  ];
+
+  const toLocalDateTimeInput = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const tzOffset = date.getTimezoneOffset() * 60000;
+    const local = new Date(date.getTime() - tzOffset);
+    return local.toISOString().slice(0, 16);
+  };
 
   const filteredChallenges = useMemo(() => challenges.filter((challenge: any) => {
     if (isFiveMinuteChallenge(challenge)) return false;
@@ -699,6 +728,120 @@ export default function Challenges() {
     setShowJoinModal(true);
   };
 
+  const handlePolymarketQuickBet = (market: PolymarketMarket, side: "YES" | "NO") => {
+    setPolymarketBet({ market, side });
+    setPolymarketStake("");
+    setShowPolymarketBetModal(true);
+  };
+
+  const submitPolymarketBet = async () => {
+    if (!polymarketBet) return;
+    const stakeValue = Number.parseInt(String(polymarketStake).replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
+      toast({
+        title: "Enter a valid stake",
+        description: "Stake must be a positive number.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsPolymarketEnsuring(true);
+    try {
+      const payload = {
+        marketId: polymarketBet.market.id,
+        slug: polymarketBet.market.slug,
+        question: polymarketBet.market.question,
+        endDate: polymarketBet.market.endDate,
+        sourceUrl: polymarketBet.market.sourceUrl,
+        resolutionSource: polymarketBet.market.resolutionSource,
+        image: polymarketBet.market.image,
+        stakeAmount: stakeValue,
+      };
+
+      const ensuredChallenge = await apiRequest(
+        "POST",
+        "/api/polymarket/challenges/ensure",
+        payload,
+      );
+
+      const challenge = ensuredChallenge || {};
+      const challengeId = Number(challenge?.id);
+      if (!Number.isFinite(challengeId)) {
+        throw new Error("Unable to prepare this market right now.");
+      }
+
+      const challengeRail = String(challenge?.settlementRail || challenge?.settlement_rail || "onchain").toLowerCase();
+      const isOnchainChallenge = challengeRail === "onchain";
+      const requiresContractEscrow = Boolean(isOnchainChallenge && onchainConfig?.contractEnabled);
+      const tokenSymbol = String(
+        challenge?.tokenSymbol || challenge?.token_symbol || onchainConfig?.defaultToken || "USDC",
+      ).toUpperCase();
+
+      const joinPayload: Record<string, any> = {
+        side: polymarketBet.side,
+        stakeAmount: stakeValue,
+      };
+
+      if (requiresContractEscrow) {
+        const preferredWalletAddress = (
+          [
+            (user as any)?.walletAddress,
+            (user as any)?.primaryWalletAddress,
+            (user as any)?.wallet?.address,
+            Array.isArray((user as any)?.walletAddresses)
+              ? (user as any)?.walletAddresses?.[0]
+              : null,
+          ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
+        ) as string | null;
+
+        const escrowTx = await executeOnchainEscrowStakeTx({
+          wallets: wallets as any,
+          preferredWalletAddress,
+          onchainConfig,
+          chainId: Number(
+            challenge?.chainId || challenge?.chain_id || onchainConfig?.defaultChainId,
+          ),
+          tokenSymbol: tokenSymbol as OnchainTokenSymbol,
+          amount: String(stakeValue),
+        });
+        joinPayload.escrowTxHash = escrowTx.escrowTxHash;
+        joinPayload.walletAddress = escrowTx.walletAddress;
+        toast({
+          title: "Escrow locked",
+          description: `${stakeValue.toLocaleString()} ${tokenSymbol} secured in escrow.`,
+        });
+      }
+
+      const joinResult = await apiRequest(
+        "POST",
+        `/api/challenges/${challengeId}/queue/join`,
+        joinPayload,
+      );
+
+      toast({
+        title: joinResult?.match ? "Matched" : "Queued for matching",
+        description: joinResult?.match
+          ? `Opponent found. ${stakeValue.toLocaleString()} ${tokenSymbol} locked in escrow.`
+          : `Waiting for an opponent. ${stakeValue.toLocaleString()} ${tokenSymbol} held in escrow.`,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
+      setShowPolymarketBetModal(false);
+      setPolymarketBet(null);
+
+      window.location.href = `/challenges/${challengeId}/activity`;
+    } catch (error: any) {
+      toast({
+        title: "Unable to start bet",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPolymarketEnsuring(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
@@ -789,54 +932,60 @@ export default function Challenges() {
   );
   const hasMoreChallenges = visibleChallengeCount < sortedChallenges.length;
 
-  const renderChallengeContent = () => (
-    <>
-      {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
-          {[...Array(6)].map((_, i) => (
-            <ChallengeCardSkeleton key={i} />
-          ))}
-        </div>
-      ) : sortedChallenges.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
-          {visibleChallenges.map((challenge, index) => (
-            <ChallengeCard
-              key={challenge?.id ?? `challenge-${index}-${challenge?.createdAt ?? "unknown"}`}
-              challenge={challenge}
-              onChatClick={handleChallengeClick}
-              onJoin={handleJoin}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-20">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
-            <Search className="w-8 h-8 text-slate-400" />
+  const renderChallengeContent = () => {
+    if (challengeStatusTab === "polymarket") {
+      return <PolymarketTab onQuickBet={handlePolymarketQuickBet} searchTerm={searchTerm} />;
+    }
+
+    return (
+      <>
+        {isLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+            {[...Array(6)].map((_, i) => (
+              <ChallengeCardSkeleton key={i} />
+            ))}
           </div>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">No challenges found</h3>
-          <p className="text-slate-500 dark:text-slate-400">Try adjusting your search or category filters</p>
-        </div>
-      )}
-      {!isLoading && hasMoreChallenges && (
-        <div className="mt-4 flex justify-center">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-8 px-4 text-xs"
-            onClick={() => setVisibleChallengeCount((count) => count + 12)}
-          >
-            Load more challenges
-          </Button>
-        </div>
-      )}
-    </>
-  );
+        ) : sortedChallenges.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+            {visibleChallenges.map((challenge, index) => (
+              <ChallengeCard
+                key={challenge?.id ?? `challenge-${index}-${challenge?.createdAt ?? "unknown"}`}
+                challenge={challenge}
+                onChatClick={handleChallengeClick}
+                onJoin={handleJoin}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-20">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
+              <Search className="w-8 h-8 text-slate-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">No challenges found</h3>
+            <p className="text-slate-500 dark:text-slate-400">Try adjusting your search or category filters</p>
+          </div>
+        )}
+        {!isLoading && hasMoreChallenges && (
+          <div className="mt-4 flex justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 px-4 text-xs"
+              onClick={() => setVisibleChallengeCount((count) => count + 12)}
+            >
+              Load more challenges
+            </Button>
+          </div>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[50px]">
       <div className="max-w-7xl mx-auto px-3 md:px-4 sm:px-6 lg:px-8 py-2 md:py-4">
         <CategoryBar
-          categories={categories}
+          categories={categoryTabs}
           selectedCategory={selectedCategory}
           onSelect={(id) => {
             if (id === 'create') {
@@ -864,6 +1013,12 @@ export default function Challenges() {
                 <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200 border border-white dark:border-slate-900 pointer-events-none">
                   {allTabCount}
                 </span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="polymarket"
+                className="text-xs px-3 py-1.5 rounded-full data-[state=active]:bg-[#ccff00] data-[state=active]:text-black whitespace-nowrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all h-auto"
+              >
+                Polymarket
               </TabsTrigger>
               <TabsTrigger 
                 value="p2p" 
@@ -1120,7 +1275,7 @@ export default function Challenges() {
                           Category
                         </FormLabel>
                         {(() => {
-                          const selectedCategoryOption = categories.find(
+                          const selectedCategoryOption = categoryOptions.find(
                             (category) => category.value === field.value,
                           );
 
@@ -1144,7 +1299,7 @@ export default function Challenges() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
-                            {categories.map((category) => (
+                            {categoryOptions.map((category) => (
                               <SelectItem
                                 key={category.value}
                                 value={category.value}
@@ -1367,6 +1522,75 @@ export default function Challenges() {
         </Dialog>
       )}
 
+      {/* Polymarket quick bet modal */}
+      {showPolymarketBetModal && polymarketBet && (
+        <Dialog
+          open={showPolymarketBetModal}
+          onOpenChange={(open) => {
+            setShowPolymarketBetModal(open);
+            if (!open) setPolymarketBet(null);
+          }}
+        >
+            <DialogContent className="w-[calc(100%-24px)] max-w-[calc(100%-24px)] sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Quick Bet</DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  {polymarketBet.market.question}
+                </DialogDescription>
+              </DialogHeader>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs dark:bg-slate-900/60">
+                <span className="text-slate-500">Side</span>
+                <Badge
+                  className={cn(
+                    "text-[10px] px-2 py-1",
+                    polymarketBet.side === "YES"
+                      ? "bg-emerald-500 text-white"
+                      : "bg-rose-500 text-white",
+                  )}
+                >
+                  {polymarketBet.side}
+                </Badge>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs text-slate-500">
+                  Stake ({selectedTokenSymbol})
+                </div>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  placeholder={`Enter stake in ${selectedTokenSymbol}`}
+                  value={polymarketStake}
+                  onChange={(event) => setPolymarketStake(event.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1 rounded-lg border border-emerald-200/60 bg-emerald-50/70 px-3 py-2 text-[11px] text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-900/10 dark:text-emerald-100 sm:flex-row sm:items-center sm:justify-between">
+                <span className="inline-flex items-center gap-1">
+                  <Trophy className="h-3 w-3" />
+                  Potential win
+                </span>
+                <span className="text-sm font-semibold text-emerald-900 dark:text-emerald-50">
+                  {(() => {
+                    const stakeValue = Number.parseFloat(polymarketStake || "0");
+                    if (!Number.isFinite(stakeValue) || stakeValue <= 0) return `0 ${selectedTokenSymbol}`;
+                    return `${(stakeValue * 2).toLocaleString()} ${selectedTokenSymbol}`;
+                  })()}
+                </span>
+              </div>
+              <Button
+                type="button"
+                className="w-full bg-[#ccff00] text-black hover:bg-[#b7ec00]"
+                onClick={submitPolymarketBet}
+                disabled={isPolymarketEnsuring}
+              >
+                {isPolymarketEnsuring ? "Preparing..." : "Continue"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Join Challenge Modal (for admin-created betting challenges) */}
       {showJoinModal && selectedChallenge && (
         <JoinChallengeModal
@@ -1374,6 +1598,14 @@ export default function Challenges() {
           onClose={() => setShowJoinModal(false)}
           challenge={selectedChallenge}
           userBalance={balance && typeof balance === "object" ? (balance as any).balance : (typeof balance === 'number' ? balance : 0)}
+        />
+      )}
+
+      {isPolymarketEnsuring && (
+        <PlayfulLoadingOverlay
+          type="betting"
+          title="Placing your bet"
+          description="Confirm the wallet prompt to lock your stake."
         />
       )}
 
