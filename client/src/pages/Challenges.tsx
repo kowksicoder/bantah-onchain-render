@@ -58,6 +58,8 @@ import {
   Search,
   ArrowUp,
   ArrowDown,
+  Upload,
+  X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -100,6 +102,7 @@ const createChallengeSchema = z.object({
   amount: z.string().min(1, ""),
   dueDate: z.string().optional(),
   challengerSide: z.enum(["YES", "NO"]).default("YES"), // Default to YES if not selected
+  coverImageUrl: z.string().optional(),
 });
 
 const legacyTokenVisuals: Record<
@@ -175,6 +178,11 @@ export default function Challenges() {
   const [selectedTab, setSelectedTab] = useState<string>('featured');
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [coverInputType, setCoverInputType] = useState<'upload' | 'url'>('upload');
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [coverUrl, setCoverUrl] = useState("");
+  const [isCoverUploading, setIsCoverUploading] = useState(false);
 
   // Listen for header search events dispatched from Navigation
   useEffect(() => {
@@ -210,8 +218,69 @@ export default function Challenges() {
       amount: "",
       dueDate: "",
       challengerSide: "YES",
+      coverImageUrl: "",
     },
   });
+
+  const handleCoverSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please select an image smaller than 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file type",
+        description: "Please select an image file",
+        variant: "destructive",
+      });
+      return;
+    }
+    setCoverImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setCoverPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearCoverImage = () => {
+    setCoverImageFile(null);
+    setCoverPreview(null);
+  };
+
+  const uploadCoverImage = async (file: File): Promise<string | null> => {
+    try {
+      setIsCoverUploading(true);
+      const formData = new FormData();
+      formData.append("image", file);
+      const response = await fetch("/api/upload/image", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to upload image");
+      }
+      const data = await response.json();
+      return data.imageUrl;
+    } catch (error) {
+      console.error("Cover upload error:", error);
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload image. Please try again.",
+        variant: "destructive",
+      });
+      return null;
+    } finally {
+      setIsCoverUploading(false);
+    }
+  };
 
   const normalizeP2PStatus = (challenge: any) => {
     const rawStatus = String(challenge?.status || "").toLowerCase();
@@ -501,6 +570,10 @@ export default function Challenges() {
       setIsCreateDialogOpen(false);
       setPreSelectedUser(null);
       form.reset();
+      setCoverImageFile(null);
+      setCoverPreview(null);
+      setCoverUrl("");
+      setCoverInputType("upload");
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -664,7 +737,7 @@ export default function Challenges() {
     }
   }, [selectedTab, user, pendingChallenges.length, awaitingResolutionChallenges.length]);
 
-  const onSubmit = (data: z.infer<typeof createChallengeSchema>) => {
+  const onSubmit = async (data: z.infer<typeof createChallengeSchema>) => {
     // Ensure direct-mode has a challenged user selected
     if (createMode === 'direct' && !data.challenged && !preSelectedUser) {
       toast({
@@ -688,6 +761,14 @@ export default function Challenges() {
       return;
     }
 
+    let finalCoverUrl = "";
+    if (coverInputType === "upload" && coverImageFile) {
+      const uploaded = await uploadCoverImage(coverImageFile);
+      if (uploaded) finalCoverUrl = uploaded;
+    } else if (coverInputType === "url" && coverUrl.trim()) {
+      finalCoverUrl = coverUrl.trim();
+    }
+
     // Build payload depending on mode
     const payload: any = { ...data };
     if (createMode === 'direct') {
@@ -695,6 +776,9 @@ export default function Challenges() {
     } else {
       // open challenge: set challenged to empty string
       payload.challenged = "";
+    }
+    if (finalCoverUrl) {
+      payload.coverImageUrl = finalCoverUrl;
     }
 
     createChallengeMutation.mutate(payload);
@@ -1096,6 +1180,10 @@ export default function Challenges() {
               setPreSelectedUser(null);
               setCreateMode('direct');
               form.reset();
+              setCoverImageFile(null);
+              setCoverPreview(null);
+              setCoverUrl("");
+              setCoverInputType("upload");
             }
           }}
         >
@@ -1356,6 +1444,81 @@ export default function Challenges() {
                 </div>
 
                 <div className="space-y-0.5">
+                  <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                    Cover Image (optional)
+                  </FormLabel>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCoverInputType("upload")}
+                      className={cn(
+                        "flex-1 rounded-lg px-2 py-1 text-[10px] font-semibold",
+                        coverInputType === "upload"
+                          ? "bg-[#7440ff] text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                      )}
+                    >
+                      Upload
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCoverInputType("url")}
+                      className={cn(
+                        "flex-1 rounded-lg px-2 py-1 text-[10px] font-semibold",
+                        coverInputType === "url"
+                          ? "bg-[#7440ff] text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                      )}
+                    >
+                      Image URL
+                    </button>
+                  </div>
+
+                  {coverInputType === "upload" ? (
+                    !coverPreview ? (
+                      <div>
+                        <label
+                          htmlFor="challenge-cover-upload"
+                          className="mt-1 flex cursor-pointer items-center justify-between rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[10px] text-slate-500 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-400"
+                        >
+                          <span>Upload a cover image or GIF</span>
+                          <Upload className="h-3.5 w-3.5 text-slate-400" />
+                        </label>
+                        <input
+                          id="challenge-cover-upload"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleCoverSelect}
+                          className="hidden"
+                        />
+                      </div>
+                    ) : (
+                      <div className="relative overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
+                        <img
+                          src={coverPreview}
+                          alt="Challenge cover preview"
+                          className="h-20 w-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={clearCoverImage}
+                          className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <Input
+                      value={coverUrl}
+                      onChange={(event) => setCoverUrl(event.target.value)}
+                      placeholder="https://example.com/cover.gif"
+                      className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-0.5">
                   <p className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
                     Currency & Stake
                   </p>
@@ -1500,7 +1663,7 @@ export default function Challenges() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={createChallengeMutation.isPending}
+                    disabled={createChallengeMutation.isPending || isCoverUploading}
                     className="h-9 flex-1 rounded-xl text-sm text-black hover:opacity-90"
                     style={{ backgroundColor: '#ccff00' }}
                   >
