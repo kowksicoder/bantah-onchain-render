@@ -21,7 +21,7 @@ interface ProfileFormData {
 }
 
 export default function ProfileEdit() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading, login } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -207,9 +207,33 @@ export default function ProfileEdit() {
     }
   };
 
+  useEffect(() => {
+    if (!authLoading && !user) {
+      setLocation("/");
+    }
+  }, [authLoading, user, setLocation]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   if (!user) {
-    setLocation("/");
-    return null;
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-md border border-slate-200 dark:border-slate-700 text-center">
+          <p className="text-slate-700 dark:text-slate-200 mb-4">
+            Please sign in to edit your profile.
+          </p>
+          <Button onClick={() => login()} className="bg-[#7440ff] text-white hover:bg-[#7440ff]/90">
+            Sign In
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
