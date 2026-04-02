@@ -51,20 +51,31 @@ export default function ProfileEdit() {
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["/api/profile"],
     enabled: !!user,
+    retry: false,
+    staleTime: 1000 * 60,
+    initialData: user || undefined,
   });
 
   useEffect(() => {
-    if (profileData) {
+    const resolvedProfile: any = profileData || user;
+    if (resolvedProfile) {
       const userData = {
-        firstName: (profileData as any).firstName || "",
-        username: (profileData as any).username || "",
-        bio: (profileData as any).bio || "",
-        profileImageUrl: (profileData as any).profileImageUrl || generateDefaultAvatar((profileData as any).firstName || "User"),
+        firstName: resolvedProfile.firstName || resolvedProfile.name || "",
+        username: resolvedProfile.username || "",
+        bio: resolvedProfile.bio || "",
+        profileImageUrl:
+          resolvedProfile.profileImageUrl ||
+          generateDefaultAvatar(
+            resolvedProfile.firstName ||
+              resolvedProfile.username ||
+              resolvedProfile.name ||
+              "User",
+          ),
       };
       setFormData(userData);
       setOriginalFormData(userData);
     }
-  }, [profileData]);
+  }, [profileData, user]);
 
   // Track changes to show unsaved indicator
   useEffect(() => {
@@ -268,7 +279,7 @@ export default function ProfileEdit() {
         </div>
       </motion.div>
 
-      {profileLoading ? (
+      {profileLoading && !profileData ? (
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
