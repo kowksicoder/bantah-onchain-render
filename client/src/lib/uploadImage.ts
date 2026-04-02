@@ -1,10 +1,10 @@
 import { getAuthToken } from "@/lib/queryClient";
 
-export async function uploadImage(file: File): Promise<string> {
+export async function uploadImage(file: File, token?: string | null): Promise<string> {
   const formData = new FormData();
   formData.append("image", file);
 
-  const authToken = getAuthToken();
+  const authToken = token ?? getAuthToken();
 
   const response = await fetch("/api/upload/image", {
     method: "POST",
@@ -20,6 +20,9 @@ export async function uploadImage(file: File): Promise<string> {
       message = data?.message || message;
     } catch {
       // Ignore JSON parsing issues and keep fallback message.
+    }
+    if (response.status === 401 && message === "Failed to upload image") {
+      message = "Please sign in again to upload a profile photo.";
     }
     throw new Error(message);
   }

@@ -21,7 +21,7 @@ interface ProfileFormData {
 }
 
 export default function ProfileEdit() {
-  const { user, isLoading: authLoading, login } = useAuth();
+  const { user, isLoading: authLoading, login, getAccessToken } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -136,6 +136,18 @@ export default function ProfileEdit() {
     },
   });
 
+  const canSave =
+    hasUnsavedChanges &&
+    !imageLoading &&
+    !updateProfileMutation.isPending;
+  const saveStatusMessage = updateProfileMutation.isPending
+    ? "Saving your profile..."
+    : imageLoading
+      ? "Uploading photo before save..."
+      : canSave
+        ? ""
+        : "Your profile is up to date";
+
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
     
@@ -198,7 +210,8 @@ export default function ProfileEdit() {
     setImageLoading(true);
 
     try {
-      const imageUrl = await uploadImage(file);
+      const accessToken = getAccessToken ? await getAccessToken() : null;
+      const imageUrl = await uploadImage(file, accessToken);
       setFormData(prev => ({ ...prev, profileImageUrl: imageUrl }));
       toast({
         title: "Avatar Updated",
@@ -308,6 +321,10 @@ export default function ProfileEdit() {
             <div className="flex justify-center">
               <motion.div 
                 className="relative"
+                onClick={() => {
+                  if (imageLoading || updateProfileMutation.isPending) return;
+                  fileInputRef.current?.click();
+                }}
                 onHoverStart={() => setIsAvatarHovered(true)}
                 onHoverEnd={() => setIsAvatarHovered(false)}
                 whileHover={{ scale: 1.05 }}
@@ -340,7 +357,10 @@ export default function ProfileEdit() {
                 <motion.button
                   type="button"
                   className="absolute bottom-0 right-0 p-1.5 bg-primary rounded-full cursor-pointer shadow-lg border-2 border-white dark:border-slate-800"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                   animate={{ 
@@ -561,6 +581,29 @@ export default function ProfileEdit() {
             transition={{ delay: 0.8 }}
             className="sticky bottom-4 pt-4"
           >
+            <AnimatePresence>
+              {!showSaveSuccess && saveStatusMessage && (
+                <motion.p
+                  key={canSave ? "ready" : hasUnsavedChanges ? "busy" : "saved"}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className={`mb-3 text-center text-sm font-medium ${
+                    updateProfileMutation.isPending
+                      ? "text-slate-700 dark:text-slate-200"
+                      : imageLoading
+                        ? "text-slate-600 dark:text-slate-300"
+                        : canSave
+                          ? "text-[#5c7a00]"
+                          : hasUnsavedChanges
+                        ? "text-slate-600 dark:text-slate-300"
+                        : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
+                  {saveStatusMessage}
+                </motion.p>
+              )}
+            </AnimatePresence>
             <AnimatePresence mode="wait">
               {showSaveSuccess ? (
                 <motion.div
@@ -583,21 +626,16 @@ export default function ProfileEdit() {
                 <motion.button
                   key="submit"
                   type="submit"
-                  disabled={updateProfileMutation.isPending || !hasUnsavedChanges}
-                  className={`w-full py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
-                    hasUnsavedChanges 
-                      ? 'bg-primary text-white hover:bg-primary/90 shadow-lg' 
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed'
+                  disabled={!canSave}
+                  className={`w-full rounded-2xl py-3.5 font-semibold transition-all duration-200 flex items-center justify-center gap-2 border ${
+                    updateProfileMutation.isPending
+                      ? "bg-slate-900 text-white border-slate-900 shadow-[0_14px_30px_rgba(15,23,42,0.22)]"
+                      : canSave
+                      ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_16px_40px_rgba(204,255,0,0.28)]"
+                      : "bg-white/95 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700"
                   }`}
-                  whileHover={hasUnsavedChanges ? { scale: 1.02 } : {}}
-                  whileTap={hasUnsavedChanges ? { scale: 0.98 } : {}}
-                  animate={{
-                    backgroundColor: updateProfileMutation.isPending 
-                      ? "#94a3b8" 
-                      : hasUnsavedChanges 
-                        ? undefined 
-                        : "#e2e8f0"
-                  }}
+                  whileHover={canSave ? { scale: 1.02, y: -1 } : {}}
+                  whileTap={canSave ? { scale: 0.985 } : {}}
                 >
                   {updateProfileMutation.isPending ? (
                     <>
@@ -611,7 +649,7 @@ export default function ProfileEdit() {
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      <span>{hasUnsavedChanges ? 'Save Changes' : 'No Changes'}</span>
+                      <span>{hasUnsavedChanges ? 'Save Changes' : 'Saved'}</span>
                     </>
                   )}
                 </motion.button>

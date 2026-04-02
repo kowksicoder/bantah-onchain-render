@@ -8846,8 +8846,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const uploadDir = path.resolve('./attached_assets');
       const uploadPath = path.join(uploadDir, uniqueFilename);
 
-      await fs.promises.mkdir(uploadDir, { recursive: true });
-      await fs.promises.writeFile(uploadPath, imageFile.buffer);
+      await fs.mkdir(uploadDir, { recursive: true });
+      await fs.writeFile(uploadPath, imageFile.buffer);
 
       const imageUrl = `/attached_assets/${uniqueFilename}`;
 

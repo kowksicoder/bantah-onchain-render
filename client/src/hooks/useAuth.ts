@@ -87,6 +87,7 @@ export function useAuth() {
     isAuthenticated: stableAuthenticated,
     login,
     logout,
+    getAccessToken,
     isLoggingOut: false,
   };
 }
