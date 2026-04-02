@@ -98,7 +98,7 @@ export function AchievementsList() {
                 )}
                 {achievement.pointsReward > 0 && (
                   <Badge variant="secondary" className="text-xs mt-1">
-                    +{achievement.pointsReward} pts
+                    +{achievement.pointsReward} BantCredit
                   </Badge>
                 )}
               </div>

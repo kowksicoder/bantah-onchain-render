@@ -167,7 +167,7 @@ export default function Profile() {
                     </span>
                   </div>
 
-                  {/* Points */}
+                  {/* BantCredit */}
                   <div className="flex flex-col items-center">
                     <div className="flex items-center gap-1 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full">
                       <Star className="w-4 h-4" />
@@ -175,7 +175,7 @@ export default function Profile() {
                         {Number(user.points || 0).toLocaleString()}
                       </span>
                     </div>
-                    <span className="text-[10px] text-gray-500 mt-1">Points</span>
+                    <span className="text-[10px] text-gray-500 mt-1">BantCredit</span>
                   </div>
 
                   {/* Followers */}

@@ -189,7 +189,7 @@ export function Navigation() {
     if (location.startsWith("/history")) return "History";
     if (location.startsWith("/admin")) return "Admin";
     if (location.startsWith("/referrals")) return "Referrals";
-    if (location.startsWith("/points")) return "Points & Badges";
+    if (location.startsWith("/points")) return "BantCredit & Badges";
     if (location.startsWith("/support-chat")) return "Support Chat";
     if (location.startsWith("/help-support")) return "Help & Support";
     if (location.startsWith("/terms-of-service")) return "Terms of Service";

@@ -270,7 +270,7 @@ export default function AdminUsersManagement() {
                       <p className="text-white font-semibold">{user.level}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-slate-400">Points</p>
+                      <p className="text-slate-400">BantCredit</p>
                       <p className="text-white font-semibold">{user.points?.toLocaleString()}</p>
                     </div>
                     <div className="text-center bg-green-900/30 px-3 py-2 rounded">

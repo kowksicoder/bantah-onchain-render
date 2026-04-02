@@ -74,7 +74,7 @@ export function DailyLoginModal({ isOpen, onClose, currentStreak, hasClaimedToda
       
       toast({
         title: "Daily Bonus Claimed! 🎉",
-        description: `You earned ${todaysReward} points! Current streak: ${currentStreak + 1} days`,
+        description: `You earned ${todaysReward} BantCredit! Current streak: ${currentStreak + 1} days`,
       });
 
       // Hide confetti and close modal after celebration
@@ -209,11 +209,11 @@ export function DailyLoginModal({ isOpen, onClose, currentStreak, hasClaimedToda
               <div className="flex items-center justify-between">
                 <div className="text-left">
                   <div className="text-slate-600 dark:text-slate-300 text-xs">Today's Reward</div>
-                  <div className="text-[#7440ff] dark:text-[#8b5cf6] font-bold text-sm md:text-base">+{todaysReward} points</div>
+                  <div className="text-[#7440ff] dark:text-[#8b5cf6] font-bold text-sm md:text-base">+{todaysReward} BantCredit</div>
                 </div>
                 <div className="text-right">
                   <div className="text-slate-600 dark:text-slate-300 text-xs">Tomorrow</div>
-                  <div className="text-slate-500 dark:text-slate-400 font-semibold text-xs md:text-sm">+{tomorrowsReward} points</div>
+                  <div className="text-slate-500 dark:text-slate-400 font-semibold text-xs md:text-sm">+{tomorrowsReward} BantCredit</div>
                 </div>
               </div>
             </CardContent>

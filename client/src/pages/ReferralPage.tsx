@@ -118,7 +118,7 @@ export default function ReferralPage() {
             <div className="space-y-1">
               <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">REWARDS</p>
               <div className="text-xl font-bold text-emerald-900 dark:text-emerald-100">{totalRewards}</div>
-              <div className="text-xs text-emerald-600 dark:text-emerald-400">Points</div>
+              <div className="text-xs text-emerald-600 dark:text-emerald-400">BantCredit</div>
             </div>
           </div>
 

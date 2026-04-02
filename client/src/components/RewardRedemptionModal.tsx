@@ -26,7 +26,7 @@ const rewards: Reward[] = [
   {
     id: 'coins_1000',
     name: '1,000 Coins',
-    description: 'Convert your points to coins for betting',
+    description: 'Convert your BantCredit to coins for betting',
     pointsCost: 500,
     type: 'coins',
     icon: Coins,
@@ -140,8 +140,8 @@ export function RewardRedemptionModal({ isOpen, onClose, userPoints, userCoins }
   const handleRedeem = async (reward: Reward) => {
     if (userPoints < reward.pointsCost) {
       toast({
-        title: "Insufficient Points",
-        description: `You need ${reward.pointsCost - userPoints} more points to redeem this reward.`,
+        title: "Insufficient BantCredit",
+        description: `You need ${reward.pointsCost - userPoints} more BantCredit to redeem this reward.`,
         variant: "destructive"
       });
       return;
@@ -165,7 +165,7 @@ export function RewardRedemptionModal({ isOpen, onClose, userPoints, userCoins }
           <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-center space-x-1">
               <Star className="w-4 h-4 text-blue-500" />
-              <span>{userPoints.toLocaleString()} points</span>
+              <span>{userPoints.toLocaleString()} BantCredit</span>
             </div>
             <div className="flex items-center space-x-1">
               <Coins className="w-4 h-4 text-yellow-500" />
@@ -217,7 +217,7 @@ export function RewardRedemptionModal({ isOpen, onClose, userPoints, userCoins }
                   {!affordable && (
                     <div className="absolute top-2 right-2">
                       <Badge variant="secondary" className="text-xs">
-                        Need {reward.pointsCost - userPoints} pts
+                        Need {reward.pointsCost - userPoints} BantCredit
                       </Badge>
                     </div>
                   )}
@@ -243,7 +243,7 @@ export function RewardRedemptionModal({ isOpen, onClose, userPoints, userCoins }
                       }`}
                     >
                       <Star className="w-3 h-3 mr-1" />
-                      {reward.pointsCost.toLocaleString()} points
+                      {reward.pointsCost.toLocaleString()} BantCredit
                     </Badge>
 
                     {affordable && (
@@ -272,7 +272,7 @@ export function RewardRedemptionModal({ isOpen, onClose, userPoints, userCoins }
         </div>
 
         <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-          <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">How to Earn More Points:</h4>
+          <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">How to Earn More BantCredit:</h4>
           <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
             <li>• Win challenges and events</li>
             <li>• Daily login streaks</li>

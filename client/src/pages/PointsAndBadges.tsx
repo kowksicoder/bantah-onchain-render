@@ -196,7 +196,7 @@ export default function PointsAndBadges() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Level</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Track your progress and achievements</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Track your BantCredit and achievements</p>
           </div>
           <Button
             onClick={() => setShowRewardModal(true)}
@@ -214,7 +214,7 @@ export default function PointsAndBadges() {
           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-lg">
             <CardContent className="p-3">
               <div className="text-center">
-                <div className="text-xs opacity-90 mb-1">POINTS</div>
+                <div className="text-xs opacity-90 mb-1">BANTCREDIT</div>
                 <div className="text-lg font-bold">{totalPoints.toLocaleString()}</div>
                 <div className="text-xs opacity-80">Level {level}</div>
               </div>
@@ -420,13 +420,13 @@ export default function PointsAndBadges() {
                       <div className="text-lg font-bold text-gray-900 dark:text-white">{getLevelName(level)}</div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">Level {level}</div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {pointsToNext} points to next level
+                        {pointsToNext} BantCredit to next level
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-medium text-gray-900 dark:text-white">{totalPoints.toLocaleString()}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Total Points</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Total BantCredit</div>
                   </div>
                 </div>
               </CardContent>

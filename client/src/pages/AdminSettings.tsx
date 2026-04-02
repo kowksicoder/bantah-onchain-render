@@ -613,11 +613,11 @@ export default function AdminSettings() {
               </div>
             </div>
 
-            {/* User Points Management */}
+            {/* User BantCredit Management */}
             <div className="border border-slate-600 rounded-lg p-4">
               <h3 className="text-slate-300 font-medium mb-3 flex items-center">
                 <Coins className="w-4 h-4 mr-2 text-yellow-400" />
-                Give Points to User
+                Give BantCredit to User
               </h3>
               <div className="flex gap-3">
                 <Select value={selectedUserId} onValueChange={setSelectedUserId}>
@@ -633,7 +633,7 @@ export default function AdminSettings() {
                   </SelectContent>
                 </Select>
                 <Input
-                  placeholder="Points Amount"
+                  placeholder="BantCredit Amount"
                   value={pointsAmount}
                   onChange={(e) => setPointsAmount(e.target.value)}
                   className="bg-slate-800 border-slate-700 max-w-[150px]"
@@ -644,7 +644,7 @@ export default function AdminSettings() {
                   className="bg-yellow-600 hover:bg-yellow-700"
                 >
                   <Coins className="w-4 h-4 mr-2" />
-                  {isGivingPoints ? "Give Points" : "Give Points"}
+                  {isGivingPoints ? "Give BantCredit" : "Give BantCredit"}
                 </Button>
               </div>
             </div>

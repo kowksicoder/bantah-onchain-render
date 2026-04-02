@@ -29,7 +29,7 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-      {/* Header with points and progress */}
+      {/* Header with BantCredit and progress */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -37,7 +37,7 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({
             Event Creation Progress
           </h3>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Complete all steps to earn bonus points!
+            Complete all steps to earn bonus BantCredit!
           </p>
         </div>
         <div className="text-right">
@@ -46,7 +46,7 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
             <Star className="w-4 h-4 text-yellow-500" />
-            Points
+            BantCredit
           </div>
         </div>
       </div>
@@ -85,7 +85,7 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({
                 }
                 hover:scale-[1.05] transform
               `}
-              title={`${step.title}: ${step.description} (+${step.points} points)`}
+              title={`${step.title}: ${step.description} (+${step.points} BantCredit)`}
             >
               {step.completed && (
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">

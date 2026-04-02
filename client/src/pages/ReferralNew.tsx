@@ -56,7 +56,7 @@ export default function ReferralNew() {
   const rewards = [
     {
       id: 1,
-      title: "500 Bonus Points",
+      title: "500 BantCredit Bonus",
       subtitle: `${totalReferrals} friends joined`,
       icon: "🎯",
       color: "bg-purple-100 dark:bg-purple-900",
@@ -176,7 +176,7 @@ export default function ReferralNew() {
               </div>
               <div className="flex-1">
                 <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mb-1">
-                  500 Points Per Friend
+                  500 BantCredit Per Friend
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
                   Earn rewards when friends join using your link
