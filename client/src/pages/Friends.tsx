@@ -215,6 +215,7 @@ function RequestRowSkeleton() {
         category: data.category,
         amount: parseFloat(data.amount),
         dueDate: data.dueDate,
+        settlementRail: "onchain",
       };
       return await apiRequest("POST", "/api/challenges", challengeData);
     },

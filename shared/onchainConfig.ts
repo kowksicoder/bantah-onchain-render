@@ -48,7 +48,7 @@ export interface OnchainPublicConfig {
   chains: Record<string, OnchainChainConfig>;
 }
 
-export const DEFAULT_ONCHAIN_CHAIN_ID = 84532; // Base Sepolia
+export const DEFAULT_ONCHAIN_CHAIN_ID = 8453; // Base Mainnet
 
 export const DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS: Record<
   OnchainTokenSymbol,

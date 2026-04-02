@@ -36,7 +36,7 @@ function chainKeyToEnvPrefix(key: OnchainChainKey): string {
 
 function parseEnabledChainIds(value: string | undefined): number[] {
   if (!value || !value.trim()) {
-    return [84532, 97, 421614, 11142220, 1301];
+    return [8453, 56, 42161, 42220, 130];
   }
   const parsed = value
     .split(",")

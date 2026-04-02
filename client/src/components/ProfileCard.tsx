@@ -186,6 +186,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
         ...challengeData,
         challenged: userId,
         dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Added due date
+        settlementRail: "onchain",
       };
       return await apiRequest("POST", `/api/challenges`, data);
     },

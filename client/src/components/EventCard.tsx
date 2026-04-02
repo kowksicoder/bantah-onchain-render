@@ -9,6 +9,15 @@ import { getAvatarUrl } from "@/utils/avatarUtils";
 
 const DEFAULT_BANNER =
   "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=800&auto=format&fit=crop";
+const CATEGORY_ICON_ASSETS = new Set([
+  "/assets/cryptosvg.svg",
+  "/assets/sportscon.svg",
+  "/assets/poltiii.svg",
+  "/assets/popcorn.svg",
+  "/assets/gamessvg.svg",
+  "/assets/news.svg",
+  "/assets/eventssvg.svg",
+]);
 
 interface Creator {
   id: string;
@@ -167,12 +176,26 @@ const EventCard: React.FC<EventCardProps> = ({ event, onChatClick }) => {
     return formatBalance(amount);
   };
 
+  const resolveCoverImage = () => {
+    const raw =
+      event.imageUrl ||
+      event.bannerUrl ||
+      event.image_url ||
+      "";
+    const value = String(raw || "").trim();
+    if (!value) return DEFAULT_BANNER;
+    if (value.startsWith("data:") || value.startsWith("http")) return value;
+    const normalized = value.startsWith("/") ? value : `/${value}`;
+    if (CATEGORY_ICON_ASSETS.has(normalized)) return DEFAULT_BANNER;
+    return normalized;
+  };
+
   return (
     <>
       <div className="bg-black rounded-3xl overflow-hidden relative">
         <div className="relative w-full aspect-video">
           <img
-            src={event.imageUrl || event.bannerUrl || event.image_url || DEFAULT_BANNER}
+            src={resolveCoverImage()}
             alt={event.title}
             className="w-full h-full object-cover"
             onError={(e) => {

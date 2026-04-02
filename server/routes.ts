@@ -2752,6 +2752,28 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(400).json({ message: "End date must be in the future" });
       }
 
+      const categoryIconAssets = new Set([
+        "/assets/cryptosvg.svg",
+        "/assets/sportscon.svg",
+        "/assets/poltiii.svg",
+        "/assets/popcorn.svg",
+        "/assets/gamessvg.svg",
+        "/assets/news.svg",
+        "/assets/eventssvg.svg",
+      ]);
+      const rawBanner = String(req.body.bannerUrl || req.body.imageUrl || "").trim();
+      const normalizedBanner = rawBanner
+        ? rawBanner.startsWith("http") || rawBanner.startsWith("data:")
+          ? rawBanner
+          : rawBanner.startsWith("/")
+            ? rawBanner
+            : `/${rawBanner}`
+        : "";
+      const sanitizedBanner =
+        normalizedBanner && !categoryIconAssets.has(normalizedBanner)
+          ? normalizedBanner
+          : null;
+
       const eventData = {
         title: req.body.title,
         description: req.body.description || null,
@@ -2762,7 +2784,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         status: 'active',
         isPrivate: req.body.isPrivate || false,
         maxParticipants: req.body.maxParticipants || 100,
-        imageUrl: req.body.bannerUrl || null,
+        imageUrl: sanitizedBanner,
       };
 
       console.log("Parsed event data:", eventData);

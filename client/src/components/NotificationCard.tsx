@@ -133,6 +133,7 @@ export function NotificationCard({ notification, onMarkAsRead }: NotificationCar
       description: challengeDescription,
       category: challengeType,
       amount: challengeAmount,
+      settlementRail: "onchain",
     });
   };
 

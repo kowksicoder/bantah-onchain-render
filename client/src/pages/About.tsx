@@ -23,7 +23,7 @@ const highlights = [
   {
     label: "Onchain Networks",
     value: "Base + Arbitrum + BSC",
-    note: "Multi-chain challenge support on EVM testnets",
+    note: "Multi-chain challenge support on EVM mainnets",
     icon: Users,
     iconClass: "text-blue-600 dark:text-blue-300",
     chipClass: "bg-blue-100 dark:bg-blue-900/40",

@@ -479,9 +479,10 @@ export default function Challenges() {
       const selectedChainId =
         Number(onchainConfig?.defaultChainId) ||
         Number(Object.keys(onchainConfig?.chains || {})[0]) ||
-        84532;
+        8453;
       const challengeData = {
         ...data,
+        settlementRail: "onchain",
         chainId: selectedChainId,
         tokenSymbol: data.tokenSymbol || onchainConfig?.defaultToken || "USDC",
         amount: data.amount, // Keep as string for backend validation
