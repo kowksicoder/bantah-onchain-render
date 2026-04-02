@@ -1444,9 +1444,9 @@ export default function Challenges() {
                 </div>
 
                 <div className="space-y-0.5">
-                  <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                  <p className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
                     Cover Image (optional)
-                  </FormLabel>
+                  </p>
                   <div className="flex gap-2">
                     <button
                       type="button"
