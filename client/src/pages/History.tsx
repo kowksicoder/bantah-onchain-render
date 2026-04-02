@@ -51,7 +51,7 @@ function ActivityCardSkeleton() {
 }
 
 export default function History() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading, login } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
@@ -290,6 +290,13 @@ export default function History() {
     }
   });
 
+  const getRelativeTime = (value?: string | null) => {
+    if (!value) return "Recently";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "Recently";
+    return formatDistanceToNow(parsed, { addSuffix: true });
+  };
+
   const ActivityCard = ({ activity }: { activity: any }) => (
       <Card className="mb-1 hover:shadow-sm transition-shadow mobile-compact-card border-0 md:border md:border-slate-200 md:dark:border-slate-700">
         <CardContent className="p-2">
@@ -325,9 +332,7 @@ export default function History() {
                 <div className="flex items-center space-x-1">
                   <Clock className="w-3 h-3" />
                   <span>
-                    {formatDistanceToNow(new Date(activity.createdAt), {
-                      addSuffix: true,
-                    })}
+                    {getRelativeTime(activity.createdAt || activity.dueDate || activity.endDate || activity.updatedAt)}
                   </span>
                 </div>
                 <div className="flex items-center space-x-1">
@@ -400,9 +405,7 @@ export default function History() {
                 {transaction.description || `${transaction.type} transaction`}
               </h3>
               <p className="text-xs text-gray-600 dark:text-gray-400">
-                {formatDistanceToNow(new Date(transaction.createdAt), {
-                  addSuffix: true,
-                })}
+                {getRelativeTime(transaction.createdAt)}
               </p>
             </div>
           </div>
@@ -430,7 +433,46 @@ export default function History() {
   );
 };
 
-  if (!user) return null;
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[50px]">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <ActivityCardSkeleton />
+          <ActivityCardSkeleton />
+          <ActivityCardSkeleton />
+        </div>
+        <MobileNavigation />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[50px]">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <Card className="bg-white dark:bg-slate-800 mobile-compact-card border-0 md:border md:border-slate-200 md:dark:border-slate-700">
+            <CardContent className="text-center py-10">
+              <i className="fas fa-user-lock text-3xl mb-3" style={{ color: '#7440ff' }}></i>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                Sign in to view your history
+              </h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                Your activity, wins, and losses will show here once you’re signed in.
+              </p>
+              <Button
+                onClick={() => login()}
+                className="h-9 px-4 text-sm font-semibold"
+                style={{ backgroundColor: "#7440ff", color: "white" }}
+              >
+                Sign In
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+        <MobileNavigation />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[50px]">
