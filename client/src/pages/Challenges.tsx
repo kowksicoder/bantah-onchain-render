@@ -42,7 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, setAuthToken } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -152,7 +152,7 @@ function TokenMark({ token }: { token: OnchainTokenSymbol }) {
 }
 
 export default function Challenges() {
-  const { user, isAuthenticated, isLoading: authLoading, login } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, login, getAccessToken } = useAuth();
   const { wallets } = useWallets();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -255,15 +255,31 @@ export default function Challenges() {
     setCoverPreview(null);
   };
 
+  const ensureFreshAuthToken = async (): Promise<string | null> => {
+    if (!getAccessToken) return null;
+    try {
+      const token = await getAccessToken();
+      if (token) {
+        setAuthToken(token);
+        return token;
+      }
+    } catch (error) {
+      console.error("Failed to refresh auth token:", error);
+    }
+    return null;
+  };
+
   const uploadCoverImage = async (file: File): Promise<string | null> => {
     try {
       setIsCoverUploading(true);
+      const authToken = await ensureFreshAuthToken();
       const formData = new FormData();
       formData.append("image", file);
       const response = await fetch("/api/upload/image", {
         method: "POST",
         body: formData,
         credentials: "include",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
       });
       if (!response.ok) {
         throw new Error("Failed to upload image");
@@ -745,8 +761,9 @@ export default function Challenges() {
       return;
     }
 
-    try {
-      setIsPreparingChallenge(true);
+      try {
+        setIsPreparingChallenge(true);
+        await ensureFreshAuthToken();
 
       let finalCoverUrl = "";
       if (coverInputType === "upload" && coverImageFile) {
