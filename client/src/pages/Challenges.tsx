@@ -183,6 +183,7 @@ export default function Challenges() {
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState("");
   const [isCoverUploading, setIsCoverUploading] = useState(false);
+  const [isPreparingChallenge, setIsPreparingChallenge] = useState(false);
 
   // Listen for header search events dispatched from Navigation
   useEffect(() => {
@@ -544,21 +545,7 @@ export default function Challenges() {
   }, [queryClient]);
 
   const createChallengeMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof createChallengeSchema>) => {
-      const selectedChainId =
-        Number(onchainConfig?.defaultChainId) ||
-        Number(Object.keys(onchainConfig?.chains || {})[0]) ||
-        8453;
-      const challengeData = {
-        ...data,
-        settlementRail: "onchain",
-        chainId: selectedChainId,
-        tokenSymbol: data.tokenSymbol || onchainConfig?.defaultToken || "USDC",
-        amount: data.amount, // Keep as string for backend validation
-        dueDate: data.dueDate
-          ? new Date(data.dueDate).toISOString()
-          : undefined,
-      };
+    mutationFn: async (challengeData: Record<string, any>) => {
       await apiRequest("POST", "/api/challenges", challengeData);
     },
     onSuccess: () => {
@@ -749,39 +736,92 @@ export default function Challenges() {
     }
 
     const amount = parseFloat(data.amount);
-    const currentBalance =
-      balance && typeof balance === "object" ? (balance as any).balance : balance;
-
-    if (amount > currentBalance) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       toast({
-        title: "Insufficient Balance",
-        description: "You don't have enough funds to create this challenge.",
+        title: "Invalid stake",
+        description: "Enter a valid amount to create this challenge.",
         variant: "destructive",
       });
       return;
     }
 
-    let finalCoverUrl = "";
-    if (coverInputType === "upload" && coverImageFile) {
-      const uploaded = await uploadCoverImage(coverImageFile);
-      if (uploaded) finalCoverUrl = uploaded;
-    } else if (coverInputType === "url" && coverUrl.trim()) {
-      finalCoverUrl = coverUrl.trim();
-    }
+    try {
+      setIsPreparingChallenge(true);
 
-    // Build payload depending on mode
-    const payload: any = { ...data };
-    if (createMode === 'direct') {
-      payload.challenged = preSelectedUser?.id || data.challenged;
-    } else {
-      // open challenge: set challenged to empty string
-      payload.challenged = "";
-    }
-    if (finalCoverUrl) {
-      payload.coverImageUrl = finalCoverUrl;
-    }
+      let finalCoverUrl = "";
+      if (coverInputType === "upload" && coverImageFile) {
+        const uploaded = await uploadCoverImage(coverImageFile);
+        if (uploaded) finalCoverUrl = uploaded;
+      } else if (coverInputType === "url" && coverUrl.trim()) {
+        finalCoverUrl = coverUrl.trim();
+      }
 
-    createChallengeMutation.mutate(payload);
+      const selectedChainId =
+        Number(onchainConfig?.defaultChainId) ||
+        Number(Object.keys(onchainConfig?.chains || {})[0]) ||
+        8453;
+      const selectedToken =
+        (data.tokenSymbol || onchainConfig?.defaultToken || "USDC") as OnchainTokenSymbol;
+
+      const payload: Record<string, any> = {
+        ...data,
+        settlementRail: "onchain",
+        chainId: selectedChainId,
+        tokenSymbol: selectedToken,
+        amount: data.amount,
+        dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
+      };
+
+      if (createMode === "direct") {
+        payload.challenged = preSelectedUser?.id || data.challenged;
+      } else {
+        payload.challenged = "";
+      }
+
+      if (finalCoverUrl) {
+        payload.coverImageUrl = finalCoverUrl;
+      }
+
+      if (onchainConfig?.contractEnabled) {
+        const preferredWalletAddress = (
+          [
+            (user as any)?.walletAddress,
+            (user as any)?.primaryWalletAddress,
+            (user as any)?.wallet?.address,
+            Array.isArray((user as any)?.walletAddresses)
+              ? (user as any)?.walletAddresses?.[0]
+              : null,
+          ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
+        ) as string | null;
+
+        const escrowTx = await executeOnchainEscrowStakeTx({
+          wallets: wallets as any,
+          preferredWalletAddress,
+          onchainConfig,
+          chainId: selectedChainId,
+          tokenSymbol: selectedToken,
+          amount: data.amount,
+        });
+
+        payload.escrowTxHash = escrowTx.escrowTxHash;
+        payload.walletAddress = escrowTx.walletAddress;
+
+        toast({
+          title: "Escrow locked",
+          description: `${amount.toLocaleString()} ${selectedToken} secured in escrow.`,
+        });
+      }
+
+      createChallengeMutation.mutate(payload);
+    } catch (error: any) {
+      toast({
+        title: "Unable to create challenge",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPreparingChallenge(false);
+    }
   };
 
   const handleChallengeClick = (challenge: any) => {
@@ -1663,11 +1703,13 @@ export default function Challenges() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={createChallengeMutation.isPending || isCoverUploading}
+                    disabled={createChallengeMutation.isPending || isCoverUploading || isPreparingChallenge}
                     className="h-9 flex-1 rounded-xl text-sm text-black hover:opacity-90"
                     style={{ backgroundColor: '#ccff00' }}
                   >
-                    {createChallengeMutation.isPending
+                    {isPreparingChallenge
+                      ? "Locking stake..."
+                      : createChallengeMutation.isPending
                       ? "Creating..."
                       : "Create Challenge"}
                   </Button>
