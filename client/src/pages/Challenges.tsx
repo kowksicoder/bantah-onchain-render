@@ -149,7 +149,7 @@ function TokenMark({ token }: { token: OnchainTokenSymbol }) {
 }
 
 export default function Challenges() {
-  const { user } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, login } = useAuth();
   const { wallets } = useWallets();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -736,6 +736,15 @@ export default function Challenges() {
 
   const submitPolymarketBet = async () => {
     if (!polymarketBet) return;
+    if (!isAuthenticated || authLoading) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in to place a bet.",
+        variant: "destructive",
+      });
+      login();
+      return;
+    }
     const stakeValue = Number.parseInt(String(polymarketStake).replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
       toast({
@@ -1170,8 +1179,8 @@ export default function Challenges() {
                       const uniqueFriendUsers = Array.from(uniqueMap.values());
 
                       return (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
+                        <FormItem className="space-y-0.5">
+                          <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
                             Direct Challenger
                           </FormLabel>
                           <Select
@@ -1250,13 +1259,13 @@ export default function Challenges() {
                   name="title"
                   render={({ field }) => (
                     <FormItem className="space-y-0.5">
-                      <FormLabel className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
+                      <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
                         Market Question
                       </FormLabel>
                       <FormControl>
                         <Input
                           placeholder="Will BTC be above $70k by May 1?"
-                          className="h-9 rounded-xl border-transparent bg-slate-50/90 text-sm dark:bg-slate-800/80"
+                          className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
                           {...field}
                         />
                       </FormControl>
@@ -1270,8 +1279,8 @@ export default function Challenges() {
                     control={form.control}
                     name="category"
                     render={({ field }) => (
-                      <FormItem className="space-y-1">
-                        <FormLabel className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
+                      <FormItem className="space-y-0.5">
+                        <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
                           Category
                         </FormLabel>
                         {(() => {
@@ -1327,14 +1336,14 @@ export default function Challenges() {
                     control={form.control}
                     name="dueDate"
                     render={({ field }) => (
-                      <FormItem className="space-y-1">
-                        <FormLabel className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
-                          Deadline (optional)
+                      <FormItem className="space-y-0.5">
+                        <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                          Deadline
                         </FormLabel>
                         <FormControl>
                           <Input
                             type="datetime-local"
-                            className="h-9 rounded-xl border-transparent bg-slate-50/90 text-sm dark:bg-slate-800/80"
+                            className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
                             {...field}
                             min={new Date().toISOString().slice(0, 16)}
                           />
@@ -1345,8 +1354,8 @@ export default function Challenges() {
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold tracking-wide text-slate-700 dark:text-slate-300">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
                     Currency & Stake
                   </p>
                   <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-1.5">
@@ -1406,7 +1415,7 @@ export default function Challenges() {
                           <Input
                             type="number"
                             placeholder="500"
-                            className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus-visible:ring-0 dark:focus-visible:ring-offset-0"
+                            className="h-9 rounded-xl border-0 bg-slate-50/90 text-xs placeholder:text-xs shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus-visible:ring-0 dark:focus-visible:ring-offset-0"
                             {...field}
                           />
                         </FormControl>
@@ -1421,8 +1430,8 @@ export default function Challenges() {
                   control={form.control}
                   name="challengerSide"
                   render={({ field }) => (
-                    <FormItem className="space-y-1">
-                      <FormLabel className="text-xs font-semibold text-slate-700 dark:text-slate-300">Your Position</FormLabel>
+                    <FormItem className="space-y-0.5">
+                      <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">Your Position</FormLabel>
                       <FormControl>
                         <div className="flex gap-1">
                           <button
@@ -1471,10 +1480,12 @@ export default function Challenges() {
                     </p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[9px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
-                    <p className="text-[11px] font-semibold leading-tight text-slate-900 dark:text-slate-100">
-                      {createMode === "open" ? "Open" : "P2P"}
-                    </p>
+                    <p className="text-[9px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Payout</p>
+                    <div className="mt-0.5 inline-flex items-center justify-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
+                      {form.watch("amount")
+                        ? `${(Number(form.watch("amount") || 0) * 2).toLocaleString()} ${selectedTokenSymbol}`
+                        : `0 ${selectedTokenSymbol}`}
+                    </div>
                   </div>
                 </div>
 
