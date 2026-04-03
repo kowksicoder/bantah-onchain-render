@@ -229,13 +229,17 @@ export function parseWalletAddresses(input: unknown): string[] {
   return Array.from(new Set(normalized));
 }
 
-export function toAtomicUnits(amount: number, decimals: number): string {
-  if (!Number.isFinite(amount) || amount < 0) return "0";
+export function toAtomicUnits(amount: string | number, decimals: number): string {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) return "0";
-  let multiplier = BigInt(1);
-  for (let index = 0; index < decimals; index += 1) {
-    multiplier *= BigInt(10);
-  }
-  const scaled = BigInt(Math.trunc(amount)) * multiplier;
-  return scaled.toString();
+  const raw = String(amount ?? "").trim();
+  if (!raw) return "0";
+  if (!/^\d+(\.\d+)?$/.test(raw)) return "0";
+
+  const [wholeRaw, fractionRaw = ""] = raw.split(".");
+  const whole = wholeRaw ? BigInt(wholeRaw) : BigInt(0);
+  const fractionPadded = (fractionRaw + "0".repeat(decimals)).slice(0, decimals);
+  const fraction = fractionPadded ? BigInt(fractionPadded) : BigInt(0);
+
+  const multiplier = BigInt(10) ** BigInt(decimals);
+  return (whole * multiplier + fraction).toString();
 }

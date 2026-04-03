@@ -3740,8 +3740,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(400).json({ message: "Amount is required" });
       }
 
-      const parsedAmount = parseInt(amountValue);
-      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      const parsedAmount = Number.parseFloat(String(amountValue));
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
         return res.status(400).json({ message: "Amount must be a valid positive number" });
       }
       if (parsedAmount > MAX_CHALLENGE_AMOUNT) {
@@ -3759,7 +3759,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(400).json({ message: "Category is required" });
       }
 
-      const stakeAtomic = toAtomicUnits(parsedAmount, tokenConfig.decimals);
+      const stakeAtomic = toAtomicUnits(String(amountValue), tokenConfig.decimals);
       let creatorEscrowTxHash: string | null = null;
       const creatorWallet = normalizeEvmAddress(req.user.walletAddress);
       const challengedWalletAddress = normalizeEvmAddress(
