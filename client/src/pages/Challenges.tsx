@@ -98,6 +98,7 @@ const createChallengeSchema = z.object({
   challenged: z.string().optional(),
   title: z.string().min(1, "").max(200, "Title too long"),
   category: z.string().min(1, ""),
+  chainId: z.coerce.number().int().positive().optional(),
   tokenSymbol: z.enum(["USDC", "USDT", "ETH", "BNB"]).default("USDC"),
   amount: z.string().min(1, ""),
   dueDate: z.string().optional(),
@@ -215,6 +216,7 @@ export default function Challenges() {
       challenged: "",
       title: "",
       category: "sports",
+      chainId: undefined,
       tokenSymbol: "USDC",
       amount: "",
       dueDate: "",
@@ -457,18 +459,29 @@ export default function Challenges() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const tokenOptions = useMemo<OnchainTokenSymbol[]>(() => {
-    const defaultChain =
-      onchainConfig?.chains?.[String(onchainConfig.defaultChainId)] ||
-      Object.values(onchainConfig?.chains || {})[0];
+  const chainOptions = useMemo(() => {
+    const chains = Object.values(onchainConfig?.chains || {});
+    return chains.sort((a, b) => Number(a.chainId) - Number(b.chainId));
+  }, [onchainConfig]);
 
-    const configuredTokens = Object.keys(defaultChain?.tokens || {});
+  const selectedChainId =
+    form.watch("chainId") ??
+    onchainConfig?.defaultChainId ??
+    Number(chainOptions[0]?.chainId || 0);
+
+  const tokenOptions = useMemo<OnchainTokenSymbol[]>(() => {
+    const chainConfig =
+      onchainConfig?.chains?.[String(selectedChainId)] ||
+      onchainConfig?.chains?.[String(onchainConfig?.defaultChainId || "")] ||
+      chainOptions[0];
+
+    const configuredTokens = Object.keys(chainConfig?.tokens || {});
     const normalized = configuredTokens.filter((token): token is OnchainTokenSymbol =>
       ["USDC", "USDT", "ETH", "BNB"].includes(token),
     );
 
     return normalized.length > 0 ? normalized : ["USDC", "USDT", "ETH", "BNB"];
-  }, [onchainConfig]);
+  }, [onchainConfig, chainOptions, selectedChainId]);
 
   const selectedTokenSymbol =
     (form.watch("tokenSymbol") as OnchainTokenSymbol | undefined) ||
@@ -485,6 +498,28 @@ export default function Challenges() {
       });
     }
   }, [form, onchainConfig, tokenOptions]);
+
+  useEffect(() => {
+    if (!onchainConfig?.defaultChainId) return;
+    const currentChain = form.getValues("chainId");
+    if (!currentChain) {
+      form.setValue("chainId", onchainConfig.defaultChainId, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [form, onchainConfig]);
+
+  useEffect(() => {
+    if (tokenOptions.length === 0) return;
+    const current = form.getValues("tokenSymbol");
+    if (!current || !tokenOptions.includes(current as OnchainTokenSymbol)) {
+      form.setValue("tokenSymbol", tokenOptions[0], {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [form, tokenOptions]);
 
   // Real-time listeners for challenge updates via Pusher
   useEffect(() => {
@@ -784,10 +819,12 @@ export default function Challenges() {
         finalCoverUrl = coverUrl.trim();
       }
 
-      const selectedChainId =
-        Number(onchainConfig?.defaultChainId) ||
-        Number(Object.keys(onchainConfig?.chains || {})[0]) ||
-        8453;
+      const selectedChainId = Number(
+        data.chainId ||
+          onchainConfig?.defaultChainId ||
+          Object.keys(onchainConfig?.chains || {})[0] ||
+          8453,
+      );
       const selectedToken =
         (data.tokenSymbol || onchainConfig?.defaultToken || "USDC") as OnchainTokenSymbol;
 
@@ -1431,7 +1468,7 @@ export default function Challenges() {
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid gap-1.5 sm:grid-cols-3">
                   <FormField
                     control={form.control}
                     name="category"
@@ -1484,6 +1521,55 @@ export default function Challenges() {
                         </Select>
                           );
                         })()}
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="chainId"
+                    render={({ field }) => (
+                      <FormItem className="space-y-0.5">
+                        <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                          Chain
+                        </FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value ? String(field.value) : undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="h-9 rounded-xl border-0 bg-slate-50/90 text-xs shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0">
+                              {(() => {
+                                const selected = chainOptions.find(
+                                  (chain) => Number(chain.chainId) === Number(field.value),
+                                );
+                                return selected ? (
+                                  <div className="flex items-center gap-2">
+                                    <span>{selected.name}</span>
+                                    <span className="text-[10px] text-slate-400">
+                                      {selected.nativeSymbol}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <SelectValue placeholder="Select chain" />
+                                );
+                              })()}
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
+                            {chainOptions.map((chain) => (
+                              <SelectItem key={chain.chainId} value={String(chain.chainId)}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>{chain.name}</span>
+                                  <span className="text-[10px] text-slate-400">
+                                    {chain.nativeSymbol}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage className="text-xs" />
                       </FormItem>
                     )}
