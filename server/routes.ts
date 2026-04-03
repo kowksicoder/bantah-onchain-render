@@ -3760,6 +3760,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       }
 
       const stakeAtomic = toAtomicUnits(String(amountValue), tokenConfig.decimals);
+      const amountForSchema = Math.max(1, Math.round(parsedAmount));
       let creatorEscrowTxHash: string | null = null;
       const creatorWallet = normalizeEvmAddress(req.user.walletAddress);
       const challengedWalletAddress = normalizeEvmAddress(
@@ -3812,7 +3813,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const dataToValidate: any = {
         ...req.body,
         challenger: userId,
-        amount: parsedAmount, // Ensure it's an integer for coins
+        amount: amountForSchema, // Integer for schema/back-compat; stakeAtomic holds exact value
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined, // Convert string to Date
         settlementRail: "onchain",
         chainId: chainConfig.chainId,
