@@ -98,20 +98,29 @@ export default function History() {
     })) : []),
   ];
 
-  const createdActivities = allActivities.filter(
-    (activity) => activity.creatorId === user.id || activity.createdBy === user.id || activity.challenger?.id === user.id,
-  );
+  const userId = user?.id || null;
+
+  const createdActivities = userId
+    ? allActivities.filter(
+        (activity) =>
+          activity.creatorId === userId ||
+          activity.createdBy === userId ||
+          activity.challenger?.id === userId,
+      )
+    : [];
 
   // Include all challenges the user has participated in (including admin-created ones)
-  const participatedChallenges = Array.isArray(challenges) ? challenges.filter(
-    (challenge: any) =>
-      challenge.challengerUser?.id === user.id ||
-      challenge.challengedUser?.id === user.id ||
-      challenge.challenger === user.id ||
-      challenge.challenged === user.id ||
-      challenge.challengerId === user.id ||
-      challenge.challengedId === user.id,
-  ) : [];
+  const participatedChallenges = Array.isArray(challenges) && userId
+    ? challenges.filter(
+        (challenge: any) =>
+          challenge.challengerUser?.id === userId ||
+          challenge.challengedUser?.id === userId ||
+          challenge.challenger === userId ||
+          challenge.challenged === userId ||
+          challenge.challengerId === userId ||
+          challenge.challengedId === userId,
+      )
+    : [];
 
   const wonActivities = Array.isArray(transactions) ? transactions.filter(
     (tx: any) => tx.type === "win" || tx.type === "prize",
