@@ -52,6 +52,7 @@ type IndexerRuntimeConfig = {
   titlePrefix: string;
   adminCreated: boolean;
   requireKnownWallet: boolean;
+  allowStakeFallback: boolean;
   dueHours: number;
 };
 
@@ -148,6 +149,7 @@ function buildRuntimeConfig(): IndexerRuntimeConfig {
     titlePrefix: String(process.env.ONCHAIN_INDEXER_TITLE_PREFIX || "Onchain Challenge").trim() || "Onchain Challenge",
     adminCreated: parseBool(process.env.ONCHAIN_INDEXER_ADMIN_CREATED, true),
     requireKnownWallet: parseBool(process.env.ONCHAIN_INDEXER_REQUIRE_KNOWN_WALLET, false),
+    allowStakeFallback: parseBool(process.env.ONCHAIN_INDEXER_ALLOW_GENERIC, false),
     dueHours: Math.max(0, Math.floor(parseNumber(process.env.ONCHAIN_INDEXER_DUE_HOURS, 0))),
   };
 }
@@ -710,6 +712,10 @@ async function syncChain(
     }
 
     for (const event of stakeEvents) {
+      if (!runtime.allowStakeFallback) {
+        skipped += 1;
+        continue;
+      }
       if (handledEscrowTx.has(event.txHash)) {
         skipped += 1;
         continue;
