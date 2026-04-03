@@ -740,6 +740,16 @@ export default function Challenges() {
     }
   }, [selectedTab, user, pendingChallenges.length, awaitingResolutionChallenges.length]);
 
+  const normalizeAmountInput = (value: unknown) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    const cleaned = raw.replace(/[^\d.]/g, "");
+    if (!cleaned) return "";
+    const [whole, ...rest] = cleaned.split(".");
+    const fractional = rest.join("");
+    return fractional.length > 0 ? `${whole}.${fractional}` : whole;
+  };
+
   const onSubmit = async (data: z.infer<typeof createChallengeSchema>) => {
     // Ensure direct-mode has a challenged user selected
     if (createMode === 'direct' && !data.challenged && !preSelectedUser) {
@@ -751,15 +761,16 @@ export default function Challenges() {
       return;
     }
 
-    const amount = parseFloat(data.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast({
-        title: "Invalid stake",
-        description: "Enter a valid amount to create this challenge.",
-        variant: "destructive",
-      });
-      return;
-    }
+      const normalizedAmount = normalizeAmountInput(data.amount);
+      const amount = parseFloat(normalizedAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast({
+          title: "Invalid stake",
+          description: "Enter a valid amount to create this challenge.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       try {
         setIsPreparingChallenge(true);
@@ -780,14 +791,14 @@ export default function Challenges() {
       const selectedToken =
         (data.tokenSymbol || onchainConfig?.defaultToken || "USDC") as OnchainTokenSymbol;
 
-      const payload: Record<string, any> = {
-        ...data,
-        settlementRail: "onchain",
-        chainId: selectedChainId,
-        tokenSymbol: selectedToken,
-        amount: data.amount,
-        dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
-      };
+        const payload: Record<string, any> = {
+          ...data,
+          settlementRail: "onchain",
+          chainId: selectedChainId,
+          tokenSymbol: selectedToken,
+          amount: normalizedAmount,
+          dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
+        };
 
       if (createMode === "direct") {
         payload.challenged = preSelectedUser?.id || data.challenged;
@@ -811,14 +822,14 @@ export default function Challenges() {
           ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
         ) as string | null;
 
-        const escrowTx = await executeOnchainEscrowStakeTx({
-          wallets: wallets as any,
-          preferredWalletAddress,
-          onchainConfig,
-          chainId: selectedChainId,
-          tokenSymbol: selectedToken,
-          amount: data.amount,
-        });
+          const escrowTx = await executeOnchainEscrowStakeTx({
+            wallets: wallets as any,
+            preferredWalletAddress,
+            onchainConfig,
+            chainId: selectedChainId,
+            tokenSymbol: selectedToken,
+            amount: normalizedAmount,
+          });
 
         payload.escrowTxHash = escrowTx.escrowTxHash;
         payload.walletAddress = escrowTx.walletAddress;
