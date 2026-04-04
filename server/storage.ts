@@ -176,7 +176,7 @@ export interface IStorage {
   // Transaction operations
   getTransactions(userId: string, limit?: number): Promise<Transaction[]>;
   createTransaction(transaction: InsertTransaction & { reference?: string }): Promise<Transaction>;
-  getUserBalance(userId: string): Promise<{ balance: number; coins: number }>;
+  getUserBalance(userId: string): Promise<{ balance: number; coins: number; points: number }>;
   updateUserBalance(userId: string, amount: number): Promise<User>;
 
   // Achievement operations
@@ -2747,16 +2747,17 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  async getUserBalance(userId: string): Promise<{ balance: number; coins: number }> {
+  async getUserBalance(userId: string): Promise<{ balance: number; coins: number; points: number }> {
     try {
-      // Get user's current coins from users table
+      // Get user's current coins and BantCredit from users table
       const user = await this.db
-        .select({ coins: users.coins })
+        .select({ coins: users.coins, points: users.points })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
 
       const currentCoins = user[0]?.coins || 0;
+      const currentPoints = user[0]?.points || 0;
 
       // Calculate Naira balance from transactions
       const userTransactions = await this.db
@@ -2792,23 +2793,25 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      console.log(`Balance calculation for user ${userId}:`, {
-        totalTransactions: userTransactions.length,
-        completedTransactions: userTransactions.filter(t => t.status === 'completed').length,
-        calculatedBalance: balance,
-        currentCoins
-      });
+        console.log(`Balance calculation for user ${userId}:`, {
+          totalTransactions: userTransactions.length,
+          completedTransactions: userTransactions.filter(t => t.status === 'completed').length,
+          calculatedBalance: balance,
+          currentCoins,
+          currentPoints
+        });
 
-      const result = { 
-        balance: Math.max(0, balance), // Ensure balance is never negative
-        coins: currentCoins 
-      };
+        const result = { 
+          balance: Math.max(0, balance), // Ensure balance is never negative
+          coins: currentCoins,
+          points: currentPoints
+        };
 
       console.log(`Returning balance result:`, result);
       return result;
     } catch (error) {
       console.error("Error getting user balance:", error);
-      return { balance: 0, coins: 0 };
+      return { balance: 0, coins: 0, points: 0 };
     }
   }
 
@@ -3795,7 +3798,7 @@ export class DatabaseStorage implements IStorage {
         userId,
         type: 'welcome',
         title: '🎉 Welcome to Bantah!',
-        message: 'You received 1000 points for joining! Start betting and challenging friends.',
+        message: 'You received 1000 BantCredit for joining! Start betting and challenging friends.',
         data: { points: 1000, type: 'welcome_bonus' }
       });
 
@@ -3809,7 +3812,7 @@ export class DatabaseStorage implements IStorage {
             userId: user.referredBy,
             type: 'referral_reward',
             title: '💰 Referral Bonus!',
-            message: `You earned 500 points for referring @${user.firstName || user.username || 'a new user'}!`,
+            message: `You earned 500 BantCredit for referring @${user.firstName || user.username || 'a new user'}!`,
             data: { 
               points: 500, 
               referredUserId: userId,

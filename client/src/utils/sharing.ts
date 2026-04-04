@@ -72,7 +72,7 @@ export function shareReferral(referralCode: string, userName?: string) {
     shareUrl,
     shareData: {
       title: `Join Bantah with ${userName || "my"} invite`,
-      description: `${userName || "I"} invited you to join Bantah. Get bonus points when you sign up.`,
+      description: `${userName || "I"} invited you to join Bantah. Get bonus BantCredit when you sign up.`,
       url: shareUrl,
       hashtags: ["Bantah", "Referral", "JoinNow"],
     },

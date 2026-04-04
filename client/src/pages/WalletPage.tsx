@@ -187,7 +187,12 @@ export default function WalletPage() {
       const assets: OnchainWalletAsset[] = [];
       for (const chain of chainOptions) {
         try {
-          const tokens = Object.values(chain.tokens || {});
+          const supportedSymbols = Array.isArray(chain.supportedTokens)
+            ? new Set(chain.supportedTokens)
+            : null;
+          const tokens = Object.values(chain.tokens || {}).filter((token) =>
+            supportedSymbols ? supportedSymbols.has(token.symbol) : Boolean(token.isNative || token.address),
+          );
           const nativeToken = tokens.find((token) => token.isNative) || tokens[0];
 
           if (nativeToken) {
@@ -264,7 +269,7 @@ export default function WalletPage() {
       ? `${connectedWalletAddress.slice(0, 6)}...${connectedWalletAddress.slice(-4)}`
       : connectedWalletAddress;
 
-  const { data: balance = { balance: 0, coins: 0 } } = useQuery({
+  const { data: balance = { balance: 0, coins: 0, points: 0 } } = useQuery({
     queryKey: ["/api/wallet/balance"],
     retry: false,
     onError: (error: Error) => {
@@ -508,6 +513,7 @@ export default function WalletPage() {
   const currentBalance =
     typeof balance === "object" ? balance.balance || 0 : balance || 0;
   const currentCoins = typeof balance === "object" ? balance.coins || 0 : 0;
+  const currentBantCredit = typeof balance === "object" ? balance.points || 0 : 0;
 
   const formatOnchainAmount = (amount: string | number, symbol: string) => {
     const numeric = typeof amount === "number" ? amount : Number(amount || 0);
@@ -570,7 +576,7 @@ export default function WalletPage() {
         {isOnchainBuild ? (
           <>
             {/* Onchain Summary */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-4 border border-emerald-100 dark:border-emerald-800/30">
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-8 h-8 rounded-xl bg-emerald-200 dark:bg-emerald-700 flex items-center justify-center">
@@ -625,6 +631,28 @@ export default function WalletPage() {
                   )}
                 </div>
               </div>
+
+              <div className="bg-violet-50 dark:bg-violet-900/20 rounded-2xl p-4 border border-violet-100 dark:border-violet-800/30">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="w-8 h-8 rounded-xl bg-violet-200 dark:bg-violet-700 flex items-center justify-center">
+                    <Gift className="w-4 h-4 text-violet-700 dark:text-violet-300" />
+                  </div>
+                  <Badge className="border-0 bg-violet-100 text-violet-700 dark:bg-violet-800 dark:text-violet-200 text-[10px]">
+                    BantCredit
+                  </Badge>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-violet-600 dark:text-violet-400 font-medium">
+                    Rewards Balance
+                  </p>
+                  <h3 className="text-xl font-bold text-violet-900 dark:text-violet-100">
+                    {currentBantCredit.toLocaleString()}
+                  </h3>
+                  <p className="text-[11px] text-violet-700/80 dark:text-violet-200/80">
+                    Earned from referrals, streaks, and activity
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Chain Selector */}
@@ -653,7 +681,7 @@ export default function WalletPage() {
             )}
           </>
         ) : (
-          <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
             <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-4 border border-emerald-100 dark:border-emerald-800/30">
               <div className="flex items-center justify-between mb-2">
                 <div className="w-8 h-8 rounded-xl bg-emerald-200 dark:bg-emerald-700 flex items-center justify-center">
@@ -691,6 +719,25 @@ export default function WalletPage() {
                 </p>
                 <h3 className="text-xl font-bold text-amber-900 dark:text-amber-100">
                   {currentCoins.toLocaleString()}
+                </h3>
+              </div>
+            </div>
+
+            <div className="bg-violet-50 dark:bg-violet-900/20 rounded-2xl p-4 border border-violet-100 dark:border-violet-800/30">
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-xl bg-violet-200 dark:bg-violet-700 flex items-center justify-center">
+                  <Gift className="w-4 h-4 text-violet-700 dark:text-violet-300" />
+                </div>
+                <Badge className="border-0 bg-violet-100 text-violet-700 dark:bg-violet-800 dark:text-violet-200 text-[10px]">
+                  BantCredit
+                </Badge>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs text-violet-600 dark:text-violet-400 font-medium">
+                  Rewards Balance
+                </p>
+                <h3 className="text-xl font-bold text-violet-900 dark:text-violet-100">
+                  {currentBantCredit.toLocaleString()}
                 </h3>
               </div>
             </div>

@@ -131,6 +131,8 @@ export function JoinChallengeModal({
   const tokenSymbol = String(
     challenge?.tokenSymbol || challenge?.token_symbol || onchainConfig?.defaultToken || "ETH",
   ).toUpperCase();
+  const formatStakeLabel = (amount: number) =>
+    isOnchainChallenge ? `${amount.toLocaleString()} ${tokenSymbol}` : `NGN ${amount.toLocaleString()}`;
 
   const getCategoryEmoji = (category?: string | null) => {
     const cats: Record<string, string> = {
@@ -264,20 +266,12 @@ export function JoinChallengeModal({
       if (result?.match) {
         toast({
           title: "Matched",
-          description: `Opponent found. ${
-            isOnchainChallenge
-              ? `${stakeAmount.toLocaleString()} ${tokenSymbol}`
-              : `NGN ${stakeAmount.toLocaleString()}`
-          } locked in escrow.`,
+          description: `Opponent found. ${formatStakeLabel(stakeAmount)} locked in escrow.`,
         });
       } else {
         toast({
           title: "Queued for matching",
-          description: `Position ${result?.queuePosition || 1}. ${
-            isOnchainChallenge
-              ? `${stakeAmount.toLocaleString()} ${tokenSymbol}`
-              : `NGN ${stakeAmount.toLocaleString()}`
-          } held in escrow.`,
+          description: `Position ${result?.queuePosition || 1}. ${formatStakeLabel(stakeAmount)} held in escrow.`,
         });
       }
 
@@ -361,12 +355,12 @@ export function JoinChallengeModal({
                       {challenge.category}
                     </Badge>
                     <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                      Stake: {isOnchainChallenge ? `${stakeAmount.toLocaleString()} ${tokenSymbol}` : `NGN ${stakeAmount.toLocaleString()}`}
+                      Stake: {formatStakeLabel(stakeAmount)}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-1.5 py-0.5 rounded">
-                      WIN: {isOnchainChallenge ? `${potentialWin.toLocaleString()} ${tokenSymbol}` : `NGN ${potentialWin.toLocaleString()}`}
+                      WIN: {formatStakeLabel(potentialWin)}
                     </span>
                   </div>
                 </div>
@@ -383,7 +377,7 @@ export function JoinChallengeModal({
                   </span>
                   {!requiresContractEscrow && (
                     <div className="text-[10px] text-slate-500 mt-0.5 font-medium">
-                      Wallet: NGN {normalizedBalance.toLocaleString()}
+                      Wallet: {formatStakeLabel(normalizedBalance)}
                     </div>
                   )}
                 </div>

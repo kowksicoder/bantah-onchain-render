@@ -78,7 +78,7 @@ export default function ReferralPage() {
   const referralArray = Array.isArray(referrals) ? referrals : [];
   const totalReferrals = referralArray.length;
   const activeReferrals = referralArray.filter((r: any) => r.status === 'active').length;
-  const totalRewards = totalReferrals * 500; // 500 points per referral
+  const totalRewards = totalReferrals * 500; // 500 BantCredit per referral
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition">
@@ -147,7 +147,7 @@ export default function ReferralPage() {
             </div>
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white">Share Your Link</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Earn 500 points for each successful referral</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Earn 500 BantCredit for each successful referral</p>
             </div>
           </div>
           
@@ -213,7 +213,7 @@ export default function ReferralPage() {
               </div>
               <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-2 text-center">3. Earn Rewards</h4>
               <p className="text-sm text-purple-600 dark:text-purple-400 text-center">
-                Both you and your friend get bonus points
+                Both you and your friend get bonus BantCredit
               </p>
             </div>
           </div>

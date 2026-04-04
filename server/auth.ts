@@ -136,8 +136,8 @@ export function setupAuth(app: Express) {
 
       // Create welcome notification and transaction for new user signup bonus
       const welcomeMessage = referrerUser 
-        ? `You received ${bonusPoints} points and ${bonusCoins} coins for joining through a referral! Start betting and challenging friends to earn more.`
-        : 'You received 1000 points for joining! Start betting and challenging friends to earn more.';
+        ? `You received ${bonusPoints} BantCredit and ${bonusCoins} coins for joining through a referral! Start betting and challenging friends to earn more.`
+        : 'You received 1000 BantCredit for joining! Start betting and challenging friends to earn more.';
 
       await storage.createNotification({
         userId: user.id,
@@ -169,7 +169,7 @@ export function setupAuth(app: Express) {
       // Process referral rewards if applicable
       if (referrerUser) {
         // Give referrer bonus
-        const referrerBonus = 100; // Points for referring someone
+        const referrerBonus = 100; // BantCredit for referring someone
         const referrerCoinBonus = 250; // Coins for referring someone
 
         await storage.updateUserPoints(referrerUser.id, referrerBonus);
@@ -188,7 +188,7 @@ export function setupAuth(app: Express) {
           userId: referrerUser.id,
           type: 'referral_success',
           title: '🎉 Referral Success!',
-          message: `${user.firstName} joined using your referral code! You earned ${referrerBonus} points and ${referrerCoinBonus} coins.`,
+          message: `${user.firstName} joined using your referral code! You earned ${referrerBonus} BantCredit and ${referrerCoinBonus} coins.`,
           data: { points: referrerBonus, coins: referrerCoinBonus, referredUser: user.firstName },
         });
 

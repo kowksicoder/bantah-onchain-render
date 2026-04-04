@@ -47,7 +47,7 @@ export default function ReferralNew() {
   // Calculate actual referral stats
   const referralArray = Array.isArray(referrals) ? referrals : [];
   const totalReferrals = referralArray.length;
-  const totalEarned = totalReferrals * 500; // 500 points per referral based on code
+  const totalEarned = totalReferrals * 500; // 500 BantCredit per referral based on code
   const nextMilestone = Math.ceil((totalReferrals + 1) / 5) * 5; // Every 5 referrals milestone
   const progressToNext = totalReferrals % 5;
   const progress = (progressToNext / 5) * 100;
@@ -63,7 +63,7 @@ export default function ReferralNew() {
       textColor: "text-purple-600 dark:text-purple-400",
       progress: 100,
       canRedeem: false,
-      description: "Earn 500 points for each friend who joins"
+      description: "Earn 500 BantCredit for each friend who joins"
     },
     {
       id: 2,
@@ -112,7 +112,7 @@ export default function ReferralNew() {
       try {
         await navigator.share({
           title: 'Join Bantah - Social Betting Platform',
-          text: `Join me on Bantah! Use my referral link to get bonus points when you sign up. Let's challenge each other!`,
+          text: `Join me on Bantah! Use my referral link to get bonus BantCredit when you sign up. Let's challenge each other!`,
           url: referralUrl,
         });
       } catch (error) {
@@ -275,7 +275,7 @@ export default function ReferralNew() {
                     Both Get Rewards
                   </div>
                   <div className="text-sm text-slate-500 dark:text-slate-400">
-                    You get 500 points, they get welcome bonus
+                    You get 500 BantCredit, they get welcome bonus
                   </div>
                 </div>
               </div>
@@ -372,7 +372,7 @@ export default function ReferralNew() {
                       </div>
                       <div className="text-right">
                         <div className="text-sm font-medium text-green-600 mb-1">
-                          +500 pts
+                          +500 BantCredit
                         </div>
                         <div className={`text-xs px-2 py-1 rounded-full ${
                           referral.status === 'active' 

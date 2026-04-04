@@ -94,11 +94,22 @@ function withEnvChainOverride(chain: OnchainChainConfig): OnchainChainConfig {
 
   const effectiveChainId = chainIdEnv ?? chain.chainId;
 
+  const supportedTokens = Array.isArray(chain.supportedTokens)
+    ? chain.supportedTokens
+    : [];
   const tokens: Record<OnchainTokenSymbol, OnchainTokenConfig> = {
-    USDC: withEnvTokenOverride(chain, "USDC", chain.tokens.USDC),
-    USDT: withEnvTokenOverride(chain, "USDT", chain.tokens.USDT),
-    ETH: withEnvTokenOverride(chain, "ETH", chain.tokens.ETH),
-    BNB: withEnvTokenOverride(chain, "BNB", chain.tokens.BNB),
+    USDC: supportedTokens.includes("USDC")
+      ? withEnvTokenOverride(chain, "USDC", chain.tokens.USDC)
+      : chain.tokens.USDC,
+    USDT: supportedTokens.includes("USDT")
+      ? withEnvTokenOverride(chain, "USDT", chain.tokens.USDT)
+      : chain.tokens.USDT,
+    ETH: supportedTokens.includes("ETH")
+      ? withEnvTokenOverride(chain, "ETH", chain.tokens.ETH)
+      : chain.tokens.ETH,
+    BNB: supportedTokens.includes("BNB")
+      ? withEnvTokenOverride(chain, "BNB", chain.tokens.BNB)
+      : chain.tokens.BNB,
   };
 
   return {
@@ -109,6 +120,7 @@ function withEnvChainOverride(chain: OnchainChainConfig): OnchainChainConfig {
     escrowStakeMethodErc20: escrowStakeMethodErc20 ? escrowStakeMethodErc20.trim() : null,
     escrowSettleMethod: escrowSettleMethod ? escrowSettleMethod.trim() : null,
     tokens,
+    supportedTokens,
   };
 }
 

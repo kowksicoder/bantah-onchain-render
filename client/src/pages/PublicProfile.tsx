@@ -320,7 +320,7 @@ export default function PublicProfile() {
                           )}
                           {achievement.pointsReward > 0 && (
                             <Badge variant="secondary" className="text-xs">
-                              +{achievement.pointsReward} pts
+                              +{achievement.pointsReward} BantCredit
                             </Badge>
                           )}
                         </div>

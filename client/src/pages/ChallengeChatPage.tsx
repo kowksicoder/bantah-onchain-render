@@ -63,6 +63,10 @@ interface Challenge {
   dueDate: string;
   coverImageUrl?: string;
   status: string;
+  settlementRail?: string | null;
+  settlement_rail?: string | null;
+  tokenSymbol?: string | null;
+  token_symbol?: string | null;
   adminCreated?: boolean;
   challengerUser?: {
     id: string;
@@ -116,6 +120,20 @@ export default function ChallengeChatPage() {
   } | null, fallback = "unknown") => {
     if (!input) return fallback;
     return input.firstName || input.username || (input.id ? `user_${input.id.slice(-6)}` : fallback);
+  };
+
+  const getChallengeTokenSymbol = (challengeLike?: Challenge | null) =>
+    String(challengeLike?.tokenSymbol || challengeLike?.token_symbol || "USDC").toUpperCase();
+
+  const isOnchainChallenge = (challengeLike?: Challenge | null) =>
+    String(challengeLike?.settlementRail || challengeLike?.settlement_rail || "").toLowerCase() === "onchain";
+
+  const formatChallengeStake = (challengeLike: Challenge | null | undefined, amount: number) => {
+    if (!Number.isFinite(amount)) return "0";
+    if (isOnchainChallenge(challengeLike)) {
+      return `${amount.toLocaleString()} ${getChallengeTokenSymbol(challengeLike)}`;
+    }
+    return `NGN ${amount.toLocaleString()}`;
   };
 
   const normalizeSide = (value: unknown): "YES" | "NO" | null => {
@@ -593,7 +611,7 @@ export default function ChallengeChatPage() {
     if (effectiveStake < minUpDownStakeAmount) {
       toast({
         title: "Invalid amount",
-        description: `Minimum entry is NGN ${minUpDownStakeAmount.toLocaleString()}`,
+        description: `Minimum entry is ${formatChallengeStake(challenge as Challenge | null, minUpDownStakeAmount)}`,
         variant: "destructive",
       });
       return;
@@ -648,7 +666,7 @@ export default function ChallengeChatPage() {
                 setUpDownStakeAmount(nextValue);
               }}
               className="h-10 border-0 bg-transparent p-0 text-center text-2xl font-black text-slate-900 dark:text-slate-100 focus-visible:ring-0 focus-visible:ring-offset-0"
-              aria-label="Trade amount in NGN"
+              aria-label={`Trade amount in ${getChallengeTokenSymbol(challenge as Challenge | null)}`}
             />
           </div>
           <div className="mt-2 flex items-center justify-between">
@@ -1110,8 +1128,8 @@ export default function ChallengeChatPage() {
               </div>
               <div className="text-right">
                 <div className="sm:hidden space-y-0.5 text-[10px] text-slate-600 dark:text-slate-300">
-                  <p><span className="font-semibold">Stake:</span> NGN {stakeAmount.toLocaleString()}</p>
-                  <p><span className="font-semibold">Win:</span> NGN {potentialWin.toLocaleString()}</p>
+                  <p><span className="font-semibold">Stake:</span> {formatChallengeStake(challenge, stakeAmount)}</p>
+                  <p><span className="font-semibold">Win:</span> {formatChallengeStake(challenge, potentialWin)}</p>
                   <p>{formatGameEndsCountdown(challenge?.dueDate)}</p>
                 </div>
                 <div className="hidden sm:block text-xs text-slate-500 dark:text-slate-400">
@@ -1136,11 +1154,11 @@ export default function ChallengeChatPage() {
                   <div className="grid grid-cols-2 gap-1.5">
                     <div className="rounded-lg border border-slate-200/80 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-900 p-1.5">
                       <p className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Stake</p>
-                      <p className="font-bold text-sm text-slate-900 dark:text-slate-100">NGN {stakeAmount.toLocaleString()}</p>
+                      <p className="font-bold text-sm text-slate-900 dark:text-slate-100">{formatChallengeStake(challenge, stakeAmount)}</p>
                     </div>
                     <div className="rounded-lg border border-emerald-200/70 dark:border-emerald-900 bg-emerald-50/80 dark:bg-emerald-950/20 p-1.5">
                       <p className="text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Potential Win</p>
-                      <p className="font-bold text-sm text-emerald-700 dark:text-emerald-300">NGN {potentialWin.toLocaleString()}</p>
+                      <p className="font-bold text-sm text-emerald-700 dark:text-emerald-300">{formatChallengeStake(challenge, potentialWin)}</p>
                     </div>
                   </div>
                   <div className="mt-1.5 flex items-center justify-between rounded-lg border border-slate-200/80 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900 px-2 py-1">
@@ -1679,7 +1697,7 @@ export default function ChallengeChatPage() {
                 <div className="text-white drop-shadow-lg text-[10px] sm:text-xs space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="bg-white/20 px-2 py-0.5 rounded-full capitalize">{challenge.category}</span>
-                    <span className="bg-white/20 px-2 py-0.5 rounded-full font-bold">₦{parseInt(challenge.amount).toLocaleString()}</span>
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full font-bold">{formatChallengeStake(challenge, parseInt(challenge.amount))}</span>
                     <span className="bg-white/20 px-2 py-0.5 rounded-full capitalize">{challenge.status}</span>
                     <span className="bg-white/20 px-2 py-0.5 rounded-full">
                       {getRelativeTime(challenge.dueDate, "time unknown")}

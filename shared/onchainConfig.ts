@@ -32,6 +32,7 @@ export interface OnchainChainConfig {
   // Settlement function signature, e.g. settleChallenge(uint256,uint8)
   escrowSettleMethod?: string | null;
   tokens: Record<OnchainTokenSymbol, OnchainTokenConfig>;
+  supportedTokens: OnchainTokenSymbol[];
 }
 
 export interface OnchainPublicConfig {
@@ -113,6 +114,11 @@ export const DEFAULT_ONCHAIN_BNB_NATIVE_TOKENS: Record<
 // Backward-compatible alias for existing imports.
 export const DEFAULT_ONCHAIN_TOKENS = DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS;
 
+const ETH_MAINNET_SUPPORTED_TOKENS: OnchainTokenSymbol[] = ["ETH", "USDC", "USDT"];
+const ETH_TESTNET_SUPPORTED_TOKENS: OnchainTokenSymbol[] = ["ETH"];
+const BNB_MAINNET_SUPPORTED_TOKENS: OnchainTokenSymbol[] = ["BNB"];
+const BNB_TESTNET_SUPPORTED_TOKENS: OnchainTokenSymbol[] = ["BNB"];
+
 export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChainConfig> = {
   base: {
     key: "base",
@@ -122,6 +128,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://mainnet.base.org",
     blockExplorerUrl: "https://basescan.org",
     tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+    supportedTokens: ETH_MAINNET_SUPPORTED_TOKENS,
   },
   unichain: {
     key: "unichain",
@@ -131,6 +138,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://mainnet.unichain.org",
     blockExplorerUrl: "https://uniscan.xyz",
     tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+    supportedTokens: ETH_MAINNET_SUPPORTED_TOKENS,
   },
   "base-sepolia": {
     key: "base-sepolia",
@@ -140,6 +148,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://sepolia.base.org",
     blockExplorerUrl: "https://sepolia.basescan.org",
     tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+    supportedTokens: ETH_TESTNET_SUPPORTED_TOKENS,
   },
   arbitrum: {
     key: "arbitrum",
@@ -149,6 +158,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://arb1.arbitrum.io/rpc",
     blockExplorerUrl: "https://arbiscan.io",
     tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+    supportedTokens: ETH_MAINNET_SUPPORTED_TOKENS,
   },
   bsc: {
     key: "bsc",
@@ -158,6 +168,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://bsc-dataseed.binance.org",
     blockExplorerUrl: "https://bscscan.com",
     tokens: DEFAULT_ONCHAIN_BNB_NATIVE_TOKENS,
+    supportedTokens: BNB_MAINNET_SUPPORTED_TOKENS,
   },
   celo: {
     key: "celo",
@@ -167,6 +178,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://forno.celo.org",
     blockExplorerUrl: "https://celoscan.io",
     tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+    supportedTokens: ["USDC"],
   },
   "bsc-testnet": {
     key: "bsc-testnet",
@@ -176,6 +188,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
     blockExplorerUrl: "https://testnet.bscscan.com",
     tokens: DEFAULT_ONCHAIN_BNB_NATIVE_TOKENS,
+    supportedTokens: BNB_TESTNET_SUPPORTED_TOKENS,
   },
   "arbitrum-sepolia": {
     key: "arbitrum-sepolia",
@@ -185,6 +198,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://sepolia-rollup.arbitrum.io/rpc",
     blockExplorerUrl: "https://sepolia.arbiscan.io",
     tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+    supportedTokens: ETH_TESTNET_SUPPORTED_TOKENS,
   },
   "celo-sepolia": {
     key: "celo-sepolia",
@@ -194,6 +208,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
     blockExplorerUrl: "https://celo-sepolia.blockscout.com",
     tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+    supportedTokens: ["USDC"],
   },
   "unichain-sepolia": {
     key: "unichain-sepolia",
@@ -203,6 +218,7 @@ export const DEFAULT_ONCHAIN_TESTNET_CHAINS: Record<OnchainChainKey, OnchainChai
     rpcUrl: "https://sepolia.unichain.org",
     blockExplorerUrl: "https://sepolia.uniscan.xyz",
     tokens: DEFAULT_ONCHAIN_ETH_NATIVE_TOKENS,
+    supportedTokens: ETH_TESTNET_SUPPORTED_TOKENS,
   },
 };
 

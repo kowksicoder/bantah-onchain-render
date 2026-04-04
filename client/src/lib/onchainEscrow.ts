@@ -19,6 +19,7 @@ export type OnchainChainConfig = {
   escrowStakeMethodErc20?: string | null;
   escrowSettleMethod?: string | null;
   tokens: Record<OnchainTokenSymbol, OnchainTokenConfig>;
+  supportedTokens: OnchainTokenSymbol[];
 };
 
 export type OnchainRuntimeConfig = {

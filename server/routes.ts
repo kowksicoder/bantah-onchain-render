@@ -269,11 +269,13 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       escrowContractAddress: chain.escrowContractAddress || null,
       escrowStakeMethodErc20: chain.escrowStakeMethodErc20 || null,
       escrowSettleMethod: chain.escrowSettleMethod || null,
-      tokenSupport: Object.values(chain.tokens).map((token) => ({
-        symbol: token.symbol,
-        isNative: token.isNative,
-        configured: token.isNative ? true : !!normalizeEvmAddress(token.address),
-      })),
+      tokenSupport: Object.values(chain.tokens)
+        .filter((token) => isSupportedOnchainToken(chain, token.symbol))
+        .map((token) => ({
+          symbol: token.symbol,
+          isNative: token.isNative,
+          configured: token.isNative ? true : !!normalizeEvmAddress(token.address),
+        })),
     }));
 
     const contractConfiguredChains = chains.filter(
@@ -440,6 +442,15 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       stakeDisplay: `NGN ${safeAmount.toLocaleString()}`,
       settlementLabel: "Offchain (NGN)",
     };
+  }
+
+  function isSupportedOnchainToken(chainConfig: any, tokenSymbol: OnchainTokenSymbol): boolean {
+    if (!chainConfig) return false;
+    if (Array.isArray(chainConfig.supportedTokens) && chainConfig.supportedTokens.length > 0) {
+      return chainConfig.supportedTokens.includes(tokenSymbol);
+    }
+    const tokenConfig = chainConfig.tokens?.[tokenSymbol];
+    return Boolean(tokenConfig?.isNative || normalizeEvmAddress(tokenConfig?.address));
   }
 
   function parseNotificationData(data: unknown): Record<string, any> | null {
@@ -1286,7 +1297,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         userId: userId,
         type: 'referral_success',
         title: '🎁 Referral Bonus Applied!',
-        message: `You earned ${bonusPoints} points and ${bonusCoins} coins from the referral!`,
+        message: `You earned ${bonusPoints} BantCredit and ${bonusCoins} coins from the referral!`,
         data: { points: bonusPoints, coins: bonusCoins },
       });
 
@@ -1325,7 +1336,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         userId: referrer.id,
         type: 'referral_success',
         title: '🎉 Referral Success!',
-        message: `${user.username || 'A new user'} joined using your code! You earned ${referrerBonus} points and ${referrerCoinBonus} coins.`,
+        message: `${user.username || 'A new user'} joined using your code! You earned ${referrerBonus} BantCredit and ${referrerCoinBonus} coins.`,
         data: { points: referrerBonus, coins: referrerCoinBonus },
       });
 
@@ -1425,7 +1436,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         ONCHAIN_CONFIG.defaultToken || "USDC",
       ) as OnchainTokenSymbol;
       const tokenConfig = chainConfig.tokens[tokenSymbol];
-      if (!tokenConfig) {
+      if (!tokenConfig || !isSupportedOnchainToken(chainConfig, tokenSymbol)) {
         return res.status(400).json({ message: "Unsupported token configuration" });
       }
 
@@ -3710,7 +3721,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const tokenSymbol = normalizeOnchainTokenSymbol(req.body?.tokenSymbol) as OnchainTokenSymbol;
       const tokenConfig = chainConfig.tokens[tokenSymbol];
 
-      if (!tokenConfig) {
+      if (!tokenConfig || !isSupportedOnchainToken(chainConfig, tokenSymbol)) {
         return res.status(400).json({ message: "Unsupported token" });
       }
       if (!tokenConfig.isNative && !normalizeEvmAddress(tokenConfig.address)) {
@@ -3746,7 +3757,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       }
       if (parsedAmount > MAX_CHALLENGE_AMOUNT) {
         return res.status(400).json({
-          message: `Amount is too large. Maximum allowed is ₦${MAX_CHALLENGE_AMOUNT.toLocaleString()}`,
+          message: `Amount is too large. Maximum allowed is ${MAX_CHALLENGE_AMOUNT.toLocaleString()} ${tokenSymbol}`,
         });
       }
 
@@ -4287,7 +4298,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           challengeData.tokenSymbol || ONCHAIN_CONFIG.defaultToken,
         ) as OnchainTokenSymbol;
         const tokenConfig = chainConfig.tokens[tokenSymbol];
-        if (!tokenConfig) {
+        if (!tokenConfig || !isSupportedOnchainToken(chainConfig, tokenSymbol)) {
           return res.status(400).json({ message: "Unsupported token for this challenge" });
         }
         if (!tokenConfig.isNative) {
@@ -5714,7 +5725,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             dataUsage: 'medium'
           },
           regional: {
-            currency: 'NGN',
+            currency: 'USDC',
             timezone: 'Africa/Lagos'
           },
           privacy: {
@@ -5768,7 +5779,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     try {
       const optionalUserId = await getOptionalPrivyUserId(req);
       if (!optionalUserId) {
-        return res.json({ balance: 0, coins: 0 });
+        return res.json({ balance: 0, coins: 0, points: 0 });
       }
 
       const userId = optionalUserId;
@@ -9019,8 +9030,15 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       }
 
       if (stakeAmount !== requiredAmount) {
+        const tokenLabel = String(
+          challenge.tokenSymbol || challenge.token_symbol || ONCHAIN_CONFIG.defaultToken || "USDC",
+        ).toUpperCase();
+        const stakeDisplay =
+          String(challenge.settlementRail || "").toLowerCase() === "onchain"
+            ? `${requiredAmount.toLocaleString()} ${tokenLabel}`
+            : `NGN ${requiredAmount.toLocaleString()}`;
         return res.status(400).json({
-          message: `Invalid stake amount. This challenge requires exactly NGN ${requiredAmount.toLocaleString()}`,
+          message: `Invalid stake amount. This challenge requires exactly ${stakeDisplay}`,
         });
       }
 
@@ -9065,7 +9083,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           challenge.tokenSymbol || ONCHAIN_CONFIG.defaultToken,
         ) as OnchainTokenSymbol;
         const tokenConfig = chainConfig.tokens[tokenSymbol];
-        if (!tokenConfig) {
+        if (!tokenConfig || !isSupportedOnchainToken(chainConfig, tokenSymbol)) {
           return res.status(400).json({ message: "Unsupported token for this challenge" });
         }
         if (!tokenConfig.isNative) {

@@ -507,12 +507,24 @@ export default function Challenges() {
       onchainConfig?.chains?.[String(onchainConfig?.defaultChainId || "")] ||
       chainOptions[0];
 
-    const configuredTokens = Object.keys(chainConfig?.tokens || {});
-    const normalized = configuredTokens.filter((token): token is OnchainTokenSymbol =>
-      ["USDC", "USDT", "ETH", "BNB"].includes(token),
-    );
+    const supportedTokens = Array.isArray(chainConfig?.supportedTokens)
+      ? chainConfig.supportedTokens.filter((token): token is OnchainTokenSymbol =>
+          ["USDC", "USDT", "ETH", "BNB"].includes(token),
+        )
+      : [];
 
-    return normalized.length > 0 ? normalized : ["USDC", "USDT", "ETH", "BNB"];
+    if (supportedTokens.length > 0) {
+      return supportedTokens;
+    }
+
+    const configuredTokens = Object.entries(chainConfig?.tokens || {})
+      .filter(([, token]) => Boolean(token?.isNative || token?.address))
+      .map(([token]) => token)
+      .filter((token): token is OnchainTokenSymbol =>
+        ["USDC", "USDT", "ETH", "BNB"].includes(token),
+      );
+
+    return configuredTokens.length > 0 ? configuredTokens : ["ETH"];
   }, [onchainConfig, chainOptions, selectedChainId]);
 
   const selectedTokenSymbol =
@@ -521,10 +533,13 @@ export default function Challenges() {
     "USDC";
 
   useEffect(() => {
-    if (!onchainConfig?.defaultToken) return;
+    if (tokenOptions.length === 0) return;
     const current = form.getValues("tokenSymbol");
     if (!current || !tokenOptions.includes(current as OnchainTokenSymbol)) {
-      form.setValue("tokenSymbol", onchainConfig.defaultToken, {
+      const fallbackToken = tokenOptions.includes(onchainConfig?.defaultToken as OnchainTokenSymbol)
+        ? (onchainConfig?.defaultToken as OnchainTokenSymbol)
+        : tokenOptions[0];
+      form.setValue("tokenSymbol", fallbackToken, {
         shouldDirty: false,
         shouldValidate: true,
       });
@@ -1527,7 +1542,7 @@ export default function Challenges() {
                       </p>
                       <p className="text-[11px] text-slate-500">
                         Level {preSelectedUser.level || 1} -{" "}
-                        {preSelectedUser.points || 0} pts
+                        {preSelectedUser.points || 0} BantCredit
                       </p>
                     </div>
                   </div>
