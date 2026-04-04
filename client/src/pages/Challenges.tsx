@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useWallets } from "@privy-io/react-auth";
@@ -185,6 +185,8 @@ export default function Challenges() {
   const [coverUrl, setCoverUrl] = useState("");
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const [isPreparingChallenge, setIsPreparingChallenge] = useState(false);
+  const [headerChainId, setHeaderChainId] = useState<number | null>(null);
+  const dueDatePickerRef = useRef<HTMLInputElement | null>(null);
 
   // Listen for header search events dispatched from Navigation
   useEffect(() => {
@@ -459,6 +461,30 @@ export default function Challenges() {
     staleTime: 1000 * 60 * 5,
   });
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const readStoredChain = () => {
+      const stored = window.localStorage.getItem("bantah_onchain_chain_id");
+      const parsed = Number(stored);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    setHeaderChainId(readStoredChain());
+
+    const handleChainChange = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const parsed = Number(detail.chainId);
+      if (Number.isFinite(parsed)) {
+        setHeaderChainId(parsed);
+      }
+    };
+
+    window.addEventListener("onchain-chain-changed", handleChainChange as EventListener);
+    return () => {
+      window.removeEventListener("onchain-chain-changed", handleChainChange as EventListener);
+    };
+  }, []);
+
   const chainOptions = useMemo(() => {
     const chains = Object.values(onchainConfig?.chains || {});
     return chains.sort((a, b) => Number(a.chainId) - Number(b.chainId));
@@ -466,6 +492,7 @@ export default function Challenges() {
 
   const selectedChainId =
     form.watch("chainId") ??
+    headerChainId ??
     onchainConfig?.defaultChainId ??
     Number(chainOptions[0]?.chainId || 0);
 
@@ -503,12 +530,23 @@ export default function Challenges() {
     if (!onchainConfig?.defaultChainId) return;
     const currentChain = form.getValues("chainId");
     if (!currentChain) {
-      form.setValue("chainId", onchainConfig.defaultChainId, {
+      const fallbackChainId =
+        headerChainId ?? onchainConfig.defaultChainId ?? Number(chainOptions[0]?.chainId || 0);
+      if (!fallbackChainId) return;
+      form.setValue("chainId", fallbackChainId, {
         shouldDirty: false,
         shouldValidate: true,
       });
     }
-  }, [form, onchainConfig]);
+  }, [form, onchainConfig, headerChainId, chainOptions]);
+
+  useEffect(() => {
+    if (!headerChainId) return;
+    form.setValue("chainId", headerChainId, {
+      shouldDirty: false,
+      shouldValidate: true,
+    });
+  }, [form, headerChainId]);
 
   useEffect(() => {
     if (tokenOptions.length === 0) return;
@@ -662,8 +700,17 @@ export default function Challenges() {
     return local.toISOString().slice(0, 16);
   };
 
+  const isGenericOnchainChallenge = (challenge: any) => {
+    if (!challenge) return false;
+    const title = String(challenge?.title || "").trim().toLowerCase();
+    if (!title.startsWith("onchain challenge")) return false;
+    if (challenge?.adminCreated !== true) return false;
+    return true;
+  };
+
   const filteredChallenges = useMemo(() => challenges.filter((challenge: any) => {
     if (isFiveMinuteChallenge(challenge)) return false;
+    if (isGenericOnchainChallenge(challenge)) return false;
     const searchLower = searchTerm ? searchTerm.toLowerCase() : "";
     const matchesSearch =
       !searchTerm ||
@@ -711,6 +758,8 @@ export default function Challenges() {
   const allTabCount = useMemo(
     () =>
       challenges.filter((challenge: any) => {
+        if (isFiveMinuteChallenge(challenge)) return false;
+        if (isGenericOnchainChallenge(challenge)) return false;
         const searchLower = searchTerm ? searchTerm.toLowerCase() : "";
         const matchesSearch =
           !searchTerm ||
@@ -1092,7 +1141,34 @@ export default function Challenges() {
     setVisibleChallengeCount(12);
   }, [searchTerm, selectedCategory, challengeStatusTab]);
 
-  const sortedChallenges = useMemo(() => [...filteredChallenges].sort((a: any, b: any) => {
+  const sortedChallenges = useMemo(() => {
+    const resolveSortTime = (challenge: any) => {
+      const raw =
+        challenge?.createdAt ??
+        challenge?.created_at ??
+        challenge?.created ??
+        challenge?.timestamp ??
+        challenge?.updatedAt ??
+        challenge?.updated_at ??
+        challenge?.createdAtMs;
+
+      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+      if (typeof raw === "string" && raw.trim()) {
+        const parsed = Date.parse(raw);
+        if (Number.isFinite(parsed)) return parsed;
+        const numeric = Number(raw);
+        if (Number.isFinite(numeric)) return numeric;
+      }
+      return 0;
+    };
+
+    const resolveSortId = (challenge: any) => {
+      const raw = challenge?.id ?? challenge?.challengeId ?? challenge?.challenge_id;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    return [...filteredChallenges].sort((a: any, b: any) => {
     // Priority 0: Pinned challenges first
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
@@ -1121,9 +1197,12 @@ export default function Challenges() {
     if (aIsAwaiting && !bIsAwaiting) return -1;
     if (!aIsAwaiting && bIsAwaiting) return 1;
 
-    // Default: Newest first
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  }), [filteredChallenges, user?.id]);
+    // Default: Newest first (with resilient timestamps)
+    const timeDiff = resolveSortTime(b) - resolveSortTime(a);
+    if (timeDiff !== 0) return timeDiff;
+    return resolveSortId(b) - resolveSortId(a);
+  });
+  }, [filteredChallenges, user?.id]);
 
   const visibleChallenges = useMemo(
     () => sortedChallenges.slice(0, visibleChallengeCount),
@@ -1468,7 +1547,7 @@ export default function Challenges() {
                   )}
                 />
 
-                <div className="grid gap-1.5 sm:grid-cols-3">
+                <div className="grid grid-cols-2 gap-1.5">
                   <FormField
                     control={form.control}
                     name="category"
@@ -1528,55 +1607,6 @@ export default function Challenges() {
 
                   <FormField
                     control={form.control}
-                    name="chainId"
-                    render={({ field }) => (
-                      <FormItem className="space-y-0.5">
-                        <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
-                          Chain
-                        </FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value ? String(field.value) : undefined}
-                        >
-                          <FormControl>
-                            <SelectTrigger className="h-9 rounded-xl border-0 bg-slate-50/90 text-xs shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0">
-                              {(() => {
-                                const selected = chainOptions.find(
-                                  (chain) => Number(chain.chainId) === Number(field.value),
-                                );
-                                return selected ? (
-                                  <div className="flex items-center gap-2">
-                                    <span>{selected.name}</span>
-                                    <span className="text-[10px] text-slate-400">
-                                      {selected.nativeSymbol}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <SelectValue placeholder="Select chain" />
-                                );
-                              })()}
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
-                            {chainOptions.map((chain) => (
-                              <SelectItem key={chain.chainId} value={String(chain.chainId)}>
-                                <div className="flex items-center justify-between gap-2">
-                                  <span>{chain.name}</span>
-                                  <span className="text-[10px] text-slate-400">
-                                    {chain.nativeSymbol}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage className="text-xs" />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
                     name="dueDate"
                     render={({ field }) => (
                       <FormItem className="space-y-0.5">
@@ -1584,12 +1614,35 @@ export default function Challenges() {
                           Deadline
                         </FormLabel>
                         <FormControl>
-                          <Input
-                            type="datetime-local"
-                            className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
-                            {...field}
-                            min={new Date().toISOString().slice(0, 16)}
-                          />
+                          <div className="relative">
+                            <Input
+                              type="text"
+                              placeholder="Date/Time"
+                              readOnly
+                              value={field.value ? field.value.replace("T", " ") : ""}
+                              onClick={() => {
+                                const picker = dueDatePickerRef.current;
+                                if (!picker) return;
+                                if (typeof (picker as any).showPicker === "function") {
+                                  (picker as any).showPicker();
+                                } else {
+                                  picker.focus();
+                                  picker.click();
+                                }
+                              }}
+                              className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
+                            />
+                            <input
+                              ref={dueDatePickerRef}
+                              type="datetime-local"
+                              value={field.value || ""}
+                              onChange={(event) => field.onChange(event.target.value)}
+                              min={new Date().toISOString().slice(0, 16)}
+                              className="absolute inset-0 h-full w-full opacity-0 pointer-events-none"
+                              aria-hidden="true"
+                              tabIndex={-1}
+                            />
+                          </div>
                         </FormControl>
                         <FormMessage className="text-xs" />
                       </FormItem>

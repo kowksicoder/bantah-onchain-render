@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/useAuth";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +8,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useQuery } from "@tanstack/react-query";
+import { useWallets } from "@privy-io/react-auth";
 import { useLocation } from "wouter";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useBadges } from "@/hooks/useBadges";
@@ -28,6 +29,7 @@ import { getAvatarUrl } from "@/utils/avatarUtils";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useEventsSearch } from "../context/EventsSearchContext"; // Corrected import
 import { SmartSearch } from "./SmartSearch";
+import { type OnchainRuntimeConfig } from "@/lib/onchainEscrow";
 import {
   Bell,
   Settings,
@@ -48,12 +50,14 @@ import {
   Award,
   Search,
   Info,
+  Network,
 } from "lucide-react";
 import { Link } from "wouter"; // Import Link from wouter
 import { FloatingBantzzButton } from "./FloatingBantzzButton";
 
 export function Navigation() {
   const { user, isLoading, login } = useAuth();
+  const { wallets } = useWallets();
   const appModeRaw = String((import.meta as any).env?.VITE_APP_MODE || "")
     .trim()
     .replace(/^['"]|['"]$/g, "")
@@ -64,6 +68,14 @@ export function Navigation() {
   const { notifications, unreadCount } = useNotifications();
   const { hasProfileBadge } = useBadges();
 
+  const { data: onchainConfig } = useQuery<OnchainRuntimeConfig>({
+    queryKey: ["/api/onchain/config"],
+    queryFn: async () => await fetch("/api/onchain/config").then((res) => res.json()),
+    retry: false,
+    staleTime: 1000 * 60 * 5,
+    enabled: isOnchainBuild,
+  });
+
   const { data: balance = 0 } = useQuery({
     queryKey: ["/api/wallet/balance"],
     retry: false,
@@ -72,6 +84,68 @@ export function Navigation() {
   });
 
   const [location, navigate] = useLocation();
+  const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
+
+  const chainOptions = useMemo(() => {
+    const chains = Object.values(onchainConfig?.chains || {});
+    return chains.sort((a, b) => Number(a.chainId) - Number(b.chainId));
+  }, [onchainConfig]);
+
+  const getStoredChain = () => {
+    if (typeof window === "undefined") return null;
+    const stored = window.localStorage.getItem("bantah_onchain_chain_id");
+    const parsed = Number(stored);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const isChainLocked = () => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("bantah_onchain_chain_locked") === "true";
+  };
+
+  const setChainPreference = (chainId: number, lock: boolean) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("bantah_onchain_chain_id", String(chainId));
+    window.localStorage.setItem("bantah_onchain_chain_locked", lock ? "true" : "false");
+    setSelectedChainId(chainId);
+    window.dispatchEvent(
+      new CustomEvent("onchain-chain-changed", { detail: { chainId } }),
+    );
+  };
+
+  useEffect(() => {
+    if (!isOnchainBuild || chainOptions.length === 0) return;
+    const stored = getStoredChain();
+    if (stored && chainOptions.some((chain) => Number(chain.chainId) === stored)) {
+      setSelectedChainId(stored);
+      return;
+    }
+    const fallback = Number(onchainConfig?.defaultChainId || chainOptions[0]?.chainId || 0);
+    if (fallback) {
+      setChainPreference(fallback, false);
+    }
+  }, [isOnchainBuild, chainOptions, onchainConfig]);
+
+  useEffect(() => {
+    if (!isOnchainBuild || chainOptions.length === 0) return;
+    if (isChainLocked()) return;
+    const walletChainId = wallets
+      ?.map((wallet) => {
+        const raw =
+          (wallet as any)?.chainId ??
+          (wallet as any)?.chain_id ??
+          (wallet as any)?.chain?.id ??
+          (wallet as any)?.network?.chainId ??
+          (wallet as any)?.network?.chain_id;
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? parsed : null;
+      })
+      .find((entry) => entry && chainOptions.some((chain) => Number(chain.chainId) === entry));
+
+    if (walletChainId && walletChainId !== selectedChainId) {
+      setChainPreference(walletChainId, false);
+    }
+  }, [wallets, chainOptions, selectedChainId, isOnchainBuild]);
 
   const handleNavigation = (path: string) => {
     navigate(path);
@@ -204,6 +278,29 @@ export function Navigation() {
   };
 
   const { searchTerm, setSearchTerm } = useEventsSearch();
+  const activeChain =
+    chainOptions.find((chain) => Number(chain.chainId) === Number(selectedChainId)) ||
+    chainOptions.find((chain) => Number(chain.chainId) === Number(onchainConfig?.defaultChainId)) ||
+    chainOptions[0];
+
+  const chainIconByKey: Record<string, { src: string; alt: string }> = {
+    base: { src: "/assets/chain-base.svg", alt: "Base" },
+    arbitrum: { src: "/assets/chain-arbitrum.svg", alt: "Arbitrum" },
+    bsc: { src: "/assets/chain-bsc.svg", alt: "BNB Chain" },
+    unichain: { src: "/assets/chain-unichain.svg", alt: "Unichain" },
+  };
+
+  const resolveChainIcon = (chain: { key?: string; name?: string } | null | undefined) => {
+    if (!chain) return null;
+    const key = String(chain.key || "").toLowerCase();
+    if (key && chainIconByKey[key]) return chainIconByKey[key];
+    const name = String(chain.name || "").toLowerCase();
+    if (name.includes("base")) return chainIconByKey.base;
+    if (name.includes("arbitrum")) return chainIconByKey.arbitrum;
+    if (name.includes("bsc") || name.includes("bnb")) return chainIconByKey.bsc;
+    if (name.includes("uni")) return chainIconByKey.unichain;
+    return null;
+  };
 
   return (
     <>
@@ -276,6 +373,57 @@ export function Navigation() {
                       )}
 
                       {/* Search handled by SmartSearch on home/challenges */}
+
+                  {isOnchainBuild && chainOptions.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          aria-label="Select chain"
+                        >
+                          {(() => {
+                            const icon = resolveChainIcon(activeChain);
+                            return icon ? (
+                              <img
+                                src={icon.src}
+                                alt={icon.alt}
+                                className="h-4 w-4 rounded-full"
+                              />
+                            ) : (
+                              <Network className="h-3.5 w-3.5" />
+                            );
+                          })()}
+                          <span>{activeChain?.name || "Chain"}</span>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        {chainOptions.map((chain) => (
+                          <DropdownMenuItem
+                            key={chain.chainId}
+                            onClick={() => setChainPreference(Number(chain.chainId), true)}
+                            className="flex items-center justify-between gap-2"
+                          >
+                            <span className="flex items-center gap-2">
+                              {(() => {
+                                const icon = resolveChainIcon(chain);
+                                return icon ? (
+                                  <img
+                                    src={icon.src}
+                                    alt={icon.alt}
+                                    className="h-4 w-4 rounded-full"
+                                  />
+                                ) : null;
+                              })()}
+                              {chain.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {chain.nativeSymbol}
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
 
                   {/* Leaderboard Icon - Always visible on mobile */}
                   <button
@@ -429,6 +577,57 @@ export function Navigation() {
 
             {/* Right Side Items - Desktop Only */}
             <div className="hidden md:flex items-center space-x-4">
+              {isOnchainBuild && chainOptions.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                      aria-label="Select chain"
+                    >
+                      {(() => {
+                        const icon = resolveChainIcon(activeChain);
+                        return icon ? (
+                          <img
+                            src={icon.src}
+                            alt={icon.alt}
+                            className="h-4 w-4 rounded-full"
+                          />
+                        ) : (
+                          <Network className="h-4 w-4" />
+                        );
+                      })()}
+                      <span>{activeChain?.name || "Chain"}</span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {chainOptions.map((chain) => (
+                      <DropdownMenuItem
+                        key={chain.chainId}
+                        onClick={() => setChainPreference(Number(chain.chainId), true)}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="flex items-center gap-2">
+                          {(() => {
+                            const icon = resolveChainIcon(chain);
+                            return icon ? (
+                              <img
+                                src={icon.src}
+                                alt={icon.alt}
+                                className="h-4 w-4 rounded-full"
+                              />
+                            ) : null;
+                          })()}
+                          {chain.name}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {chain.nativeSymbol}
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
               {/* Notifications - Desktop Only */}
               {user && (
                 <button
