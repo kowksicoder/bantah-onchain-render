@@ -47,9 +47,11 @@ import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { UserAvatar } from "@/components/UserAvatar";
 import { PlayfulLoadingOverlay } from "@/components/ui/playful-loading";
+import DateTimePicker from "react-datetime-picker";
 import {
   MessageCircle,
   Clock,
+  Calendar,
   Trophy,
   TrendingUp,
   Zap,
@@ -186,7 +188,10 @@ export default function Challenges() {
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const [isPreparingChallenge, setIsPreparingChallenge] = useState(false);
   const [headerChainId, setHeaderChainId] = useState<number | null>(null);
-  const dueDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const dueDatePickerRef = useRef<HTMLDivElement | null>(null);
+  const dueDateInputRef = useRef<HTMLInputElement | null>(null);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isClockOpen, setIsClockOpen] = useState(false);
 
   // Listen for header search events dispatched from Navigation
   useEffect(() => {
@@ -833,6 +838,7 @@ export default function Challenges() {
     const fractional = rest.join("");
     return fractional.length > 0 ? `${whole}.${fractional}` : whole;
   };
+
 
   const onSubmit = async (data: z.infer<typeof createChallengeSchema>) => {
     // Ensure direct-mode has a challenged user selected
@@ -1547,7 +1553,7 @@ export default function Challenges() {
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-1.5">
                   <FormField
                     control={form.control}
                     name="category"
@@ -1611,37 +1617,61 @@ export default function Challenges() {
                     render={({ field }) => (
                       <FormItem className="space-y-0.5">
                         <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
-                          Deadline
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5" />
+                            Deadline
+                          </span>
                         </FormLabel>
                         <FormControl>
-                          <div className="relative">
-                            <Input
-                              type="text"
-                              placeholder="Date/Time"
-                              readOnly
-                              value={field.value ? field.value.replace("T", " ") : ""}
-                              onClick={() => {
-                                const picker = dueDatePickerRef.current;
-                                if (!picker) return;
-                                if (typeof (picker as any).showPicker === "function") {
-                                  (picker as any).showPicker();
-                                } else {
-                                  picker.focus();
-                                  picker.click();
+                          <div
+                            ref={dueDatePickerRef}
+                            className="bantah-datetime-wrap"
+                            onClick={() => {
+                              setIsCalendarOpen(true);
+                            }}
+                          >
+                            <DateTimePicker
+                              onChange={(value) => {
+                                if (!value || Number.isNaN(value.getTime())) {
+                                  field.onChange("");
+                                  return;
                                 }
+                                field.onChange(value.toISOString());
                               }}
-                              className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
+                              value={
+                                field.value && !Number.isNaN(new Date(field.value).getTime())
+                                  ? new Date(field.value)
+                                  : null
+                              }
+                              format="MMM d, yyyy h:mm a"
+                              isCalendarOpen={isCalendarOpen}
+                              isClockOpen={isClockOpen}
+                              onCalendarOpen={() => setIsCalendarOpen(true)}
+                              onCalendarClose={() => setIsCalendarOpen(false)}
+                              onClockOpen={() => setIsClockOpen(true)}
+                              onClockClose={() => setIsClockOpen(false)}
+                              shouldOpenWidgets={() => true}
+                              openWidgetsOnFocus
+                              calendarIcon={null}
+                              clearIcon={null}
+                              className={cn(
+                                "bantah-datetime",
+                                !field.value && "bantah-datetime--icon-only",
+                              )}
+                              calendarClassName="bantah-datetime__calendar"
+                              inputRef={dueDateInputRef}
                             />
-                            <input
-                              ref={dueDatePickerRef}
-                              type="datetime-local"
-                              value={field.value || ""}
-                              onChange={(event) => field.onChange(event.target.value)}
-                              min={new Date().toISOString().slice(0, 16)}
-                              className="absolute inset-0 h-full w-full opacity-0 pointer-events-none"
-                              aria-hidden="true"
-                              tabIndex={-1}
-                            />
+                            {!field.value && (
+                              <span
+                                className="bantah-datetime__placeholder"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setIsCalendarOpen(true);
+                                }}
+                              >
+                                Pick a date
+                              </span>
+                            )}
                           </div>
                         </FormControl>
                         <FormMessage className="text-xs" />

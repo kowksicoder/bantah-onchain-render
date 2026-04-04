@@ -1,3 +1,8 @@
+/* Third-party picker styles */
+@import "react-datetime-picker/dist/DateTimePicker.css";
+@import "react-calendar/dist/Calendar.css";
+@import "react-clock/dist/Clock.css";
+
 /* Mobile Compact Design Styles */
 @import './styles/mobile-compact.css';
 
@@ -13,6 +18,124 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* React DateTime Picker compact styling */
+.bantah-datetime-wrap {
+  width: 100%;
+  position: relative;
+}
+
+.bantah-datetime {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bantah-datetime .react-datetime-picker__wrapper {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid hsl(220, 9%, 88%);
+  background: hsl(220, 14%, 96%);
+  border-radius: 12px;
+  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+}
+
+.bantah-datetime .react-datetime-picker__inputGroup {
+  font-size: 11px;
+  color: #0f172a;
+}
+
+.bantah-datetime .react-datetime-picker__inputGroup input {
+  font-size: 11px;
+  color: #0f172a;
+}
+
+.bantah-datetime .react-datetime-picker__inputGroup__divider,
+.bantah-datetime .react-datetime-picker__inputGroup__leadingZero {
+  color: #94a3b8;
+}
+
+.bantah-datetime .react-datetime-picker__calendar-button,
+.bantah-datetime .react-datetime-picker__clear-button {
+  padding: 2px;
+  pointer-events: auto;
+}
+
+.bantah-datetime .react-datetime-picker__calendar-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.bantah-datetime .react-datetime-picker__calendar-button {
+  order: -1;
+  margin-right: 6px;
+  margin-left: 0;
+}
+
+.bantah-datetime--icon-only .react-datetime-picker__inputGroup {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bantah-datetime--icon-only .react-datetime-picker__wrapper {
+  justify-content: flex-start;
+  gap: 0;
+  cursor: pointer;
+}
+
+.bantah-datetime__hidden-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  width: 0;
+}
+
+.bantah-datetime--icon-only .react-datetime-picker__calendar-button {
+  margin-left: 4px;
+}
+
+.bantah-datetime__placeholder {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: #94a3b8;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.bantah-datetime .react-datetime-picker__wrapper {
+  cursor: pointer;
+}
+
+.bantah-datetime__calendar {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid hsl(220, 9%, 88%);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+}
+
+.dark .bantah-datetime .react-datetime-picker__wrapper {
+  border-color: hsl(var(--border));
+  background: hsl(var(--input));
+}
+
+.dark .bantah-datetime .react-datetime-picker__inputGroup,
+.dark .bantah-datetime .react-datetime-picker__inputGroup input {
+  color: #e2e8f0;
+}
+
+.dark .bantah-datetime__calendar {
+  border-color: hsl(var(--border));
+  background: hsl(var(--background));
+}
 
 /* Mobile App-like styles */
 @layer base {
