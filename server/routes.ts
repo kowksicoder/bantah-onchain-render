@@ -3778,6 +3778,30 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const challengedWalletAddress = normalizeEvmAddress(
         (req.body as any)?.challengedWalletAddress,
       );
+      const challengedInput =
+        typeof req.body?.challenged === "string" ? req.body.challenged.trim() : "";
+      let challengedUserId: string | null = null;
+
+      if (challengedInput) {
+        const normalizedChallengeTarget = challengedInput.replace(/^@+/, "");
+        const challengedUser =
+          (await storage.getUser(normalizedChallengeTarget)) ||
+          (await storage.getUserByUsername(normalizedChallengeTarget));
+
+        if (!challengedUser) {
+          return res.status(404).json({
+            message: "Opponent not found. Enter a valid username.",
+          });
+        }
+
+        if (challengedUser.id === userId) {
+          return res.status(400).json({
+            message: "You can't challenge yourself.",
+          });
+        }
+
+        challengedUserId = challengedUser.id;
+      }
 
       if (ONCHAIN_CONFIG.contractEnabled) {
         if (!creatorWallet) {
@@ -3837,8 +3861,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       };
 
       // Handle challenged field - for open challenges it might be empty string, which should be null/undefined
-      if (req.body.challenged && req.body.challenged.trim()) {
-        dataToValidate.challenged = req.body.challenged;
+      if (challengedUserId) {
+        dataToValidate.challenged = challengedUserId;
         delete dataToValidate.challengedWalletAddress;
         dataToValidate.status = 'pending';
       } else if (challengedWalletAddress) {

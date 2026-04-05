@@ -11,6 +11,7 @@ import { ChallengeChat } from "@/components/ChallengeChat";
 import { JoinChallengeModal } from "@/components/JoinChallengeModal";
 import { BantMap } from "@/components/BantMap";
 import { AgentIcon } from "@/components/AgentIcon";
+import { AgentImportDialog, type AgentImportMode } from "@/components/AgentImportDialog";
 import { Button } from "@/components/ui/button";
 import CategoryBar from "@/components/CategoryBar";
 import PolymarketTab, { type PolymarketMarket } from "@/components/PolymarketTab";
@@ -63,11 +64,16 @@ import {
   Search,
   ArrowUp,
   ArrowDown,
+  Loader2,
   Upload,
   X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import type {
+  AgentListResponse,
+  AgentRegistryProfile,
+} from "@shared/agentApi";
 import { getBantahAgentKitNetworkIdForChainId } from "@shared/agentApi";
 import {
   type OnchainRuntimeConfig,
@@ -100,7 +106,7 @@ function ChallengeCardSkeleton() {
 }
 
 const createChallengeSchema = z.object({
-  // challenged is optional for open challenges; enforced client-side for direct mode
+  // challenged is optional for open challenges; if provided it becomes a P2P target
   challenged: z.string().optional(),
   title: z.string().min(1, "").max(200, "Title too long"),
   category: z.string().min(1, ""),
@@ -145,13 +151,12 @@ const tokenVisuals: Record<OnchainTokenSymbol, { src: string; alt: string }> = {
   BNB: { src: "/assets/token-bnb.svg", alt: "BNB logo" },
 };
 
-const defaultAgentSkills = [
-  "create_market",
-  "join_yes",
-  "join_no",
-  "read_market",
-  "check_balance",
-];
+const agentSpecialtyOptions = [
+  { value: "general", label: "General" },
+  { value: "crypto", label: "Crypto" },
+  { value: "sports", label: "Sports" },
+  { value: "politics", label: "Politics" },
+] as const;
 
 function TokenMark({ token }: { token: OnchainTokenSymbol }) {
   const visual = tokenVisuals[token];
@@ -173,7 +178,10 @@ export default function Challenges() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [createMode, setCreateMode] = useState<'direct' | 'open' | 'agent'>('direct');
+  const [isImportAgentDialogOpen, setIsImportAgentDialogOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<'open' | 'agent'>('open');
+  const [agentFlowMode, setAgentFlowMode] = useState<"bantah" | AgentImportMode>("bantah");
+  const [agentImportMode, setAgentImportMode] = useState<AgentImportMode>("eliza");
   const [agentDisplayName, setAgentDisplayName] = useState("");
   const [agentSpecialty, setAgentSpecialty] = useState<"general" | "crypto" | "sports" | "politics">("general");
   const [searchTerm, setSearchTerm] = useState("");
@@ -191,8 +199,14 @@ export default function Challenges() {
   const [polymarketStake, setPolymarketStake] = useState("");
   const [isPolymarketEnsuring, setIsPolymarketEnsuring] = useState(false);
   useEffect(() => {
-    if (preSelectedUser) setCreateMode('direct');
+    if (preSelectedUser) setCreateMode('open');
   }, [preSelectedUser]);
+
+  useEffect(() => {
+    if (createMode !== "agent") {
+      setAgentFlowMode("bantah");
+    }
+  }, [createMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -215,10 +229,8 @@ export default function Challenges() {
   const [selectedTab, setSelectedTab] = useState<string>('featured');
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [coverInputType, setCoverInputType] = useState<'upload' | 'url'>('upload');
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
-  const [coverUrl, setCoverUrl] = useState("");
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const [isPreparingChallenge, setIsPreparingChallenge] = useState(false);
   const [headerChainId, setHeaderChainId] = useState<number | null>(null);
@@ -226,9 +238,19 @@ export default function Challenges() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isClockOpen, setIsClockOpen] = useState(false);
 
-  const openImportAgentFlow = () => {
+  const openImportAgentFlow = (mode: AgentImportMode = agentImportMode) => {
+    if (!isAuthenticated || authLoading) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in before importing an agent.",
+        variant: "destructive",
+      });
+      login();
+      return;
+    }
+    setAgentImportMode(mode);
     setIsCreateDialogOpen(false);
-    window.location.href = "/agents?action=import";
+    setIsImportAgentDialogOpen(true);
   };
 
   // Listen for header search events dispatched from Navigation
@@ -239,11 +261,14 @@ export default function Challenges() {
     };
     const onOpen = () => setIsSearchOpen(true);
     const onOpenCreateDialog = (e: any) => {
-      const mode = e?.detail?.mode || 'direct';
-      if (mode === 'open' || mode === 'agent' || mode === 'direct') {
+      const mode = e?.detail?.mode === "agent" ? "agent" : "open";
+      if (mode === 'open' || mode === 'agent') {
         setCreateMode(mode);
+        if (mode === "agent") {
+          setAgentFlowMode("bantah");
+        }
       } else {
-        setCreateMode('direct');
+        setCreateMode('open');
       }
       setIsCreateDialogOpen(true);
     };
@@ -480,12 +505,6 @@ export default function Challenges() {
     staleTime: 1000 * 30,
   });
 
-  const { data: friends = [] as any[] } = useQuery({
-    queryKey: ["/api/friends"],
-    retry: false,
-    enabled: !!user, // Only fetch when user is authenticated
-  });
-
   const {
     data: allUsers = [] as any[],
     isLoading: usersLoading,
@@ -506,6 +525,14 @@ export default function Challenges() {
     queryFn: async () => await apiRequest("GET", "/api/onchain/config"),
     retry: false,
     staleTime: 1000 * 60 * 5,
+  });
+
+  const { data: agentRegistry } = useQuery<AgentListResponse>({
+    queryKey: ["/api/agents"],
+    queryFn: async () => await apiRequest("GET", "/api/agents"),
+    retry: false,
+    staleTime: 1000 * 60 * 5,
+    enabled: createMode === "agent" || isImportAgentDialogOpen,
   });
 
   useEffect(() => {
@@ -581,6 +608,39 @@ export default function Challenges() {
     (form.watch("tokenSymbol") as OnchainTokenSymbol | undefined) ||
     onchainConfig?.defaultToken ||
     "USDC";
+
+  const ownedAgents = useMemo(() => {
+    const items = agentRegistry?.items || [];
+    if (!user?.id) return items.slice(0, 3);
+    return items.filter((agent) => agent.ownerId === user.id).slice(0, 3);
+  }, [agentRegistry, user?.id]);
+
+  const agentFlowCards = [
+    {
+      key: "bantah" as const,
+      title: "Create on Bantah",
+      description: "Native Bantah agent with bundled skills, managed Eliza runtime, and AgentKit wallet provisioning.",
+      cta: "Create Agent",
+    },
+    {
+      key: "eliza" as const,
+      title: "Import from Eliza",
+      description: "Connect a running Eliza-backed agent by importing its Bantah-compatible endpoint and wallet.",
+      cta: "Open Eliza Import",
+    },
+    {
+      key: "virtuals" as const,
+      title: "Import from Virtuals",
+      description: "Bring in a Virtuals-backed agent when it already exposes a runtime or adapter Bantah can call.",
+      cta: "Open Virtuals Import",
+    },
+    {
+      key: "advanced" as const,
+      title: "Advanced Import",
+      description: "Manual wallet + endpoint import for custom infrastructure and unsupported ecosystems.",
+      cta: "Open Advanced Import",
+    },
+  ];
 
   useEffect(() => {
     if (tokenOptions.length === 0) return;
@@ -718,8 +778,6 @@ export default function Challenges() {
       form.reset();
       setCoverImageFile(null);
       setCoverPreview(null);
-      setCoverUrl("");
-      setCoverInputType("upload");
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -756,6 +814,39 @@ export default function Challenges() {
         onchainConfig?.chains?.[String(provisionedChainId)]?.name ||
         selectedChainConfig?.name ||
         "selected chain";
+      if (createdAgent) {
+        queryClient.setQueryData<AgentListResponse | undefined>(["/api/agents"], (existing) => {
+          if (!existing) {
+            return {
+              items: [createdAgent],
+              pagination: {
+                page: 1,
+                limit: 20,
+                total: 1,
+                totalPages: 1,
+              },
+            };
+          }
+
+          const deduped = [
+            createdAgent,
+            ...existing.items.filter((agent) => agent.agentId !== createdAgent.agentId),
+          ];
+
+          return {
+            ...existing,
+            items: deduped,
+            pagination: {
+              ...existing.pagination,
+              total: Math.max(existing.pagination.total, deduped.length),
+              totalPages: Math.max(
+                existing.pagination.totalPages,
+                Math.ceil(Math.max(existing.pagination.total, deduped.length) / existing.pagination.limit),
+              ),
+            },
+          };
+        });
+      }
       toast({
         title: "Agent created",
         description: createdAgent?.walletAddress
@@ -789,6 +880,13 @@ export default function Challenges() {
       });
     },
   });
+
+  const handleImportedAgent = () => {
+    setIsImportAgentDialogOpen(false);
+    setCreateMode("agent");
+    setAgentFlowMode(agentImportMode);
+    setIsCreateDialogOpen(true);
+  };
 
   const categoryTabs = [
     { id: "create", label: "Create", icon: "/assets/create.png", emoji: "✨", gradient: "from-green-400 to-emerald-500", isCreate: true, value: "create" },
@@ -1001,6 +1099,10 @@ export default function Challenges() {
 
   const onSubmit = async (data: z.infer<typeof createChallengeSchema>) => {
     if (createMode === "agent") {
+      if (agentFlowMode !== "bantah") {
+        openImportAgentFlow(agentFlowMode);
+        return;
+      }
       if (!agentDisplayName.trim()) {
         toast({
           title: "Agent name required",
@@ -1012,16 +1114,6 @@ export default function Challenges() {
       createAgentMutation.mutate();
       return;
     }
-    // Ensure direct-mode has a challenged user selected
-    if (createMode === 'direct' && !data.challenged && !preSelectedUser) {
-      toast({
-        title: "Select a user",
-        description: "Please select a friend to challenge.",
-        variant: "destructive",
-      });
-      return;
-    }
-
       const normalizedAmount = normalizeAmountInput(data.amount);
       const amount = parseFloat(normalizedAmount);
       if (!Number.isFinite(amount) || amount <= 0) {
@@ -1038,11 +1130,9 @@ export default function Challenges() {
         await ensureFreshAuthToken();
 
       let finalCoverUrl = "";
-      if (coverInputType === "upload" && coverImageFile) {
+      if (coverImageFile) {
         const uploaded = await uploadCoverImage(coverImageFile);
         if (uploaded) finalCoverUrl = uploaded;
-      } else if (coverInputType === "url" && coverUrl.trim()) {
-        finalCoverUrl = coverUrl.trim();
       }
 
       const selectedChainId = Number(
@@ -1063,11 +1153,7 @@ export default function Challenges() {
           dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
         };
 
-      if (createMode === "direct") {
-        payload.challenged = preSelectedUser?.id || data.challenged;
-      } else {
-        payload.challenged = "";
-      }
+      payload.challenged = preSelectedUser?.id || String(data.challenged || "").trim();
 
       if (finalCoverUrl) {
         payload.coverImageUrl = finalCoverUrl;
@@ -1567,12 +1653,11 @@ export default function Challenges() {
             setIsCreateDialogOpen(open);
             if (!open) {
               setPreSelectedUser(null);
-              setCreateMode('direct');
+              setCreateMode('open');
+              setAgentFlowMode("bantah");
               form.reset();
               setCoverImageFile(null);
               setCoverPreview(null);
-              setCoverUrl("");
-              setCoverInputType("upload");
               setAgentDisplayName("");
               setAgentSpecialty("general");
             }
@@ -1620,19 +1705,10 @@ export default function Challenges() {
               </button>
               <button
                 type="button"
-                onClick={() => setCreateMode('direct')}
-                className={cn(
-                  "flex-1 rounded-full px-3 py-1 text-xs font-semibold",
-                  createMode === 'direct'
-                    ? 'bg-[#ccff00] text-black'
-                    : 'bg-transparent text-slate-600 dark:text-slate-300 border border-transparent hover:bg-slate-100'
-                )}
-              >
-                P2P
-              </button>
-              <button
-                type="button"
-                onClick={() => setCreateMode('agent')}
+                onClick={() => {
+                  setCreateMode('agent');
+                  setAgentFlowMode("bantah");
+                }}
                 className={cn(
                   "flex-1 rounded-full px-3 py-1 text-xs font-semibold",
                   createMode === 'agent'
@@ -1650,25 +1726,36 @@ export default function Challenges() {
               >
                 {createMode === 'agent' ? (
                   <div className="space-y-2.5">
-                    <div className="flex items-center justify-between rounded-xl bg-slate-50/80 px-3 py-2 dark:bg-slate-800/70">
-                      <div>
-                        <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">
-                          Create a Bantah agent
-                        </p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                          Or import an existing compatible agent
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={openImportAgentFlow}
-                        className="h-8 rounded-full px-3 text-[11px] font-semibold text-[#7440ff] hover:bg-[#7440ff]/10 hover:text-[#7440ff] dark:text-[#b9a2ff] dark:hover:bg-[#7440ff]/15 dark:hover:text-[#c8b8ff]"
-                      >
-                        Import Agent
-                      </Button>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {agentFlowCards.map((card) => {
+                        const isActive = agentFlowMode === card.key;
+                        return (
+                          <button
+                            key={card.key}
+                            type="button"
+                            onClick={() => {
+                              setAgentFlowMode(card.key);
+                              if (card.key !== "bantah") {
+                                setAgentImportMode(card.key);
+                              }
+                            }}
+                            className={cn(
+                              "rounded-2xl border px-3 py-2 text-left transition",
+                              isActive
+                                ? "border-[#ccff00] bg-[#f7ffcc] shadow-sm dark:border-[#ccff00]/50 dark:bg-[#ccff00]/10"
+                                : "border-slate-200 bg-slate-50/90 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/70 dark:hover:bg-slate-800",
+                            )}
+                          >
+                            <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">
+                              {card.title}
+                            </p>
+                          </button>
+                        );
+                      })}
                     </div>
 
+                    {agentFlowMode === "bantah" ? (
+                      <>
                     <div className="space-y-0.5">
                       <label
                         htmlFor="agent-display-name"
@@ -1705,12 +1792,7 @@ export default function Challenges() {
                           <SelectValue placeholder="Select a specialty" />
                         </SelectTrigger>
                         <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
-                          {[
-                            { value: "general", label: "General" },
-                            { value: "crypto", label: "Crypto" },
-                            { value: "sports", label: "Sports" },
-                            { value: "politics", label: "Politics" },
-                          ].map((option) => (
+                          {agentSpecialtyOptions.map((option) => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>
@@ -1719,137 +1801,128 @@ export default function Challenges() {
                       </Select>
                     </div>
 
-                    <div
-                      className={cn(
-                        "rounded-xl px-3 py-2",
-                        canProvisionAgentOnSelectedChain
-                          ? "border border-blue-200 bg-blue-50/80 dark:border-blue-500/20 dark:bg-blue-500/10"
-                          : "border border-amber-200 bg-amber-50/90 dark:border-amber-500/20 dark:bg-amber-500/10",
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            Execution chain
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
+                      <div className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800 shadow-sm dark:bg-slate-800 dark:text-slate-100">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+                        Bantah Skills
+                      </div>
+                    </div>
+                      </>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/70">
+                          <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">
+                            {agentFlowMode === "eliza"
+                              ? "Import a running Eliza agent"
+                              : agentFlowMode === "virtuals"
+                              ? "Import a Virtuals-backed agent"
+                              : "Manual Bantah-compatible import"}
                           </p>
-                          <p className="mt-0.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
-                            {selectedChainConfig?.name || "Selected chain"}
+                          <p className="mt-1 text-[10px] leading-5 text-slate-500 dark:text-slate-400">
+                            {agentFlowMode === "eliza"
+                              ? "Use this when you already run the agent elsewhere and need Bantah to verify the endpoint, wallet, and supported actions."
+                              : agentFlowMode === "virtuals"
+                              ? "Use this when the agent already has a callable runtime or adapter. A token or listing by itself is not enough for Bantah import."
+                              : "Use this if you have a custom endpoint and wallet that already implement the Bantah skill contract."}
                           </p>
                         </div>
-                        <Badge
-                          className={cn(
-                            "border-0 text-[10px]",
-                            canProvisionAgentOnSelectedChain
-                              ? "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200"
-                              : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200",
-                          )}
-                        >
-                          {canProvisionAgentOnSelectedChain
-                            ? selectedAgentExecutionNetworkId
-                            : "Not supported yet"}
-                        </Badge>
+
                       </div>
-                      <p className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400">
-                        {canProvisionAgentOnSelectedChain
-                          ? "Coinbase AgentKit will provision this Bantah agent wallet on the current chain selection."
-                          : "Switch the header chain to Base or Arbitrum before creating this Bantah agent. Unichain and BSC execution are not live in AgentKit here yet."}
-                      </p>
-                    </div>
+                    )}
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                          Default Bantah skills
-                        </p>
-                        <Badge className="h-6 border-0 bg-emerald-100 px-2 text-[10px] text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
-                          Default
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Your agents
+                          </p>
+                        </div>
+                        <Badge className="h-6 border-0 bg-slate-200 px-2 text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                          {ownedAgents.length}
                         </Badge>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {defaultAgentSkills.map((skill) => (
-                          <span
-                            key={skill}
-                            className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm dark:bg-slate-800 dark:text-slate-200"
-                          >
-                            <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
-                            {skill}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400">
-                        Provisioned automatically with wallet metadata.
-                      </p>
+
+                      {ownedAgents.length > 0 ? (
+                        <div className="mt-2 space-y-1.5">
+                          {ownedAgents.map((agent) => (
+                            <div
+                              key={agent.agentId}
+                              className="flex items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm dark:bg-slate-800"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-[11px] font-semibold text-slate-800 dark:text-slate-100">
+                                  {agent.agentName}
+                                </p>
+                                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">
+                                  {agent.specialty} · {String(agent.walletAddress).slice(0, 6)}...
+                                  {String(agent.walletAddress).slice(-4)}
+                                </p>
+                              </div>
+                              <Badge
+                                className={cn(
+                                  "border-0 text-[10px]",
+                                  agent.lastSkillCheckStatus === "passed"
+                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
+                                    : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200",
+                                )}
+                              >
+                                {agent.lastSkillCheckStatus === "passed" ? "Verified" : "Active"}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-2 rounded-xl bg-white px-3 py-2 text-[10px] text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
+                          No agents yet.
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
                 <>
-                {!preSelectedUser && createMode === 'direct' && (
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem className="space-y-0.5">
+                      <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                        Market Question
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Will BTC be above $70k by May 1?"
+                          className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage className="text-xs" />
+                    </FormItem>
+                  )}
+                />
+
+                {!preSelectedUser && createMode === 'open' && (
                   <FormField
                     control={form.control}
                     name="challenged"
-                    render={({ field }) => {
-                      // Deduplicate friend list by user id to avoid repeating entries
-                      const uniqueMap = new Map<string, any>();
-                      (friends as any[] || []).forEach((friend: any) => {
-                        const friendUser =
-                          friend.requesterId === user?.id
-                            ? friend.addressee
-                            : friend.requester;
-                        if (friendUser && friendUser.id && !uniqueMap.has(friendUser.id)) {
-                          uniqueMap.set(friendUser.id, friendUser);
-                        }
-                      });
-                      const uniqueFriendUsers = Array.from(uniqueMap.values());
-
-                      return (
-                        <FormItem className="space-y-0.5">
-                          <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
-                            Direct Challenger
-                          </FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger className="h-9 rounded-xl border-transparent bg-slate-50/90 text-sm transition-colors focus:ring-2 focus:ring-primary/50 dark:bg-slate-800/80">
-                                <SelectValue placeholder="Select a friend to challenge" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent className="z-[80] border-0 shadow-md bg-white dark:bg-slate-800 rounded-lg">
-                              {uniqueFriendUsers.length === 0 ? (
-                                <div className="p-4 text-center text-sm text-slate-500">
-                                  <p>No friends yet</p>
-                                  <p className="text-xs mt-1">Go to Friends tab to add friends</p>
-                                </div>
-                              ) : (
-                                uniqueFriendUsers.map((friendUser: any) => (
-                                  <SelectItem
-                                    key={friendUser.id}
-                                    value={friendUser.id}
-                                    className="cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 py-2 border-0 outline-none"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                        {(friendUser.firstName?.[0] || friendUser.username?.[0] || "U").toUpperCase()}
-                                      </div>
-                                      <div className="flex flex-col">
-                                        <span className="font-medium text-sm">
-                                          {friendUser.firstName || friendUser.username}
-                                        </span>
-                                        <span className="text-xs text-slate-500">
-                                          @{friendUser.username || 'user'}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      );
-                    }}
+                    render={({ field }) => (
+                      <FormItem className="space-y-0.5">
+                        <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                          Opponent
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value || ""}
+                            placeholder="@username for P2P, leave empty for open"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
+                          />
+                        </FormControl>
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
                   />
                 )}
 
@@ -1876,26 +1949,6 @@ export default function Challenges() {
                     </div>
                   </div>
                 )}
-
-                <FormField
-                  control={form.control}
-                  name="title"
-                  render={({ field }) => (
-                    <FormItem className="space-y-0.5">
-                      <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
-                        Market Question
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Will BTC be above $70k by May 1?"
-                          className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage className="text-xs" />
-                    </FormItem>
-                  )}
-                />
 
                 <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-1.5">
                   <FormField
@@ -2025,59 +2078,23 @@ export default function Challenges() {
 
                 <div className="space-y-0.5">
                   <p className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
-                    Cover Image (optional)
+                    Cover Image
                   </p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setCoverInputType("upload")}
-                      className={cn(
-                        "flex-1 rounded-lg px-2 py-1 text-[10px] font-semibold",
-                        coverInputType === "upload"
-                          ? "bg-[#7440ff] text-white"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                      )}
+                  {!coverPreview ? (
+                    <label
+                      htmlFor="challenge-cover-upload"
+                      className="mt-1 flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
-                      Upload
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCoverInputType("url")}
-                      className={cn(
-                        "flex-1 rounded-lg px-2 py-1 text-[10px] font-semibold",
-                        coverInputType === "url"
-                          ? "bg-[#7440ff] text-white"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                      )}
-                    >
-                      Image URL
-                    </button>
-                  </div>
-
-                  {coverInputType === "upload" ? (
-                    !coverPreview ? (
-                      <div>
-                        <label
-                          htmlFor="challenge-cover-upload"
-                          className="mt-1 flex cursor-pointer items-center justify-between rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[10px] text-slate-500 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-400"
-                        >
-                          <span>Upload a cover image or GIF</span>
-                          <Upload className="h-3.5 w-3.5 text-slate-400" />
-                        </label>
-                        <input
-                          id="challenge-cover-upload"
-                          type="file"
-                          accept="image/*"
-                          onChange={handleCoverSelect}
-                          className="hidden"
-                        />
-                      </div>
-                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>Upload cover</span>
+                    </label>
+                  ) : (
+                    <div className="space-y-2">
                       <div className="relative overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
                         <img
                           src={coverPreview}
                           alt="Challenge cover preview"
-                          className="h-20 w-full object-cover"
+                          className="h-24 w-full object-cover"
                         />
                         <button
                           type="button"
@@ -2087,15 +2104,22 @@ export default function Challenges() {
                           <X className="h-3 w-3" />
                         </button>
                       </div>
-                    )
-                  ) : (
-                    <Input
-                      value={coverUrl}
-                      onChange={(event) => setCoverUrl(event.target.value)}
-                      placeholder="https://example.com/cover.gif"
-                      className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
-                    />
+                      <label
+                        htmlFor="challenge-cover-upload"
+                        className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg bg-slate-100 px-3 text-[10px] font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200"
+                      >
+                        <Upload className="h-3 w-3" />
+                        <span>Change image</span>
+                      </label>
+                    </div>
                   )}
+                  <input
+                    id="challenge-cover-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCoverSelect}
+                    className="hidden"
+                  />
                 </div>
 
                 <div className="space-y-0.5">
@@ -2204,7 +2228,9 @@ export default function Challenges() {
                           </button>
                         </div>
                       </FormControl>
-                      <p className="mt-0.5 text-center text-[11px] text-slate-500 dark:text-slate-400">Opponent takes opposite side</p>
+                      <p className="mt-0.5 text-center text-[11px] text-slate-500 dark:text-slate-400">
+                        Opponent picks {form.watch("challengerSide") === "YES" ? "NO" : "YES"}
+                      </p>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
@@ -2248,18 +2274,22 @@ export default function Challenges() {
                     type="submit"
                     disabled={
                       createMode === "agent"
-                        ? !agentDisplayName.trim() ||
-                          !canProvisionAgentOnSelectedChain ||
-                          createAgentMutation.isPending
+                        ? agentFlowMode === "bantah"
+                          ? !agentDisplayName.trim() ||
+                            !canProvisionAgentOnSelectedChain ||
+                            createAgentMutation.isPending
+                          : false
                         : createChallengeMutation.isPending || isCoverUploading || isPreparingChallenge
                     }
                     className="h-9 flex-1 rounded-xl text-sm text-black hover:opacity-90"
                     style={{ backgroundColor: '#ccff00' }}
                   >
                     {createMode === "agent"
-                      ? createAgentMutation.isPending
-                        ? "Creating Agent..."
-                        : "Create Agent"
+                      ? agentFlowMode === "bantah"
+                        ? createAgentMutation.isPending
+                          ? "Creating Agent..."
+                          : "Create Agent"
+                        : "Continue to Import"
                       : isPreparingChallenge
                       ? "Locking stake..."
                       : createChallengeMutation.isPending
@@ -2271,6 +2301,16 @@ export default function Challenges() {
             </Form>
           </DialogContent>
         </Dialog>
+
+        <AgentImportDialog
+          open={isImportAgentDialogOpen}
+          onOpenChange={setIsImportAgentDialogOpen}
+          mode={agentImportMode}
+          onModeChange={setAgentImportMode}
+          initialName={agentDisplayName.trim()}
+          initialSpecialty={agentSpecialty}
+          onImported={handleImportedAgent}
+        />
 
         {/* Search results and other content below the feed */}
         {searchTerm && (

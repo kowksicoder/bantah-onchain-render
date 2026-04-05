@@ -1,0 +1,53 @@
+{
+  "name": "@elizaos/plugin-bantah",
+  "version": "0.1.0",
+  "description": "Bantah Protocol plugin for Eliza agents to create, read, and join Bantah markets.",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "images"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{ recursive: true, force: true });\"",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "elizaos",
+    "plugin",
+    "bantah",
+    "prediction-markets",
+    "base",
+    "agentkit",
+    "ai-agents"
+  ],
+  "author": "Bantah",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bantah/plugin-bantah"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@elizaos/core": "^1.2.12"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.11",
+    "typescript": "^5.4.5"
+  }
+}

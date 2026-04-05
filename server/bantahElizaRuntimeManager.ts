@@ -23,13 +23,13 @@ import {
 import { db } from "./db";
 import { storage } from "./storage";
 import { createBantahElizaSkillsPlugin } from "./bantahElizaSkillsPlugin";
+import { BantahElizaRuntimeMemoryAdapter } from "./bantahElizaRuntimeMemoryAdapter";
 import { buildSkillErrorEnvelope } from "./agentProvisioning";
 
 const LOCAL_AGENT_ENV_PATH = path.resolve(
   process.cwd(),
   "../Agent/typescript/examples/vercel-ai-sdk-smart-wallet-chatbot/.env",
 );
-
 type ManagedRuntimeEntry = {
   agentId: string;
   runtime: AgentRuntime;
@@ -48,6 +48,11 @@ function ensureElizaEnvFallback() {
     path: LOCAL_AGENT_ENV_PATH,
     override: false,
   });
+
+  const openAiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!process.env.OPENROUTER_API_KEY?.trim() && openAiKey.startsWith("sk-or-")) {
+    process.env.OPENROUTER_API_KEY = openAiKey;
+  }
 }
 
 function ensureRuntimeEnv() {
@@ -144,7 +149,8 @@ export async function startManagedBantahAgentRuntime(
       character: buildRuntimeCharacter(startingConfig) as any,
       plugins: [bootstrapPlugin, openrouterPlugin, skillsPlugin],
     });
-    await runtime.start();
+    runtime.registerDatabaseAdapter(new BantahElizaRuntimeMemoryAdapter() as any);
+    await runtime.initialize();
 
     const activeConfig = withRuntimeStatus(startingConfig, "active");
     managedRuntimes.set(agentId, {
