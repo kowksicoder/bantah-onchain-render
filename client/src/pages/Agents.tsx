@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import {
-  Bot,
   CheckCircle2,
   Copy,
   ExternalLink,
@@ -14,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { AgentIcon } from "@/components/AgentIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -219,6 +219,27 @@ export default function Agents() {
     setImportDialogOpen(true);
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("action") !== "import") return;
+
+    if (user) {
+      setImportDialogOpen(true);
+    } else {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in before importing an agent.",
+        variant: "destructive",
+      });
+    }
+
+    params.delete("action");
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, [user, toast]);
+
   const handleCreateAgent = () => {
     if (!user) {
       toast({
@@ -261,7 +282,8 @@ export default function Agents() {
           <div className="flex flex-col gap-5 p-5 sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="space-y-3">
-                <Badge className="w-fit border-0 bg-[#7440ff]/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
+                <Badge className="inline-flex w-fit items-center gap-2 border-0 bg-[#7440ff]/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
+                  <AgentIcon className="h-4 w-4" />
                   Bantah Agents
                 </Badge>
                 <div className="space-y-2">
@@ -341,7 +363,7 @@ export default function Agents() {
               <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
                 <CardContent className="flex flex-col items-start gap-4 p-5">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#7440ff]/10 text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
-                    <Bot className="h-6 w-6" />
+                    <AgentIcon className="h-6 w-6" />
                   </div>
                   <div className="space-y-1">
                     <h3 className="text-lg font-semibold">No agents live yet</h3>
@@ -370,7 +392,7 @@ export default function Agents() {
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex min-w-0 items-center gap-3">
                           <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#7440ff]/10 text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
-                            <Bot className="h-5 w-5" />
+                            <AgentIcon className="h-5 w-5" />
                             {agent.lastSkillCheckStatus === "passed" ? (
                               <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
                                 <ShieldCheck className="h-3 w-3" />

@@ -5,9 +5,10 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Bell, X, Check, Zap, Clock, Eye, Flame, Rocket, CheckCircle2, Bot, Megaphone } from 'lucide-react';
+import { Bell, X, Check, Zap, Clock, Eye, Flame, Rocket, CheckCircle2, Megaphone } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import Pusher from 'pusher-js';
+import { AgentIcon } from '@/components/AgentIcon';
 
 interface Notification {
   id: string;
@@ -268,7 +269,7 @@ function getIconForEvent(event: string, className: string) {
     case 'match.found':
       return <CheckCircle2 className={className} />;
     case 'system.joined':
-      return <Bot className={className} />;
+      return <AgentIcon className={className} alt="Agent notification" />;
     default:
       return <Megaphone className={className} />;
   }

@@ -10,6 +10,7 @@ import { ChallengeCard } from "@/components/ChallengeCard";
 import { ChallengeChat } from "@/components/ChallengeChat";
 import { JoinChallengeModal } from "@/components/JoinChallengeModal";
 import { BantMap } from "@/components/BantMap";
+import { AgentIcon } from "@/components/AgentIcon";
 import { Button } from "@/components/ui/button";
 import CategoryBar from "@/components/CategoryBar";
 import PolymarketTab, { type PolymarketMarket } from "@/components/PolymarketTab";
@@ -60,7 +61,6 @@ import {
   Users,
   Shield,
   Search,
-  Bot,
   ArrowUp,
   ArrowDown,
   Upload,
@@ -224,6 +224,11 @@ export default function Challenges() {
   const dueDatePickerRef = useRef<HTMLDivElement | null>(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isClockOpen, setIsClockOpen] = useState(false);
+
+  const openImportAgentFlow = () => {
+    setIsCreateDialogOpen(false);
+    window.location.href = "/agents?action=import";
+  };
 
   // Listen for header search events dispatched from Navigation
   useEffect(() => {
@@ -1407,7 +1412,7 @@ export default function Challenges() {
           <div className="text-center py-20">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
               {challengeStatusTab === "agents" ? (
-                <Bot className="w-8 h-8 text-slate-400" />
+                <AgentIcon className="h-8 w-8" />
               ) : (
                 <Search className="w-8 h-8 text-slate-400" />
               )}
@@ -1623,10 +1628,6 @@ export default function Challenges() {
                 Agent
               </button>
             </div>
-            <p className="mb-1 hidden text-center text-[10px] leading-tight text-slate-500 dark:text-slate-400 sm:block">
-              Open: Anyone can join - P2P: Direct challenger - Agent: Create a Bantah agent
-            </p>
-
             <Form {...form}>
               <form
                 onSubmit={handleFormSubmit}
@@ -1634,35 +1635,60 @@ export default function Challenges() {
               >
                 {createMode === 'agent' ? (
                   <div className="space-y-2.5">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
-                        Agent name
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Bantah Alpha"
-                          className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
-                          value={agentDisplayName}
-                          onChange={(event) => setAgentDisplayName(event.target.value)}
-                        />
-                      </FormControl>
+                    <div className="flex items-center justify-between rounded-xl bg-slate-50/80 px-3 py-2 dark:bg-slate-800/70">
+                      <div>
+                        <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">
+                          Create a Bantah agent
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Or import an existing compatible agent
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={openImportAgentFlow}
+                        className="h-8 rounded-full px-3 text-[11px] font-semibold text-[#7440ff] hover:bg-[#7440ff]/10 hover:text-[#7440ff] dark:text-[#b9a2ff] dark:hover:bg-[#7440ff]/15 dark:hover:text-[#c8b8ff]"
+                      >
+                        Import Agent
+                      </Button>
                     </div>
 
                     <div className="space-y-0.5">
-                      <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                      <label
+                        htmlFor="agent-display-name"
+                        className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400"
+                      >
+                        Agent name
+                      </label>
+                      <Input
+                        id="agent-display-name"
+                        placeholder="Bantah Alpha"
+                        className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
+                        value={agentDisplayName}
+                        onChange={(event) => setAgentDisplayName(event.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <label
+                        htmlFor="agent-specialty"
+                        className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400"
+                      >
                         Agent specialty
-                      </FormLabel>
+                      </label>
                       <Select
                         value={agentSpecialty}
                         onValueChange={(value) =>
                           setAgentSpecialty(value as "general" | "crypto" | "sports" | "politics")
                         }
                       >
-                        <FormControl>
-                          <SelectTrigger className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0">
-                            <SelectValue placeholder="Select a specialty" />
-                          </SelectTrigger>
-                        </FormControl>
+                        <SelectTrigger
+                          id="agent-specialty"
+                          className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0"
+                        >
+                          <SelectValue placeholder="Select a specialty" />
+                        </SelectTrigger>
                         <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
                           {[
                             { value: "general", label: "General" },
@@ -1679,32 +1705,27 @@ export default function Challenges() {
                     </div>
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            Default Bantah skills
-                          </p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            Included automatically for every Bantah agent.
-                          </p>
-                        </div>
-                        <Badge className="border-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Default Bantah skills
+                        </p>
+                        <Badge className="h-6 border-0 bg-emerald-100 px-2 text-[10px] text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
                           Default
                         </Badge>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div className="mt-2 flex flex-wrap gap-1.5">
                         {defaultAgentSkills.map((skill) => (
                           <span
                             key={skill}
                             className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm dark:bg-slate-800 dark:text-slate-200"
                           >
-                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                            <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
                             {skill}
                           </span>
                         ))}
                       </div>
-                      <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                        Wallet and AgentKit are provisioned automatically.
+                      <p className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                        Provisioned automatically with wallet metadata.
                       </p>
                     </div>
                   </div>

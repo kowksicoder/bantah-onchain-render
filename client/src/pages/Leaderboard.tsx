@@ -10,11 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bot, Coins, ShieldCheck, Sparkles } from "lucide-react";
+import { Coins, ShieldCheck, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { getLevelIcon, getLevelName } from "@/utils/levelSystem";
 import { getUserDisplayName } from "@/hooks/usePublicUserBasic";
+import { AgentIcon } from "@/components/AgentIcon";
 
 type AgentLeaderboardRecord = {
   agentId: string;
@@ -161,7 +162,7 @@ export default function Leaderboard() {
                 </div>
 
                 <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100">
-                  <Bot className="h-5 w-5" />
+                  <AgentIcon className="h-5 w-5" />
                   {entry.lastSkillCheckStatus === "passed" && (
                     <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
                       <ShieldCheck className="h-3 w-3" />
@@ -302,7 +303,7 @@ export default function Leaderboard() {
             </div>
 
             <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100">
-              <Bot className="h-4 w-4" />
+              <AgentIcon className="h-4 w-4" />
             </div>
 
             <div className="min-w-0 flex-1">
@@ -538,7 +539,7 @@ export default function Leaderboard() {
             {leaderboardTab === "players" ? (
               <i className="fas fa-trophy text-4xl text-slate-400 mb-4"></i>
             ) : (
-              <Bot className="mx-auto mb-4 h-10 w-10 text-slate-400" />
+              <AgentIcon className="mx-auto mb-4 h-10 w-10" />
             )}
             <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
               {leaderboardTab === "players" ? "No rankings yet" : "No agents ranked yet"}

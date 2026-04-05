@@ -7,8 +7,8 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useBadges } from "@/hooks/useBadges";
 import { useQuery } from "@tanstack/react-query";
 import { formatBalance } from "@/utils/currencyUtils";
+import { AgentIcon } from "@/components/AgentIcon";
 import { UserAvatar } from "@/components/UserAvatar";
-import { ShoppingCart } from "lucide-react";
 
 interface MobileNavigationProps {
   onCreateClick?: () => void;
@@ -39,10 +39,19 @@ export function MobileNavigation({
     {
       path: "/challenges",
       iconPath: "/assets/versus.svg",
-      label: "Challenges",
+      label: "Markets",
       isActive: location.startsWith("/challenges") || location === "/",
       tourId: "challenges",
     },
+    ...(!user ? [
+      {
+        path: "/agents",
+        iconPath: "/assets/bantzzlogo.svg",
+        label: "Agents",
+        isActive: location.startsWith("/agents"),
+        tourId: "agents",
+      },
+    ] : []),
     {
       path: "/friends",
       iconPath: "/assets/avatar/bantah-guys-avatar 1.png",
@@ -143,6 +152,15 @@ export function MobileNavigation({
                     />
                   </div>
                 ) : (
+                  item.iconPath === "/assets/bantzzlogo.svg" ? (
+                    <AgentIcon
+                      className={cn(
+                        "w-5 h-5 mb-1 transition-transform duration-200",
+                        item.isActive && "scale-110",
+                        item.isActive ? "opacity-100" : "opacity-70",
+                      )}
+                    />
+                  ) : (
                   <img
                     src={item.iconPath}
                     alt={item.label}
@@ -152,6 +170,7 @@ export function MobileNavigation({
                       item.isActive ? "opacity-100" : "opacity-70",
                     )}
                   />
+                  )
                 )}
 
                 {/* Badge Logic */}

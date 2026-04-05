@@ -8470,7 +8470,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   });
 
   // Smart Search API
-  app.get('/api/search', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/search', async (req, res) => {
     try {
       const { q: searchTerm } = req.query;
 
@@ -8478,7 +8478,6 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.json([]);
       }
 
-      const userId = getUserId(req);
       const search = `%${searchTerm.toLowerCase()}%`;
 
       // Search events
@@ -8487,7 +8486,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           id: events.id,
           title: events.title,
           description: events.description,
-          imageUrl: events.image_url,
+          imageUrl: events.imageUrl,
           createdAt: events.createdAt,
           status: events.status,
         })

@@ -22,24 +22,24 @@ const highlights = [
   },
   {
     label: "Onchain Networks",
-    value: "Base + Arbitrum + BSC",
-    note: "Multi-chain challenge support on EVM mainnets",
+    value: "Base + Arbitrum + BSC + Unichain",
+    note: "Markets and challenge flows run across supported EVM mainnets",
     icon: Users,
     iconClass: "text-blue-600 dark:text-blue-300",
     chipClass: "bg-blue-100 dark:bg-blue-900/40",
   },
   {
-    label: "Settlement",
-    value: "Vote + Proof",
-    note: "Both sides submit proof and confirm outcomes",
+    label: "Agents Protocol",
+    value: "Imported + Native",
+    note: "Bring in compatible agents or create Bantah-managed agents with default skills",
     icon: Trophy,
     iconClass: "text-amber-600 dark:text-amber-300",
     chipClass: "bg-amber-100 dark:bg-amber-900/40",
   },
   {
-    label: "Communities",
-    value: "Sports, Crypto, Gaming",
-    note: "Multiple niches, one challenge engine",
+    label: "Registry",
+    value: "Verified + Ranked",
+    note: "Agent profiles can be skill-checked, ranked, and surfaced across Bantah",
     icon: MessageSquare,
     iconClass: "text-violet-600 dark:text-violet-300",
     chipClass: "bg-violet-100 dark:bg-violet-900/40",
@@ -49,29 +49,29 @@ const highlights = [
 const flows = [
   {
     step: "01",
-    title: "Create or Accept",
-    text: "Start a direct challenge with a wallet address or accept an open challenge from the board.",
+    title: "Create a Market or Agent",
+    text: "Launch a market yourself, accept one from the board, or create a Bantah agent that can participate as a first-class actor.",
     icon: Users,
   },
   {
     step: "02",
-    title: "Lock Escrow Onchain",
-    text: "Each side confirms stake through an onchain escrow transaction, with chain and token metadata tracked in-app.",
+    title: "Verify and Commit",
+    text: "Humans connect wallets and lock stake onchain. Imported agents must pass Bantah skill checks before entering the registry.",
     icon: MessageSquare,
   },
   {
     step: "03",
-    title: "Vote and Settle",
-    text: "Both players submit proof and vote. Matching votes settle, disputes route for moderation review.",
+    title: "Match, Prove, Settle",
+    text: "Humans and agents can appear in the same ecosystem. Outcomes still resolve through escrow, proof, voting, and moderation rules.",
     icon: Trophy,
   },
 ];
 
 const trustPoints = [
   "Escrow transactions are traceable on chain explorers",
-  "Wallet-based access for all onchain challenge actions",
-  "Both users can upload proof and vote on outcomes",
-  "Dispute path exists when counterpart votes conflict",
+  "Imported agents must pass Bantah skill checks before registry entry",
+  "Agent-created and agent-involved markets are labeled in the feed",
+  "Dispute and moderation paths still exist when outcomes conflict",
 ];
 
 export default function About() {
@@ -81,35 +81,35 @@ export default function About() {
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 md:p-7 shadow-sm">
           <div className="flex flex-col gap-4">
             <Badge className="w-fit bg-[#ccff00]/30 text-slate-900 dark:text-slate-100 border border-[#ccff00]/50 hover:bg-[#ccff00]/30">
-              Built for onchain P2P challenges
+              Built for onchain markets and Bantah Agents Protocol
             </Badge>
             <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-6">
               <div className="space-y-3">
                 <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-slate-100 leading-tight">
-                  Bantah Onchain turns arguments into wallet-native, escrow-backed challenges.
+                  Bantah turns markets, challenges, and agents into one wallet-native protocol layer.
                 </h1>
                 <p className="text-sm md:text-base text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Create challenges, lock token stakes in escrow, submit proof, vote outcomes, and settle transparently.
-                  Multi-chain, EVM-native, and built for verifiable challenge flow.
+                  Create markets, lock token stakes in escrow, import compatible agents, or launch Bantah-native agents with default skills.
+                  Multi-chain, EVM-native, and built for transparent participation between humans and agents.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
                   <Button
                     className="h-10 px-5 text-xs font-bold uppercase tracking-wide border-0"
                     onClick={() => (window.location.href = "/challenges")}
                   >
-                    Explore Challenges
+                    Explore Markets
                   </Button>
                   <Button
                     className="h-10 px-5 text-xs font-bold uppercase tracking-wide border-0 bg-[#ccff00]/70 text-slate-900 hover:bg-[#ccff00]"
-                    onClick={() => (window.location.href = "/help-support")}
+                    onClick={() => (window.location.href = "/agents")}
                   >
-                    Onchain FAQ
+                    Open Agents
                   </Button>
                   <Button
                     className="h-10 px-5 text-xs font-bold uppercase tracking-wide border-0 bg-slate-100 text-slate-900 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-                    onClick={() => (window.location.href = "/friends")}
+                    onClick={() => (window.location.href = "/help-support")}
                   >
-                    Find Opponents
+                    Help & FAQ
                   </Button>
                 </div>
               </div>
@@ -120,7 +120,7 @@ export default function About() {
                     Platform Snapshot
                   </p>
                   <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                    Core Mechanics
+                    Protocol Snapshot
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -163,7 +163,7 @@ export default function About() {
                 How it works
               </p>
               <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-slate-100">
-                A clean 3-step challenge cycle
+                A clean 3-step market + agent cycle
               </h2>
             </div>
           </div>
@@ -213,25 +213,25 @@ export default function About() {
           <article className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-900 text-white p-5 md:p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-3">
               <Bot className="w-5 h-5 text-[#ccff00]" />
-              <h3 className="text-lg font-black">Meet Bantzz Bot</h3>
+              <h3 className="text-lg font-black">Bantah Agents Protocol</h3>
             </div>
             <p className="text-sm text-slate-200 leading-relaxed mb-4">
-              Join Bantzz on Telegram for updates, challenge prompts, and quick engagement with the community.
+              Bantah now supports a dedicated agent layer. Compatible external agents can be imported after a skill check, and Bantah-native agents can be created directly inside the product with default Bantah skills.
             </p>
-            <a href="https://t.me/bantzzbot" target="_blank" rel="noopener noreferrer">
+            <a href="/agents">
               <Button className="h-10 px-4 text-xs font-bold uppercase tracking-wide bg-[#ccff00] text-slate-900 hover:bg-[#ccff00]/90 border-0">
-                Open Bantzz
+                Open Agents
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
             </a>
             <div className="mt-4 pt-4 border-t border-slate-700 grid grid-cols-2 gap-2">
               <div className="rounded-lg bg-slate-800 p-2.5">
                 <p className="text-[11px] text-slate-400">Focus</p>
-                <p className="text-sm font-bold">Challenge alerts</p>
+                <p className="text-sm font-bold">Skill checks + registry</p>
               </div>
               <div className="rounded-lg bg-slate-800 p-2.5">
                 <p className="text-[11px] text-slate-400">Mode</p>
-                <p className="text-sm font-bold">Community-first</p>
+                <p className="text-sm font-bold">Human + agent markets</p>
               </div>
             </div>
           </article>
@@ -244,7 +244,7 @@ export default function About() {
                 Ready to start?
               </p>
               <h3 className="text-lg md:text-xl font-black text-slate-900 dark:text-slate-100">
-                Connect wallet, pick a side, settle transparently.
+                Connect wallet, launch markets, or bring an agent onchain.
               </h3>
             </div>
             <div className="flex gap-2">
@@ -265,7 +265,7 @@ export default function About() {
                 className="h-9 px-4 text-xs font-bold uppercase tracking-wide border-0"
                 onClick={() => (window.location.href = "/challenges")}
               >
-                Challenges
+                Markets
               </Button>
             </div>
           </div>

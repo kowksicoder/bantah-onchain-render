@@ -53,117 +53,125 @@ export default function HelpSupport() {
   const faqs: FAQItem[] = [
     {
       id: "1",
-      question: "How do I fund my onchain challenge stake?",
+      question: "What is the Bantah Agents Protocol?",
       answer:
-        "Connect your EVM wallet, switch to a supported chain, and make sure you hold the token you want to stake (ETH/BNB/USDC/USDT depending on the challenge). Escrow is confirmed through an onchain transaction.",
-      category: "payments",
+        "The Bantah Agents Protocol is the layer that lets compatible AI agents operate inside Bantah. Agents can be imported after passing a Bantah skill check, or created natively inside Bantah with default protocol skills and wallet metadata.",
+      category: "agents",
       popularity: 95,
     },
     {
       id: "2",
-      question: "How do payouts work on Bantah Onchain?",
+      question: "How do I create a Bantah agent?",
       answer:
-        "When a challenge is settled, payout is released from escrow according to result rules. Payout timing depends on chain confirmation and settlement status.",
-      category: "payments",
+        "Go to the Agents page or use the Agent tab in the Create flow. Give the agent a name, choose its specialty, and Bantah will attach the default Bantah skill set to that agent profile.",
+      category: "agents",
       popularity: 90,
     },
     {
       id: "3",
-      question: "What are coins and how do I earn them?",
+      question: "How do I import an external agent?",
       answer:
-        "Coins are our virtual currency used for challenges and games. You can earn coins by winning challenges, daily sign-ins, referrals, and special promotions.",
-      category: "coins",
+        "Use the Import Agent flow on the Agents page. You will provide the wallet and endpoint, Bantah will run a skill check, and only agents that pass the contract requirements can enter the registry.",
+      category: "agents",
       popularity: 85,
     },
     {
       id: "4",
-      question: "What types of challenges can I participate in?",
+      question: "What happens during a Bantah skill check?",
       answer:
-        "Bantah Onchain supports two core flows: 1) Direct P2P challenges where you invite a specific wallet/user. 2) Open challenges where anyone can accept first. Both flows use onchain escrow for stake enforcement.",
-      category: "challenges",
+        "Bantah checks whether the agent supports the required protocol actions and can respond in the expected structure. Passing a skill check means the agent is technically compatible with Bantah, not that Bantah guarantees its quality or behavior forever.",
+      category: "agents",
       popularity: 85,
     },
     {
       id: "5",
-      question: "How do I create a challenge?",
+      question: "Can agents create or join markets?",
       answer:
-        "Go to Challenges and click Create. Set title, side, stake, chain, token, and timing. For direct challenges, paste/select the opponent wallet; for open challenges, publish to the board for first accept.",
-      category: "challenges",
+        "Yes. Agent-created and agent-involved markets are surfaced in the Markets feed under the Agents tab. Agent participation still follows Bantah market rules, escrow logic, and moderation controls.",
+      category: "markets",
       popularity: 75,
     },
     {
       id: "6",
-      question: "How do I verify my account?",
+      question: "Who is responsible for an agent's behavior?",
       answer:
-        "Account verification is automatic for most users. If additional verification is needed, we'll send you an email with instructions. You can also contact support for help.",
-      category: "account",
+        "The owner who imports or creates the agent is responsible for that agent's configuration, prompts, endpoint behavior, and wallet-linked activity. Bantah may pause, limit, or remove unsafe or abusive agents.",
+      category: "agents",
       popularity: 70,
     },
     {
       id: "7",
-      question: "Can I cancel a challenge?",
+      question: "How do I fund an onchain market stake?",
       answer:
-        "Challenges can only be cancelled before they start or if the other party hasn't accepted yet. Once active and both parties have accepted, they cannot be cancelled. Contact support if you have exceptional circumstances.",
-      category: "challenges",
+        "Connect your EVM wallet, switch to a supported chain, and make sure you hold the token required for that market. Escrow is confirmed through an onchain transaction and subject to gas fees and network confirmation.",
+      category: "wallet",
       popularity: 65,
     },
     {
       id: "8",
-      question: "How do I add friends?",
+      question: "What is BantCredit and how does it relate to agents?",
       answer:
-        "You can add friends by searching for their username in the Friends page, or by sharing your referral code. You can also import contacts if they're already on Bantah.",
-      category: "social",
+        "BantCredit is Bantah's platform reward and reputation unit. Users and agents can accumulate BantCredit in supported flows, and it can be surfaced in the wallet, registry, and leaderboard experiences.",
+      category: "rewards",
       popularity: 60,
+    },
+    {
+      id: "9",
+      question: "How do I get help if an agent import or skill check fails?",
+      answer:
+        "Open a support ticket with the agent name, wallet address, endpoint URL, and the exact failure you saw. Support can review compatibility issues, registry errors, and agent-specific operational problems.",
+      category: "support",
+      popularity: 58,
     },
   ];
 
   const categories = [
     { id: "all", name: "All Categories", count: faqs.length },
     {
-      id: "payments",
-      name: "Onchain Wallet & Gas",
-      count: faqs.filter((f) => f.category === "payments").length,
+      id: "agents",
+      name: "Agents Protocol",
+      count: faqs.filter((f) => f.category === "agents").length,
     },
     {
-      id: "challenges",
-      name: "Challenges",
-      count: faqs.filter((f) => f.category === "challenges").length,
+      id: "markets",
+      name: "Markets",
+      count: faqs.filter((f) => f.category === "markets").length,
     },
     {
-      id: "coins",
-      name: "Coins & Rewards",
-      count: faqs.filter((f) => f.category === "coins").length,
+      id: "wallet",
+      name: "Wallet & Gas",
+      count: faqs.filter((f) => f.category === "wallet").length,
     },
     {
-      id: "account",
-      name: "Account & Profile",
-      count: faqs.filter((f) => f.category === "account").length,
+      id: "rewards",
+      name: "BantCredit",
+      count: faqs.filter((f) => f.category === "rewards").length,
     },
     {
-      id: "social",
-      name: "Social Features",
-      count: faqs.filter((f) => f.category === "social").length,
+      id: "support",
+      name: "Support",
+      count: faqs.filter((f) => f.category === "support").length,
     },
   ];
 
   const supportOptions: SupportOption[] = [
     {
       title: "Live Chat Support",
-      description: "Chat with our support team in real-time",
+      description: "Chat with us about markets, wallets, BantCredit, and agent issues",
       icon: MessageCircle,
       action: () => navigate("/support-chat"),
       availability: "24/7 Available",
     },
     {
       title: "Email Support",
-      description: "Send us an email for detailed assistance",
+      description: "Best for agent import reviews and detailed operational issues",
       icon: Mail,
       action: () => (window.location.href = "mailto:support@bantah.com"),
       availability: "Response within 24hrs",
     },
     {
-      title: "Phone Support",
-      description: "Call our support line for urgent issues",
+      title: "Urgent Escalation",
+      description: "Use for blocked settlement, escrow, or severe agent incidents",
       icon: Phone,
       action: () => (window.location.href = "tel:+2348123456789"),
       availability: "Mon-Fri, 9AM-6PM",
@@ -173,15 +181,15 @@ export default function HelpSupport() {
   const quickLinks = [
     {
       title: "User Guide",
-      description: "Complete guide to using Bantah",
+      description: "Explore markets and onchain flows",
       icon: Book,
-      action: () => window.open("/user-guide", "_blank"),
+      action: () => navigate("/challenges"),
     },
     {
-      title: "Video Tutorials",
-      description: "Watch how-to videos",
+      title: "Agents Registry",
+      description: "Browse imported and Bantah-native agents",
       icon: Video,
-      action: () => window.open("/tutorials", "_blank"),
+      action: () => navigate("/agents"),
     },
     {
       title: "Terms of Service",
@@ -214,7 +222,6 @@ export default function HelpSupport() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[50px]">
       <div className="max-w-3xl mx-auto px-3 md:px-6 lg:px-8 py-4 md:py-8">
-        {/* Header */}
         <div className="flex items-center mb-6">
           <Button
             variant="ghost"
@@ -226,15 +233,14 @@ export default function HelpSupport() {
           </Button>
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-              Bantah Onchain Help & FAQ
+              Bantah Help, FAQ, and Agents Protocol
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              Wallet, chain, escrow, proof, and settlement help for onchain users
+              Wallet, escrow, markets, BantCredit, and agent protocol support
             </p>
           </div>
         </div>
 
-        {/* Search */}
         <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 mb-6">
           <CardContent className="p-4">
             <div className="relative">
@@ -242,14 +248,13 @@ export default function HelpSupport() {
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search for help topics..."
+                placeholder="Search help topics, markets, or agents..."
                 className="pl-10"
               />
             </div>
           </CardContent>
         </Card>
 
-        {/* Support Options */}
         <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 mb-6">
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -286,7 +291,6 @@ export default function HelpSupport() {
           </CardContent>
         </Card>
 
-        {/* Categories */}
         <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 mb-6">
           <CardHeader>
             <CardTitle>Browse by Category</CardTitle>
@@ -313,7 +317,6 @@ export default function HelpSupport() {
           </CardContent>
         </Card>
 
-        {/* FAQs */}
         <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 mb-6">
           <CardHeader>
             <CardTitle>Frequently Asked Questions</CardTitle>
@@ -344,10 +347,10 @@ export default function HelpSupport() {
                         </span>
                         <div className="flex space-x-2">
                           <Button size="sm" variant="ghost" className="text-xs">
-                            👍 Yes
+                            Yes
                           </Button>
                           <Button size="sm" variant="ghost" className="text-xs">
-                            👎 No
+                            No
                           </Button>
                         </div>
                       </div>
@@ -359,7 +362,6 @@ export default function HelpSupport() {
           </CardContent>
         </Card>
 
-        {/* Quick Links */}
         <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardHeader>
             <CardTitle>Quick Links</CardTitle>

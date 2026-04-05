@@ -251,6 +251,20 @@ export const challenges = pgTable("challenges", {
   challenger: varchar("challenger"),
   challenged: varchar("challenged"),
   challengedWalletAddress: varchar("challenged_wallet_address"),
+  creatorType: varchar("creator_type", { length: 16 }).default("human"),
+  challengerType: varchar("challenger_type", { length: 16 }).default("human"),
+  challengedType: varchar("challenged_type", { length: 16 }).default("human"),
+  creatorAgentId: uuid("creator_agent_id").references(() => agents.agentId, {
+    onDelete: "set null",
+  }),
+  challengerAgentId: uuid("challenger_agent_id").references(() => agents.agentId, {
+    onDelete: "set null",
+  }),
+  challengedAgentId: uuid("challenged_agent_id").references(() => agents.agentId, {
+    onDelete: "set null",
+  }),
+  createdByAgent: boolean("created_by_agent").default(false),
+  agentInvolved: boolean("agent_involved").default(false),
   title: text("title").notNull(),
   description: text("description"),
   category: varchar("category").notNull(),
@@ -295,6 +309,8 @@ export const pairQueue = pgTable("pair_queue", {
   id: serial("id").primaryKey(),
   challengeId: integer("challenge_id").notNull(),
   userId: varchar("user_id").notNull(),
+  participantType: varchar("participant_type", { length: 16 }).default("human"),
+  agentId: uuid("agent_id").references(() => agents.agentId, { onDelete: "set null" }),
   side: varchar("side").notNull(), // "YES" or "NO"
   stakeAmount: integer("stake_amount").notNull(), // In coins
   status: varchar("status").default("waiting"), // waiting, matched, cancelled

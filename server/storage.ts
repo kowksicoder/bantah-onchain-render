@@ -121,6 +121,7 @@ export interface IStorage {
       lastSkillCheckStatus: "passed" | "failed";
     },
   ): Promise<Agent>;
+  incrementAgentMarketCount(agentId: string, delta?: number): Promise<Agent>;
 
   // User preferences operations
   getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
@@ -355,7 +356,7 @@ export class DatabaseStorage implements IStorage {
   }> {
     const [activeParticipants] = await this.db
       .select({
-        count: sql<number>`count(distinct ${pairQueue.userId})`,
+        count: sql<number>`count(distinct coalesce(${pairQueue.agentId}::text, ${pairQueue.userId}))`,
       })
       .from(pairQueue)
       .where(
@@ -368,6 +369,8 @@ export class DatabaseStorage implements IStorage {
     const queueRows = await this.db
       .select({
         userId: pairQueue.userId,
+        participantType: pairQueue.participantType,
+        agentId: pairQueue.agentId,
         side: pairQueue.side,
         createdAt: pairQueue.createdAt,
         user: {
@@ -376,9 +379,14 @@ export class DatabaseStorage implements IStorage {
           firstName: users.firstName,
           profileImageUrl: users.profileImageUrl,
         },
+        agent: {
+          agentId: agents.agentId,
+          agentName: agents.agentName,
+        },
       })
       .from(pairQueue)
       .leftJoin(users, eq(pairQueue.userId, users.id))
+      .leftJoin(agents, eq(pairQueue.agentId, agents.agentId))
       .where(
         and(
           eq(pairQueue.challengeId, challenge.id),
@@ -398,14 +406,25 @@ export class DatabaseStorage implements IStorage {
     const seen = new Set<string>();
 
     for (const row of queueRows) {
-      const userId = String(row.userId || row.user?.id || "");
-      if (!userId || seen.has(userId)) continue;
-      seen.add(userId);
+      const participantType =
+        String(row.participantType || "").trim().toLowerCase() === "agent" && row.agentId
+          ? "agent"
+          : "human";
+      const participantId =
+        participantType === "agent"
+          ? String(row.agentId || "")
+          : String(row.userId || row.user?.id || "");
+      const seenKey = `${participantType}:${participantId}`;
+      if (!participantId || seen.has(seenKey)) continue;
+      seen.add(seenKey);
       participantPreviewUsers.push({
-        id: userId,
-        username: row.user?.username || null,
-        firstName: row.user?.firstName || null,
-        profileImageUrl: row.user?.profileImageUrl || null,
+        id: participantId,
+        username:
+          participantType === "agent"
+            ? row.agent?.agentName || null
+            : row.user?.username || null,
+        firstName: participantType === "agent" ? "Agent" : row.user?.firstName || null,
+        profileImageUrl: participantType === "agent" ? null : row.user?.profileImageUrl || null,
         side: row.side || null,
       });
       if (participantPreviewUsers.length >= 2) break;
@@ -973,6 +992,19 @@ export class DatabaseStorage implements IStorage {
         lastSkillCheckAt: updates.lastSkillCheckAt,
         lastSkillCheckScore: updates.lastSkillCheckScore,
         lastSkillCheckStatus: updates.lastSkillCheckStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.agentId, agentId))
+      .returning();
+
+    return updatedAgent;
+  }
+
+  async incrementAgentMarketCount(agentId: string, delta = 1): Promise<Agent> {
+    const [updatedAgent] = await this.db
+      .update(agents)
+      .set({
+        marketCount: sql`${agents.marketCount} + ${delta}`,
         updatedAt: new Date(),
       })
       .where(eq(agents.agentId, agentId))
@@ -1607,6 +1639,13 @@ export class DatabaseStorage implements IStorage {
   // Challenge operations
   async getChallenges(userId: string, limit = 10): Promise<(Challenge & { challengerUser: User, challengedUser: User, participantCount: number })[]> {
     const dbUser = await this.getUser(userId);
+    const ownedAgentRows = await this.db
+      .select({ agentId: agents.agentId })
+      .from(agents)
+      .where(eq(agents.ownerId, userId));
+    const ownedAgentIds = ownedAgentRows
+      .map((row) => row.agentId)
+      .filter((value): value is string => Boolean(value));
     const walletTargets = new Set<string>();
     const primaryWallet = normalizeEvmAddress((dbUser as any)?.primaryWalletAddress);
     if (primaryWallet) walletTargets.add(primaryWallet);
@@ -1624,6 +1663,16 @@ export class DatabaseStorage implements IStorage {
       visibilityFilters.push(inArray(challenges.challengedWalletAddress, targetWalletList));
     }
 
+    if (ownedAgentIds.length > 0) {
+      visibilityFilters.push(
+        or(
+          inArray(challenges.creatorAgentId, ownedAgentIds),
+          inArray(challenges.challengerAgentId, ownedAgentIds),
+          inArray(challenges.challengedAgentId, ownedAgentIds),
+        )!,
+      );
+    }
+
     // First get all challenges
     const challengesList = await this.db
       .select({
@@ -1631,6 +1680,14 @@ export class DatabaseStorage implements IStorage {
         challenger: challenges.challenger,
         challenged: challenges.challenged,
         challengedWalletAddress: challenges.challengedWalletAddress,
+        creatorType: challenges.creatorType,
+        challengerType: challenges.challengerType,
+        challengedType: challenges.challengedType,
+        creatorAgentId: challenges.creatorAgentId,
+        challengerAgentId: challenges.challengerAgentId,
+        challengedAgentId: challenges.challengedAgentId,
+        createdByAgent: challenges.createdByAgent,
+        agentInvolved: challenges.agentInvolved,
         title: challenges.title,
         description: challenges.description,
         category: challenges.category,
@@ -1727,6 +1784,14 @@ export class DatabaseStorage implements IStorage {
         challenger: challenges.challenger,
         challenged: challenges.challenged,
         challengedWalletAddress: challenges.challengedWalletAddress,
+        creatorType: challenges.creatorType,
+        challengerType: challenges.challengerType,
+        challengedType: challenges.challengedType,
+        creatorAgentId: challenges.creatorAgentId,
+        challengerAgentId: challenges.challengerAgentId,
+        challengedAgentId: challenges.challengedAgentId,
+        createdByAgent: challenges.createdByAgent,
+        agentInvolved: challenges.agentInvolved,
         title: challenges.title,
         description: challenges.description,
         category: challenges.category,
@@ -1820,6 +1885,14 @@ export class DatabaseStorage implements IStorage {
         challenger: challenges.challenger,
         challenged: challenges.challenged,
         challengedWalletAddress: challenges.challengedWalletAddress,
+        creatorType: challenges.creatorType,
+        challengerType: challenges.challengerType,
+        challengedType: challenges.challengedType,
+        creatorAgentId: challenges.creatorAgentId,
+        challengerAgentId: challenges.challengerAgentId,
+        challengedAgentId: challenges.challengedAgentId,
+        createdByAgent: challenges.createdByAgent,
+        agentInvolved: challenges.agentInvolved,
         title: challenges.title,
         description: challenges.description,
         category: challenges.category,
@@ -1964,6 +2037,14 @@ export class DatabaseStorage implements IStorage {
         challenger: challengeData.challenger || null,
         challenged: challengeData.challenged || null,
         challengerSide: challengeData.challengerSide || null,
+        creatorType: (challengeData as any).creatorType || 'human',
+        challengerType: (challengeData as any).challengerType || 'human',
+        challengedType: (challengeData as any).challengedType || 'human',
+        creatorAgentId: (challengeData as any).creatorAgentId || null,
+        challengerAgentId: (challengeData as any).challengerAgentId || null,
+        challengedAgentId: (challengeData as any).challengedAgentId || null,
+        createdByAgent: (challengeData as any).createdByAgent || false,
+        agentInvolved: (challengeData as any).agentInvolved || false,
         title: challengeData.title || 'Admin Challenge',
         description: challengeData.description || null,
         category: challengeData.category || 'general',
@@ -2007,6 +2088,14 @@ export class DatabaseStorage implements IStorage {
         challenger: challenges.challenger,
         challenged: challenges.challenged,
         challengedWalletAddress: challenges.challengedWalletAddress,
+        creatorType: challenges.creatorType,
+        challengerType: challenges.challengerType,
+        challengedType: challenges.challengedType,
+        creatorAgentId: challenges.creatorAgentId,
+        challengerAgentId: challenges.challengerAgentId,
+        challengedAgentId: challenges.challengedAgentId,
+        createdByAgent: challenges.createdByAgent,
+        agentInvolved: challenges.agentInvolved,
         title: challenges.title,
         description: challenges.description,
         category: challenges.category,
@@ -2245,6 +2334,14 @@ export class DatabaseStorage implements IStorage {
         challenger: challenges.challenger,
         challenged: challenges.challenged,
         challengedWalletAddress: challenges.challengedWalletAddress,
+        creatorType: challenges.creatorType,
+        challengerType: challenges.challengerType,
+        challengedType: challenges.challengedType,
+        creatorAgentId: challenges.creatorAgentId,
+        challengerAgentId: challenges.challengerAgentId,
+        challengedAgentId: challenges.challengedAgentId,
+        createdByAgent: challenges.createdByAgent,
+        agentInvolved: challenges.agentInvolved,
         title: challenges.title,
         description: challenges.description,
         category: challenges.category,

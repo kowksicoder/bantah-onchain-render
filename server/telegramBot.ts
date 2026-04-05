@@ -51,6 +51,8 @@ interface ChallengeBroadcast {
   stake_amount: number;
   stake_display?: string;
   settlement_label?: string;
+  tokenSymbol?: string;
+  token_symbol?: string;
   status: string;
   end_time?: string;
   category?: string;
@@ -69,6 +71,8 @@ interface ChallengeResultBroadcast {
     username?: string;
   };
   stake_amount: number;
+  tokenSymbol?: string;
+  token_symbol?: string;
   category?: string;
   result_type: 'challenger_wins' | 'challenged_wins' | 'draw';
 }
@@ -84,6 +88,8 @@ interface MatchmakingBroadcast {
     username?: string;
   };
   stake_amount: number;
+  tokenSymbol?: string;
+  token_symbol?: string;
   category?: string;
 }
 
@@ -108,6 +114,8 @@ interface ChallengeJoinedBroadcast {
   };
   participant_count: number;
   stake_amount: number;
+  tokenSymbol?: string;
+  token_symbol?: string;
   category?: string;
   imageUrl?: string;
 }
@@ -136,6 +144,8 @@ interface ChallengeAwaitingBroadcast {
     username?: string;
   };
   stake_amount: number;
+  tokenSymbol?: string;
+  token_symbol?: string;
   category?: string;
   imageUrl?: string;
 }
@@ -152,6 +162,42 @@ export class TelegramBotService {
     this.channelId = config.channelId;
     this.baseUrl = `https://api.telegram.org/bot${this.token}`;
     this.bot = new TelegramBot(config.token, { polling: false }); // Initialize bot instance, polling disabled as we handle it manually
+  }
+
+  private normalizeTokenSymbol(tokenLike: unknown): string | null {
+    if (typeof tokenLike !== 'string') return null;
+    const trimmed = tokenLike.trim();
+    if (!trimmed) return null;
+    return trimmed.toUpperCase();
+  }
+
+  private formatNumber(value: number): string {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    const absolute = Math.abs(safeValue);
+    const maxFractionDigits =
+      absolute >= 1000 ? 2 : absolute >= 1 ? 4 : absolute > 0 ? 8 : 0;
+
+    return safeValue.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: maxFractionDigits,
+    });
+  }
+
+  private formatAmount(value: number, tokenLike?: unknown): string {
+    const amountText = this.formatNumber(value);
+    const tokenSymbol = this.normalizeTokenSymbol(tokenLike);
+    return tokenSymbol ? `${amountText} ${tokenSymbol}` : amountText;
+  }
+
+  private formatStakeDisplay(
+    rawDisplay: unknown,
+    value: number,
+    tokenLike?: unknown,
+  ): string {
+    if (typeof rawDisplay === 'string' && rawDisplay.trim().length > 0) {
+      return rawDisplay.trim();
+    }
+    return this.formatAmount(value, tokenLike);
   }
 
   // Test bot connection
@@ -292,8 +338,8 @@ ${categoryEmoji} *${event.title}*
 
 ${event.description ? `💭 _${event.description}_\n` : ''}
 👤 *Creator:* ${creatorDisplay}
-💰 *Current Pool:* ₦${poolTotal.toLocaleString()}
-🎫 *Entry Fee:* ₦${entryFee.toLocaleString()}
+💰 *Current Pool:* ${this.formatAmount(poolTotal)}
+🎫 *Entry Fee:* ${this.formatAmount(entryFee)}
 👥 *Max Players:* ${event.max_participants || 'Unlimited'}
 ${privacyEmoji} *${event.is_private ? 'Private' : 'Public'}* • ${categoryEmoji} *${(event.category || 'General').charAt(0).toUpperCase() + (event.category || 'General').slice(1)}*
 
@@ -364,9 +410,11 @@ ${timeInfo}
                        challenge.status === 'completed' ? '✅' : '📋';
 
     const stakeDisplay =
-      typeof challenge.stake_display === 'string' && challenge.stake_display.trim().length > 0
-        ? challenge.stake_display.trim()
-        : `₦${challenge.stake_amount.toLocaleString()}`;
+      this.formatStakeDisplay(
+        challenge.stake_display,
+        challenge.stake_amount,
+        challenge.tokenSymbol || challenge.token_symbol,
+      );
     const settlementLine =
       typeof challenge.settlement_label === 'string' && challenge.settlement_label.trim().length > 0
         ? `🧾 *Settlement:* ${challenge.settlement_label.trim()}`
@@ -422,11 +470,11 @@ ${categoryEmoji} *${result.title}*
 
 ${result.result_type === 'draw' ?
   `🤝 *Both players fought well!*
-💰 *Stakes returned:* ₦${result.stake_amount.toLocaleString()} each
+💰 *Stakes returned:* ${this.formatAmount(result.stake_amount, result.tokenSymbol || result.token_symbol)} each
 👥 *${winnerDisplay}* vs *${loserDisplay}*` :
   `🏆 *Winner:* ${winnerDisplay}
 💸 *Loser:* ${loserDisplay}
-💰 *Prize:* ₦${(result.stake_amount * 2).toLocaleString()}`}
+💰 *Prize:* ${this.formatAmount(result.stake_amount * 2, result.tokenSymbol || result.token_symbol)}`}
 
 ${result.category ? `${categoryEmoji} *Category:* ${result.category.charAt(0).toUpperCase() + result.category.slice(1)}` : ''}
 
@@ -459,7 +507,7 @@ ${result.category ? `${categoryEmoji} *Category:* ${result.category.charAt(0).to
 
 🚀 *Challenger:* ${challengerDisplay}
 🎯 *Accepted by:* ${challengedDisplay}
-💰 *Stakes:* ₦${match.stake_amount.toLocaleString()} each
+💰 *Stakes:* ${this.formatAmount(match.stake_amount, match.tokenSymbol || match.token_symbol)} each
 ${match.category ? `${categoryEmoji} *Category:* ${match.category.charAt(0).toUpperCase() + match.category.slice(1)}` : ''}
 
 🍿 *The battle is ON! May the best player win!*
@@ -501,7 +549,7 @@ ${changeEmoji} *${userDisplay}* ${changeText}
 
 📊 *Stats:*
 🏆 *Total Wins:* ${update.total_wins}
-💰 *Total Earnings:* ₦${update.total_earnings.toLocaleString()}
+💰 *Total Earnings:* ${this.formatAmount(update.total_earnings)}
 ${update.achievement ? `🎯 *Achievement:* ${update.achievement}` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━
@@ -523,7 +571,7 @@ ${challenge.title}
 ━━━━━━━━━━━━━━━━━━━━━
 
 👤 *Creator:* ${creatorDisplay}
-💰 *Stake:* ₦${challenge.stake_amount.toLocaleString()}
+💰 *Stake:* ${this.formatAmount(challenge.stake_amount, challenge.tokenSymbol || challenge.token_symbol)}
 ⏱ *Waiting for challenger...*
 
 ${challenge.category ? `📂 *Category:* ${challenge.category}` : ''}
@@ -548,7 +596,7 @@ ${join.title}
 
 👤 *New Participant:* ${joinerDisplay}
 👥 *Total Participants:* ${join.participant_count}
-💰 *Stake:* ₦${join.stake_amount.toLocaleString()}
+💰 *Stake:* ${this.formatAmount(join.stake_amount, join.tokenSymbol || join.token_symbol)}
 
 ${join.category ? `📂 *Category:* ${join.category}` : ''}
 
@@ -945,7 +993,7 @@ Click the button below to securely link your account. You'll be able to:
 
 Your Telegram account is now linked to your Bantah account.
 
-💰 *Current Balance:* ₦${balance.toLocaleString()}
+💰 *Current Balance:* ${this.formatAmount(balance)}
 
 🎯 *What's Next?*
 • Create challenges using /challenge
@@ -989,13 +1037,14 @@ Your Telegram account is now linked to your Bantah account.
   // Phase 2: Send challenge with inline accept buttons
   async sendChallengeAcceptCard(
     chatId: number,
-    challenge: {
+      challenge: {
       id: number;
       title: string;
       description?: string;
       challenger: { name: string; username?: string };
       challenged: { name: string; username?: string };
       amount: number;
+      tokenSymbol?: string;
       category?: string;
     }
   ): Promise<boolean> {
@@ -1014,7 +1063,7 @@ ${categoryEmoji} *${challenge.title}*
 ${challenge.description ? `💭 _${challenge.description}_\n` : ''}
 🚀 *Challenger:* ${challenge.challenger.username ? `@${challenge.challenger.username}` : challenge.challenger.name}
 🎯 *You've been challenged!*
-💰 *Stake Amount:* ₦${challenge.amount.toLocaleString()}
+💰 *Stake Amount:* ${this.formatAmount(challenge.amount, challenge.tokenSymbol)}
 ${challenge.category ? `${categoryEmoji} *Category:* ${challenge.category.charAt(0).toUpperCase() + challenge.category.slice(1)}` : ''}
 
 ⏰ *Quick Actions Below* ⬇️
@@ -1086,7 +1135,7 @@ ${challenge.category ? `${categoryEmoji} *Category:* ${challenge.category.charAt
      vs
 🎯 *${challenge.challenged.name}*
 
-💰 *Stakes:* ₦${challenge.amount.toLocaleString()} each
+💰 *Stakes:* ${this.formatAmount(challenge.amount, challenge.tokenSymbol)} each
 🔒 *Funds are now in escrow*
 
 🍿 *May the best player win!*
@@ -1123,9 +1172,9 @@ ${challenge.category ? `${categoryEmoji} *Category:* ${challenge.category.charAt
       const message = `⚠️ *Insufficient Funds*
 
 ━━━━━━━━━━━━━━━━━━━━━
-💰 *Current Balance:* ₦${currentBalance.toLocaleString()}
-📊 *Required:* ₦${requiredAmount.toLocaleString()}
-❌ *Shortfall:* ₦${shortfall.toLocaleString()}
+💰 *Current Balance:* ${this.formatAmount(currentBalance)}
+📊 *Required:* ${this.formatAmount(requiredAmount)}
+❌ *Shortfall:* ${this.formatAmount(shortfall)}
 ━━━━━━━━━━━━━━━━━━━━━
 
 Please deposit funds to accept this challenge.
@@ -1274,7 +1323,7 @@ Use the buttons below to jump straight into your favorite features:`;
       const message = `💰 *Your Wallet*
 
 ━━━━━━━━━━━━━━━━━━━━━
-💵 Balance: ₦${balance.toLocaleString()}
+💵 Balance: ${this.formatAmount(balance)}
 🪙 Coins: ${coins}
 ━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -1677,10 +1726,9 @@ Example:
     if (!Number.isFinite(currentBalance) || currentBalance < amount) {
       await this.sendMessage(
         chatId,
-        `❌ Insufficient balance. You have ₦${Math.max(
-          0,
-          Number.isFinite(currentBalance) ? currentBalance : 0,
-        ).toLocaleString()}`,
+        `❌ Insufficient balance. You have ${this.formatAmount(
+          Math.max(0, Number.isFinite(currentBalance) ? currentBalance : 0),
+        )}`,
       );
       return;
     }
@@ -1716,7 +1764,7 @@ Example:
 
 👤 Challenger: @${creator.username || creator.firstName}
 🎮 Opponent: @${opponentUsername}
-💰 Stake: ₦${amount.toLocaleString()}
+💰 Stake: ${this.formatAmount(amount, challenge.tokenSymbol || challenge.token_symbol)}
 
 📱 @${opponentUsername} will be notified to accept!`;
 
@@ -1743,7 +1791,7 @@ Example:
 ━━━━━━━━━━━━━━━━━━━━━
 
 👤 *@${challenger.username || challenger.firstName}* challenges you!
-💰 Stake: ₦${amount.toLocaleString()}
+💰 Stake: ${this.formatAmount(amount, challenge.tokenSymbol || challenge.token_symbol)}
 
 Ready to accept?`;
 
@@ -1781,8 +1829,8 @@ Ready to accept?`;
 ━━━━━━━━━━━━━━━━━━━━━
 
 🎮 *@${opponent.username || opponent.firstName}* accepted your challenge!
-💰 Stake: ₦${challenge.stakeAmount?.toLocaleString()}
-🏆 Total Pool: ₦${(challenge.stakeAmount * 2).toLocaleString()}
+💰 Stake: ${this.formatAmount(Number(challenge.stakeAmount || 0), challenge.tokenSymbol || challenge.token_symbol)}
+🏆 Total Pool: ${this.formatAmount(Number(challenge.stakeAmount || 0) * 2, challenge.tokenSymbol || challenge.token_symbol)}
 
 Game on! 🔥`;
 
@@ -1803,7 +1851,7 @@ Game on! 🔥`;
 ━━━━━━━━━━━━━━━━━━━━━
 
 🎉 Congratulations!
-💰 Winnings: ₦${payout.toLocaleString()}
+💰 Winnings: ${this.formatAmount(payout, challenge.tokenSymbol || challenge.token_symbol)}
 
 Keep the winning streak going! 🔥`
       : `😔 *Challenge Lost*
@@ -1828,8 +1876,8 @@ Better luck next time!
 
 ━━━━━━━━━━━━━━━━━━━━━
 
-✅ ₦${amount.toLocaleString()} added to your wallet!
-💵 New Balance: ₦${newBalance.toLocaleString()}
+✅ ${this.formatAmount(amount)} added to your wallet!
+💵 New Balance: ${this.formatAmount(newBalance)}
 
 Ready to place some bets? 🎯`;
 

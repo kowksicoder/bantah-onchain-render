@@ -58,36 +58,36 @@ export default function SupportChat() {
       return [
         {
           id: "1",
-          subject: "Withdrawal Issue",
+          subject: "Agent skill-check failed during import",
           status: "in_progress" as const,
           priority: "high" as const,
           createdAt: new Date(Date.now() - 86400000),
-          lastMessage: "We're processing your withdrawal request...",
+          lastMessage: "We're reviewing the endpoint response and registry compatibility.",
           messages: [
             {
               id: "1",
-              message: "Hello! I'm having trouble with my withdrawal. It's been pending for 2 days.",
+              message: "Hi, my external agent failed Bantah skill check during import. The endpoint is reachable but the import still fails.",
               isUser: true,
               timestamp: new Date(Date.now() - 86400000),
               status: 'read' as const
             },
             {
               id: "2",
-              message: "Hi! I understand your concern. Let me check your account details. Can you please provide your transaction ID?",
+              message: "Thanks for reporting it. Please send the endpoint URL, wallet address, and the exact skill-check response so we can reproduce the failure.",
               isUser: false,
               timestamp: new Date(Date.now() - 86340000),
               senderName: "Support Agent Sarah"
             },
             {
               id: "3",
-              message: "The transaction ID is TXN123456789",
+              message: "Shared. The endpoint is returning partial action support and failing on one of the required Bantah actions.",
               isUser: true,
               timestamp: new Date(Date.now() - 86280000),
               status: 'read' as const
             },
             {
               id: "4",
-              message: "Thank you! I can see the transaction. We're processing it now and it should be completed within 24 hours. You'll receive an email confirmation once it's done.",
+              message: "Perfect. We've escalated it to agent ops. If the endpoint passes the remaining checks, the agent can be imported without creating a new profile.",
               isUser: false,
               timestamp: new Date(Date.now() - 86220000),
               senderName: "Support Agent Sarah"
@@ -96,36 +96,36 @@ export default function SupportChat() {
         },
         {
           id: "2", 
-          subject: "Account Verification Help",
+          subject: "Market settlement proof review",
           status: "resolved" as const,
           priority: "medium" as const,
           createdAt: new Date(Date.now() - 172800000),
-          lastMessage: "Your account has been successfully verified.",
+          lastMessage: "The proof review is complete and the market has been resolved.",
           messages: [
             {
               id: "5",
-              message: "I need help with account verification. What documents do I need?",
+              message: "I need help with a market that got stuck after both sides uploaded proof.",
               isUser: true,
               timestamp: new Date(Date.now() - 172800000),
               status: 'read' as const
             },
             {
               id: "6",
-              message: "For account verification, you'll need a government-issued ID and proof of address. Please upload clear photos of both documents.",
+              message: "We can review it. Please share the market ID, chain, token, and any proof references you submitted so we can check the settlement path.",
               isUser: false,
               timestamp: new Date(Date.now() - 172740000),
               senderName: "Support Agent Mike"
             },
             {
               id: "7",
-              message: "Documents uploaded successfully!",
+              message: "Sent. Both proof uploads and the challenge activity link are attached.",
               isUser: true,
               timestamp: new Date(Date.now() - 172680000),
               status: 'read' as const
             },
             {
               id: "8",
-              message: "Perfect! Your account has been successfully verified. You now have access to all platform features.",
+              message: "Thanks. We've reviewed the proof flow and completed the resolution. The market state now reflects the correct outcome.",
               isUser: false,
               timestamp: new Date(Date.now() - 172620000),
               senderName: "Support Agent Mike"
@@ -160,7 +160,7 @@ export default function SupportChat() {
     onSuccess: () => {
       toast({
         title: "Support Ticket Created",
-        description: "Your support ticket has been created. We'll respond within 2 hours.",
+        description: "Your support ticket has been created. We'll review your market, wallet, or agent issue shortly.",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/support/tickets'] });
       setNewTicketSubject("");
@@ -281,10 +281,10 @@ export default function SupportChat() {
           </Button>
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-              Support Chat 💬
+              Support Chat
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              Get help from our support team
+              Get help with markets, wallets, BantCredit, and Bantah Agents Protocol
             </p>
           </div>
         </div>
@@ -335,7 +335,7 @@ export default function SupportChat() {
                       id="subject"
                       value={newTicketSubject}
                       onChange={(e) => setNewTicketSubject(e.target.value)}
-                      placeholder="Brief description of your issue"
+                      placeholder="Brief description of your market, wallet, or agent issue"
                     />
                   </div>
                   <div>
@@ -357,7 +357,7 @@ export default function SupportChat() {
                       id="message"
                       value={newTicketMessage}
                       onChange={(e) => setNewTicketMessage(e.target.value)}
-                      placeholder="Describe your issue in detail..."
+                      placeholder="Describe the issue in detail. Include market IDs, chain, wallet, agent name, or endpoint when relevant."
                       rows={4}
                     />
                   </div>
@@ -394,7 +394,7 @@ export default function SupportChat() {
                       No support tickets yet
                     </h3>
                     <p className="text-slate-600 dark:text-slate-400 mb-6">
-                      Create a ticket to get help from our support team
+                      Create a ticket to get help with markets, wallets, or agents
                     </p>
                     <Button
                       onClick={() => setShowNewTicketForm(true)}

@@ -24,7 +24,7 @@ import { shareChallenge } from "@/utils/sharing";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getUserDisplayName, getUserHandle } from "@/hooks/usePublicUserBasic";
 import { useLocation } from "wouter";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ProfileCard from "@/components/ProfileCard";
 import { AcceptChallengeModal } from "@/components/AcceptChallengeModal";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -118,11 +118,29 @@ const isUpDownMarketChallenge = (challenge: any) => {
   return hasBitcoin && hasDirectionPhrase && category === "crypto";
 };
 
+const resolveChallengeCoverImage = (value?: string | null) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (raw.startsWith("data:image/")) return raw;
+  if (raw.startsWith("/attached_assets/")) return raw;
+  if (raw.startsWith("attached_assets/")) return `/${raw}`;
+  if (raw.startsWith("/assets/")) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return null;
+};
+
 export function ChallengeCard({
   challenge,
   onChatClick,
   onJoin,
 }: ChallengeCardProps) {
+  const [coverImageFailed, setCoverImageFailed] = useState(false);
+  const normalizedCoverImageUrl = resolveChallengeCoverImage(challenge.coverImageUrl);
+
+  useEffect(() => {
+    setCoverImageFailed(false);
+  }, [challenge.id, normalizedCoverImageUrl]);
+
   const queryClient = useQueryClient();
   const { wallets } = useWallets();
   const { isAuthenticated, login, user } = useAuth();
@@ -543,6 +561,8 @@ export function ChallengeCard({
     if (id === 84532) return "Base";
     if (id === 8453) return "Base";
     if (id === 42161) return "Arbitrum One";
+    if (id === 130) return "Unichain";
+    if (id === 1301) return "Unichain";
     if (id === 97) return "BNB Smart Chain";
     if (id === 421614) return "Arbitrum One";
     return `Chain ${id}`;
@@ -564,7 +584,21 @@ export function ChallengeCard({
         className: "border-sky-200 dark:border-sky-700/60",
       };
     }
+    if (id === 8453) {
+      return {
+        title: "Base",
+        iconSrc: "/assets/base-icon-1024.png",
+        className: "border-sky-200 dark:border-sky-700/60",
+      };
+    }
     if (id === 421614) {
+      return {
+        title: "Arbitrum One",
+        iconSrc: "/assets/chain-arbitrum.svg",
+        className: "border-blue-200 dark:border-blue-700/60",
+      };
+    }
+    if (id === 42161) {
       return {
         title: "Arbitrum One",
         iconSrc: "/assets/chain-arbitrum.svg",
@@ -576,6 +610,13 @@ export function ChallengeCard({
         title: "BNB Smart Chain",
         iconSrc: "/assets/chain-bsc.svg",
         className: "border-amber-200 dark:border-amber-700/60",
+      };
+    }
+    if (id === 130 || id === 1301) {
+      return {
+        title: "Unichain",
+        iconSrc: "/assets/chain-unichain.svg",
+        className: "border-pink-200 dark:border-pink-700/60",
       };
     }
     return {
@@ -821,12 +862,16 @@ export function ChallengeCard({
         <div className="flex items-start justify-between gap-1.5 mb-1.5">
           <div className="flex items-start space-x-2 min-w-0 flex-1">
             {/* Show cover art for all challenges */}
-            {challenge.coverImageUrl ? (
+            {normalizedCoverImageUrl && !coverImageFailed ? (
               <div className="flex items-center flex-shrink-0">
                 <img
-                  src={challenge.coverImageUrl}
+                  key={normalizedCoverImageUrl}
+                  src={normalizedCoverImageUrl}
                   alt="challenge cover"
                   className="w-9 h-9 md:w-10 md:h-10 rounded-md object-cover"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={() => setCoverImageFailed(true)}
                 />
               </div>
             ) : (

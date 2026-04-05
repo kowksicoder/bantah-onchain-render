@@ -309,6 +309,15 @@ export function Navigation() {
     return null;
   };
 
+  const formatChainLabel = (chain: { key?: string; name?: string } | null | undefined) => {
+    if (!chain) return "Chain";
+    const key = String(chain.key || "").toLowerCase();
+    const name = String(chain.name || "").trim();
+    if (key === "bsc" || /binance smart chain/i.test(name)) return "BSC";
+    if (key === "arbitrum" || /arbitrum one/i.test(name)) return "Arbitrum";
+    return name || "Chain";
+  };
+
   return (
     <>
       <nav className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 theme-transition sticky top-0 z-50">
@@ -400,7 +409,7 @@ export function Navigation() {
                               <Network className="h-3.5 w-3.5" />
                             );
                           })()}
-                          <span>{activeChain?.name || "Chain"}</span>
+                          <span>{formatChainLabel(activeChain)}</span>
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
@@ -424,7 +433,7 @@ export function Navigation() {
                                   />
                                 ) : null;
                               })()}
-                              {chain.name}
+                              {formatChainLabel(chain)}
                             </span>
                             <span className="text-[10px] text-slate-400">
                               {chain.nativeSymbol}
@@ -628,7 +637,7 @@ export function Navigation() {
                           <Network className="h-4 w-4" />
                         );
                       })()}
-                      <span>{activeChain?.name || "Chain"}</span>
+                      <span>{formatChainLabel(activeChain)}</span>
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
@@ -652,7 +661,7 @@ export function Navigation() {
                               />
                             ) : null;
                           })()}
-                          {chain.name}
+                          {formatChainLabel(chain)}
                         </span>
                         <span className="text-[10px] text-slate-400">
                           {chain.nativeSymbol}

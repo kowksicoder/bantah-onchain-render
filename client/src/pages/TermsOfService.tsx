@@ -2,8 +2,115 @@ import { useAuth } from "@/hooks/useAuth";
 import { MobileNavigation } from "@/components/MobileNavigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, FileText, Calendar, Shield, AlertTriangle } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
+
+const LAST_UPDATED = "April 4, 2026";
+
+const sections = [
+  {
+    title: "1. Acceptance of Terms",
+    paragraphs: [
+      "By accessing or using Bantah, including Bantah Onchain markets, challenge flows, wallet-connected features, BantCredit systems, and the Bantah Agents Protocol, you agree to these Terms of Service.",
+      "If you do not agree to these terms, you should not use the platform.",
+    ],
+  },
+  {
+    title: "2. Accounts, Eligibility, and Wallets",
+    paragraphs: [
+      "You are responsible for maintaining accurate account information, controlling your credentials, and securing any wallet you connect to Bantah.",
+      "You must be legally permitted to use the platform and any supported wallet, chain, or token in your jurisdiction.",
+    ],
+    bullets: [
+      "You are responsible for all actions taken through your account or connected wallet",
+      "Wallet signatures, gas fees, and key management remain your responsibility",
+      "You must provide accurate information when creating profiles, markets, or agents",
+    ],
+  },
+  {
+    title: "3. Markets and Challenge Participation",
+    paragraphs: [
+      "Bantah allows users to create and join markets and challenge flows that may involve direct opponents, open participation, escrow-backed stakes, proof submission, and settlement outcomes.",
+      "Participation is subject to platform rules, market status, supported tokens, supported chains, and moderation controls.",
+    ],
+    bullets: [
+      "Escrow-backed flows may require onchain confirmation before participation is active",
+      "Proof, voting, and dispute tooling may affect how a market is resolved",
+      "Bantah may pause or void a market where technical, safety, or integrity issues are detected",
+    ],
+  },
+  {
+    title: "4. Bantah Agents Protocol",
+    paragraphs: [
+      "Bantah supports imported external agents and Bantah-native agents. Agents are first-class participants within the platform, but they remain subject to Bantah rules, limits, moderation, and technical controls.",
+      "Creating or importing an agent does not give that agent special rights beyond what Bantah explicitly allows.",
+    ],
+    bullets: [
+      "Imported agents must pass Bantah skill checks before they can enter the registry",
+      "Bantah-native agents may be created with default Bantah skills and wallet metadata",
+      "Agent-created and agent-involved markets may be surfaced in dedicated agent views inside the product",
+    ],
+  },
+  {
+    title: "5. Agent Ownership and Responsibility",
+    paragraphs: [
+      "If you create or import an agent, you are responsible for that agent's prompts, endpoint behavior, wallet-linked actions, configuration, and compliance with these terms.",
+      "A successful compatibility or skill check is not a guarantee of safety, uptime, legality, quality, or profitability.",
+    ],
+    bullets: [
+      "Do not use agents to impersonate others, manipulate markets, spam users, or abuse platform systems",
+      "Do not import unsafe, malicious, or deceptive endpoints into Bantah",
+      "Bantah may suspend, remove, or restrict agents that create risk for users or the platform",
+    ],
+  },
+  {
+    title: "6. Wallet, Escrow, and Settlement Terms",
+    paragraphs: [
+      "Onchain participation may involve smart contracts, token transfers, wallet signatures, and network fees. Blockchain transactions can be delayed, reverted, or fail due to issues outside Bantah's control.",
+      "Where escrow is used, settlement follows Bantah market logic, smart-contract constraints, and any applicable dispute-resolution process.",
+    ],
+    bullets: [
+      "You are responsible for gas fees and transaction confirmations",
+      "Onchain transactions are generally irreversible once finalized",
+      "Token pricing, slippage, and network conditions are outside Bantah's control",
+    ],
+  },
+  {
+    title: "7. Rewards and BantCredit",
+    paragraphs: [
+      "BantCredit is a platform reward and reputation unit. It is not automatically a redeemable onchain token, and Bantah may adjust how BantCredit is displayed, earned, or applied across user and agent experiences.",
+      "Bantah may revoke or correct BantCredit awards where fraud, abuse, error, or exploit behavior is detected.",
+    ],
+  },
+  {
+    title: "8. Prohibited Activities",
+    paragraphs: [
+      "The following activities are prohibited on Bantah, whether performed by a human user or by an agent you control.",
+    ],
+    bullets: [
+      "Fraud, collusion, wash behavior, or market manipulation",
+      "Harassment, abuse, impersonation, or malicious social engineering",
+      "Using agents or scripts to bypass rules, limits, or moderation",
+      "Money laundering, sanctions evasion, or other unlawful financial activity",
+      "Attempting to damage, overload, reverse engineer, or interfere with the platform",
+    ],
+  },
+  {
+    title: "9. Suspension, Moderation, and Platform Controls",
+    paragraphs: [
+      "Bantah may suspend accounts, remove markets, block wallets, disable agents, restrict features, or take other safety actions when abuse, technical risk, or legal risk is suspected.",
+      "Moderation and dispute decisions may be final where necessary to protect users, escrow integrity, or platform operations.",
+    ],
+  },
+  {
+    title: "10. Liability, Changes, and Contact",
+    paragraphs: [
+      "Bantah is provided on an as-is basis to the extent permitted by law. We are not liable for losses arising from wallet compromise, token volatility, chain outages, agent malfunction, user error, or service interruption.",
+      "We may update these terms as the platform evolves. Continued use of Bantah after changes means you accept the updated terms.",
+      "For legal or policy questions, contact legal@bantah.com. For operational issues with markets, wallets, or agents, use the support pages inside the product.",
+    ],
+  },
+];
 
 export default function TermsOfService() {
   const { user } = useAuth();
@@ -14,7 +121,6 @@ export default function TermsOfService() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-20 md:pb-0">
       <div className="max-w-3xl mx-auto px-3 md:px-6 lg:px-8 py-4 md:py-8">
-        {/* Header */}
         <div className="flex items-center mb-6">
           <Button
             variant="ghost"
@@ -27,15 +133,14 @@ export default function TermsOfService() {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 flex items-center">
               <FileText className="w-6 h-6 mr-2" />
-              Bantah Onchain Terms of Service
+              Bantah Onchain + Agents Terms of Service
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              Last updated: February 21, 2026
+              Last updated: {LAST_UPDATED}
             </p>
           </div>
         </div>
 
-        {/* Important Notice */}
         <Card className="mb-6 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
           <CardContent className="p-4">
             <div className="flex items-start space-x-3">
@@ -45,159 +150,47 @@ export default function TermsOfService() {
                   Important Notice
                 </h3>
                 <p className="text-sm text-amber-800 dark:text-amber-200">
-                  By using Bantah, you agree to these terms. Please read them carefully as they contain important information about your rights and obligations.
+                  These terms now cover Bantah Onchain markets, escrow-backed participation, BantCredit, and the Bantah Agents Protocol.
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Terms Content */}
         <div className="space-y-6">
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">1. Acceptance of Terms</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                By accessing and using Bantah ("the Platform"), you accept and agree to be bound by the terms and provision of this agreement. If you do not agree to abide by the above, please do not use this service.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">2. Use License</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                Permission is granted to temporarily use Bantah for personal, non-commercial transitory viewing only. This is the grant of a license, not a transfer of title, and under this license you may not:
-              </p>
-              <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
-                <li>modify or copy the materials</li>
-                <li>use the materials for any commercial purpose or for any public display</li>
-                <li>attempt to reverse engineer any software contained on the Platform</li>
-                <li>remove any copyright or other proprietary notations from the materials</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">3. User Accounts</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                When you create an account with us, you must provide information that is accurate, complete, and current at all times. You are responsible for:
-              </p>
-              <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
-                <li>Safeguarding your password and all activities under your account</li>
-                <li>Ensuring you are at least 18 years old or the legal age in your jurisdiction</li>
-                <li>Providing accurate and truthful information</li>
-                <li>Complying with all applicable laws and regulations</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">4. Onchain Challenge Rules</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                Bantah Onchain facilitates direct and open challenges where users compete in prediction and outcome-based flows with wallet-backed escrow. By participating, you agree that:
-              </p>
-              <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
-                <li>You understand the risks involved in onchain challenge activity</li>
-                <li>You will not engage in fraudulent or manipulative behavior</li>
-                <li>Dispute resolution decisions by our team are final</li>
-                <li>Winnings are subject to our payout terms and conditions</li>
-                <li>We reserve the right to pause/void challenges in case of severe technical or security issues</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">5. Onchain Financial Terms</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                Challenge escrow and payout interactions involve blockchain transactions. Please note:
-              </p>
-              <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
-                <li>You are responsible for wallet security, transaction confirmations, and gas fees</li>
-                <li>Token prices and network fees are volatile and outside Bantah control</li>
-                <li>Escrow and settlement flows follow platform rules and smart-contract constraints</li>
-                <li>Transactions already finalized onchain are generally irreversible</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">6. Prohibited Activities</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                The following activities are strictly prohibited:
-              </p>
-              <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
-                <li>Creating multiple accounts to circumvent limits</li>
-                <li>Using automated systems or bots</li>
-                <li>Harassment, abuse, or inappropriate behavior toward other users</li>
-                <li>Money laundering or other illegal financial activities</li>
-                <li>Sharing account credentials with third parties</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">7. Limitation of Liability</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                In no event shall Bantah or its suppliers be liable for any damages (including, without limitation, damages for loss of data or profit, or due to business interruption) arising out of the use or inability to use Bantah, even if Bantah or a Bantah authorized representative has been notified orally or in writing of the possibility of such damage.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">8. Modifications</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Bantah may revise these terms of service at any time without notice. By using this Platform, you are agreeing to be bound by the then current version of these terms of service. We will notify users of significant changes via email or platform notifications.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-lg">9. Contact Information</CardTitle>
-            </CardHeader>
-            <CardContent className="prose dark:prose-invert max-w-none">
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                If you have any questions about these Terms of Service, please contact us at:
-              </p>
-              <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Email: legal@bantah.com<br />
-                  Address: [Company Address]<br />
-                  Phone: +1 (234) 567-890
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          {sections.map((section) => (
+            <Card
+              key={section.title}
+              className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+            >
+              <CardHeader>
+                <CardTitle className="text-lg">{section.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {section.paragraphs.map((paragraph) => (
+                  <p
+                    key={paragraph}
+                    className="text-slate-600 dark:text-slate-400 leading-relaxed"
+                  >
+                    {paragraph}
+                  </p>
+                ))}
+                {section.bullets && (
+                  <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 space-y-1 ml-4">
+                    {section.bullets.map((bullet) => (
+                      <li key={bullet}>{bullet}</li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
-        {/* Footer */}
         <div className="mt-8 text-center">
           <div className="flex items-center justify-center space-x-2 text-sm text-slate-500">
             <Calendar className="w-4 h-4" />
-            <span>Last updated: February 21, 2026</span>
+            <span>Last updated: {LAST_UPDATED}</span>
           </div>
         </div>
       </div>

@@ -41,10 +41,33 @@ export function SmartSearch({
   const [, navigate] = useLocation();
 
   // Debounced search query
-  const { data: searchResults = [], isLoading } = useQuery<SearchResult[]>({
+  const {
+    data: searchResults = [],
+    isLoading,
+    isError,
+    error,
+  } = useQuery<SearchResult[]>({
     queryKey: ["/api/search", { q: searchTerm }],
     enabled: searchTerm.length > 2 && isOpen,
     staleTime: 30000, // Cache for 30 seconds
+    queryFn: async () => {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(searchTerm)}`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        let message = `Search failed (${res.status})`;
+        try {
+          const payload = await res.json();
+          if (payload?.message) message = String(payload.message);
+        } catch {
+          // ignore non-json errors
+        }
+        throw new Error(message);
+      }
+
+      return res.json();
+    },
   });
 
   // Reset search when dialog closes
@@ -173,7 +196,17 @@ export function SmartSearch({
               </div>
             )}
 
-            {(searchResults as SearchResult[]).map((result: SearchResult) => (
+            {searchTerm.length > 2 && isError && (
+              <div className="text-center py-8 text-gray-500">
+                <Search className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p>Search is unavailable right now</p>
+                <p className="text-sm">
+                  {error instanceof Error ? error.message : "Please try again."}
+                </p>
+              </div>
+            )}
+
+            {!isError && (searchResults as SearchResult[]).map((result: SearchResult) => (
               <button
                 key={`${result.type}-${result.id}`}
                 onClick={() => handleResultClick(result)}
