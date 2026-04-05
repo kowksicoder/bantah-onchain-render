@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const BANTAH_SKILL_VERSION = "1.0.0";
+export const bantahSkillCurrencyValues = ["USDC", "USDT", "ETH", "BNB"] as const;
 
 export const bantahAgentTypeValues = ["imported", "bantah_created"] as const;
 export const bantahAgentSpecialtyValues = [
@@ -62,6 +63,9 @@ export type BantahWebhookEvent = (typeof bantahWebhookEventValues)[number];
 export const evmAddressSchema = z
   .string()
   .regex(/^0x[a-fA-F0-9]{40}$/, "Wallet address must be a valid EVM address");
+export const evmTransactionHashSchema = z
+  .string()
+  .regex(/^0x[a-fA-F0-9]{64}$/, "Transaction hash must be a valid EVM hash");
 
 export const marketOptionSchema = z.object({
   id: z.string().min(1).max(64),
@@ -81,7 +85,7 @@ export const createMarketInputSchema = z.object({
   options: z.array(z.string().min(1).max(120)).min(2).max(10),
   deadline: z.string().datetime(),
   stakeAmount: z.string().min(1).max(32),
-  currency: z.literal("USDC").default("USDC"),
+  currency: z.enum(bantahSkillCurrencyValues).default("USDC"),
   chainId: z.number().int().positive().default(8453),
 });
 
@@ -95,7 +99,7 @@ export const readMarketInputSchema = z.object({
 });
 
 export const checkBalanceInputSchema = z.object({
-  currency: z.literal("USDC").default("USDC"),
+  currency: z.enum(bantahSkillCurrencyValues).default("USDC"),
   chainId: z.number().int().positive().default(8453),
 });
 
@@ -109,6 +113,8 @@ export const marketParticipantSchema = z.object({
 export const readMarketResultSchema = z.object({
   marketId: z.string().min(1).max(128),
   status: z.enum(["open", "pending", "matched", "settled", "cancelled"]),
+  currency: z.enum(bantahSkillCurrencyValues),
+  chainId: z.number().int().positive(),
   odds: z.object({
     yes: z.number().min(0).max(1),
     no: z.number().min(0).max(1),
@@ -127,7 +133,8 @@ export const createMarketResultSchema = z.object({
   options: z.array(marketOptionSchema).min(2).max(10),
   deadline: z.string().datetime(),
   stakeAmount: z.string().min(1).max(32),
-  currency: z.literal("USDC"),
+  currency: z.enum(bantahSkillCurrencyValues),
+  chainId: z.number().int().positive(),
   creatorWalletAddress: evmAddressSchema,
 });
 
@@ -135,13 +142,15 @@ export const joinMarketResultSchema = z.object({
   marketId: z.string().min(1).max(128),
   side: z.enum(["yes", "no"]),
   acceptedStakeAmount: z.string().min(1).max(32),
-  currency: z.literal("USDC"),
+  currency: z.enum(bantahSkillCurrencyValues),
+  chainId: z.number().int().positive(),
   status: z.enum(["queued", "matched", "accepted"]),
+  escrowTxHash: evmTransactionHashSchema.optional(),
 });
 
 export const checkBalanceResultSchema = z.object({
   walletAddress: evmAddressSchema,
-  currency: z.literal("USDC"),
+  currency: z.enum(bantahSkillCurrencyValues),
   chainId: z.number().int().positive(),
   availableBalance: z.string().min(1).max(32),
   updatedAt: z.string().datetime(),

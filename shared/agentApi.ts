@@ -8,6 +8,53 @@ import {
   bantahRequiredSkillActionValues,
   evmAddressSchema,
 } from "./agentSkill";
+import {
+  bantahElizaRuntimeConfigSchema,
+  bantahElizaRuntimeEngineValues,
+  bantahElizaRuntimeStatusValues,
+} from "./elizaAgent";
+
+export const bantahAgentKitChainNetworkIds = {
+  1: "ethereum-mainnet",
+  10: "optimism-mainnet",
+  137: "polygon-mainnet",
+  8453: "base-mainnet",
+  42161: "arbitrum-mainnet",
+  80002: "polygon-amoy",
+  84532: "base-sepolia",
+  421614: "arbitrum-sepolia",
+  11155111: "ethereum-sepolia",
+  11155420: "optimism-sepolia",
+} as const;
+
+export type BantahAgentKitNetworkId =
+  (typeof bantahAgentKitChainNetworkIds)[keyof typeof bantahAgentKitChainNetworkIds];
+
+export const bantahAgentKitSupportedChainIds = Object.keys(
+  bantahAgentKitChainNetworkIds,
+).map((value) => Number(value));
+
+export function getBantahAgentKitNetworkIdForChainId(
+  chainId: number,
+): BantahAgentKitNetworkId | null {
+  const numericChainId = Number(chainId);
+  if (!Number.isFinite(numericChainId)) return null;
+  return (
+    bantahAgentKitChainNetworkIds[
+      numericChainId as keyof typeof bantahAgentKitChainNetworkIds
+    ] || null
+  );
+}
+
+export function getBantahAgentKitChainIdForNetworkId(networkId: string): number | null {
+  const normalizedNetworkId = String(networkId || "").trim();
+  if (!normalizedNetworkId) return null;
+
+  const match = Object.entries(bantahAgentKitChainNetworkIds).find(
+    ([, value]) => value === normalizedNetworkId,
+  );
+  return match ? Number(match[0]) : null;
+}
 
 const httpUrlSchema = z
   .string()
@@ -31,6 +78,7 @@ export const agentSkillCheckRequestSchema = z.object({
 export const agentCreateRequestSchema = z.object({
   agentName: z.string().min(2).max(80),
   specialty: z.enum(bantahAgentSpecialtyValues).default("general"),
+  chainId: z.coerce.number().int().positive().default(8453),
 });
 
 export const agentListQuerySchema = z.object({
@@ -63,6 +111,8 @@ export const agentRegistryProfileSchema = z.object({
   skillActions: z.array(z.enum(bantahSkillActionValues)).default([]),
   walletNetworkId: z.string().min(1).max(64).nullable().optional(),
   walletProvider: z.string().min(1).max(64).nullable().optional(),
+  runtimeEngine: z.enum(bantahElizaRuntimeEngineValues).nullable().optional(),
+  runtimeStatus: z.enum(bantahElizaRuntimeStatusValues).nullable().optional(),
   points: z.number().int().nonnegative(),
   winCount: z.number().int().nonnegative(),
   lossCount: z.number().int().nonnegative(),
@@ -106,10 +156,12 @@ export const agentCreateResponseSchema = z.object({
   provisioned: z.object({
     walletAddress: evmAddressSchema,
     endpointUrl: httpUrlSchema,
+    chainId: z.number().int().positive(),
     walletNetworkId: z.string().min(1).max(64),
     walletProvider: z.string().min(1).max(64),
     skillActions: z.array(z.enum(bantahSkillActionValues)).min(1),
   }),
+  runtime: bantahElizaRuntimeConfigSchema,
 });
 
 export const agentListResponseSchema = z.object({

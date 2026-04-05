@@ -68,6 +68,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getBantahAgentKitNetworkIdForChainId } from "@shared/agentApi";
 import {
   type OnchainRuntimeConfig,
   type OnchainTokenSymbol,
@@ -542,6 +543,14 @@ export default function Challenges() {
     onchainConfig?.defaultChainId ??
     Number(chainOptions[0]?.chainId || 0);
 
+  const selectedChainConfig =
+    onchainConfig?.chains?.[String(selectedChainId)] ||
+    chainOptions.find((chain) => Number(chain.chainId) === Number(selectedChainId)) ||
+    null;
+
+  const selectedAgentExecutionNetworkId = getBantahAgentKitNetworkIdForChainId(selectedChainId);
+  const canProvisionAgentOnSelectedChain = Boolean(selectedAgentExecutionNetworkId);
+
   const tokenOptions = useMemo<OnchainTokenSymbol[]>(() => {
     const chainConfig =
       onchainConfig?.chains?.[String(selectedChainId)] ||
@@ -737,14 +746,20 @@ export default function Challenges() {
       return apiRequest("POST", "/api/agents/create", {
         agentName: agentDisplayName.trim(),
         specialty: agentSpecialty,
+        chainId: selectedChainId,
       });
     },
     onSuccess: (result: any) => {
       const createdAgent = result?.agent;
+      const provisionedChainId = Number(result?.provisioned?.chainId || selectedChainId);
+      const provisionedChainName =
+        onchainConfig?.chains?.[String(provisionedChainId)]?.name ||
+        selectedChainConfig?.name ||
+        "selected chain";
       toast({
         title: "Agent created",
         description: createdAgent?.walletAddress
-          ? `${createdAgent.agentName} is live with wallet ${String(createdAgent.walletAddress).slice(0, 6)}...${String(createdAgent.walletAddress).slice(-4)}`
+          ? `${createdAgent.agentName} is live on ${provisionedChainName} with wallet ${String(createdAgent.walletAddress).slice(0, 6)}...${String(createdAgent.walletAddress).slice(-4)}`
           : "Your Bantah agent is now live in the registry.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
@@ -1704,6 +1719,43 @@ export default function Challenges() {
                       </Select>
                     </div>
 
+                    <div
+                      className={cn(
+                        "rounded-xl px-3 py-2",
+                        canProvisionAgentOnSelectedChain
+                          ? "border border-blue-200 bg-blue-50/80 dark:border-blue-500/20 dark:bg-blue-500/10"
+                          : "border border-amber-200 bg-amber-50/90 dark:border-amber-500/20 dark:bg-amber-500/10",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Execution chain
+                          </p>
+                          <p className="mt-0.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                            {selectedChainConfig?.name || "Selected chain"}
+                          </p>
+                        </div>
+                        <Badge
+                          className={cn(
+                            "border-0 text-[10px]",
+                            canProvisionAgentOnSelectedChain
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200",
+                          )}
+                        >
+                          {canProvisionAgentOnSelectedChain
+                            ? selectedAgentExecutionNetworkId
+                            : "Not supported yet"}
+                        </Badge>
+                      </div>
+                      <p className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                        {canProvisionAgentOnSelectedChain
+                          ? "Coinbase AgentKit will provision this Bantah agent wallet on the current chain selection."
+                          : "Switch the header chain to Base or Arbitrum before creating this Bantah agent. Unichain and BSC execution are not live in AgentKit here yet."}
+                      </p>
+                    </div>
+
                     <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -2196,7 +2248,9 @@ export default function Challenges() {
                     type="submit"
                     disabled={
                       createMode === "agent"
-                        ? !agentDisplayName.trim() || createAgentMutation.isPending
+                        ? !agentDisplayName.trim() ||
+                          !canProvisionAgentOnSelectedChain ||
+                          createAgentMutation.isPending
                         : createChallengeMutation.isPending || isCoverUploading || isPreparingChallenge
                     }
                     className="h-9 flex-1 rounded-xl text-sm text-black hover:opacity-90"

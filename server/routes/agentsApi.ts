@@ -7,6 +7,8 @@ import {
   agentListQuerySchema,
   agentCreateRequestSchema,
   agentSkillCheckRequestSchema,
+  bantahAgentKitSupportedChainIds,
+  getBantahAgentKitNetworkIdForChainId,
   type AgentRegistryProfile,
 } from "@shared/agentApi";
 import {
@@ -17,7 +19,7 @@ import {
   joinMarketInputSchema,
   readMarketInputSchema,
 } from "@shared/agentSkill";
-import { pairQueue } from "@shared/schema";
+import { agents, pairQueue } from "@shared/schema";
 import {
   normalizeOnchainTokenSymbol,
   toAtomicUnits,
@@ -25,22 +27,37 @@ import {
 } from "@shared/onchainConfig";
 import { storage } from "../storage";
 import { db } from "../db";
+import { createPairingEngine } from "../pairingEngine";
 import { runAgentSkillCheck } from "../agentSkillCheck";
 import { PrivyAuthMiddleware } from "../privyAuth";
 import { normalizeEvmAddress } from "@shared/onchainConfig";
 import { getOnchainServerConfig } from "../onchainConfig";
 import {
+  buildBantahElizaCharacter,
+  buildBantahElizaRuntimeConfig,
+} from "../elizaAgentBuilder";
+import {
+  executeManagedBantahAgentRuntimeAction,
+  startManagedBantahAgentRuntime,
+  stopManagedBantahAgentRuntime,
+} from "../bantahElizaRuntimeManager";
+import {
+  BantahAgentWalletError,
   buildBantahAgentEndpointUrl,
+  executeBantahAgentEscrowStakeTx,
+  getBantahAgentWalletBalance,
   buildSkillErrorEnvelope,
   buildSkillSuccessEnvelope,
-  DEFAULT_BANTAH_AGENT_NETWORK_ID,
   DEFAULT_BANTAH_AGENT_SKILLS,
   provisionBantahAgentWallet,
 } from "../agentProvisioning";
+import { assertAllowedStakeToken } from "../onchainEscrowService";
+import { serializeBantahSkillError } from "../bantahAgentSkillExecutor";
 
 const router = Router();
 const MAX_AGENT_IMPORTS_PER_DAY = 5;
 const ONCHAIN_CONFIG = getOnchainServerConfig();
+const pairingEngine = createPairingEngine(db);
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -92,6 +109,20 @@ function parseStakeAmount(stakeAmount: string): { parsedAmount: number; roundedA
     parsedAmount,
     roundedAmount: Math.max(1, Math.round(parsedAmount)),
   };
+}
+
+function mergeEscrowTxHashes(existing: unknown, incomingHash: string): string {
+  const incoming = String(incomingHash || "").trim().toLowerCase();
+  if (!incoming) return String(existing || "");
+
+  const raw = String(existing || "").trim();
+  if (!raw) return incoming;
+
+  if (raw.toLowerCase().includes(incoming)) {
+    return raw;
+  }
+
+  return `${raw},${incoming}`;
 }
 
 function resolveOnchainRuntimeToken(chainId: number, currency: string) {
@@ -213,6 +244,8 @@ async function serializeAgent(agentId: string): Promise<AgentRegistryProfile> {
       : [],
     walletNetworkId: (storedAgent as any).walletNetworkId ?? null,
     walletProvider: (storedAgent as any).walletProvider ?? null,
+    runtimeEngine: (storedAgent as any).runtimeEngine ?? null,
+    runtimeStatus: (storedAgent as any).runtimeStatus ?? null,
     points: storedAgent.points,
     winCount: storedAgent.winCount,
     lossCount: storedAgent.lossCount,
@@ -332,20 +365,56 @@ router.post("/create", PrivyAuthMiddleware, async (req, res) => {
     const parsedBody = agentCreateRequestSchema.parse(req.body ?? {});
     const agentId = randomUUID();
     const endpointUrl = buildBantahAgentEndpointUrl(agentId);
+    const requestedChainId = Number(parsedBody.chainId || ONCHAIN_CONFIG.defaultChainId || 8453);
+    const requestedChainConfig = ONCHAIN_CONFIG.chains[String(requestedChainId)];
+    const requestedNetworkId = getBantahAgentKitNetworkIdForChainId(requestedChainId);
+
+    if (!requestedNetworkId) {
+      throw new HttpError(
+        422,
+        `Coinbase AgentKit smart-wallet provisioning is not available on ${
+          requestedChainConfig?.name || `chain ${requestedChainId}`
+        } yet.`,
+        {
+          chainId: requestedChainId,
+          supportedChainIds: bantahAgentKitSupportedChainIds,
+        },
+      );
+    }
 
     const existingByEndpoint = await storage.getAgentByEndpointUrl(endpointUrl);
     if (existingByEndpoint) {
       throw new HttpError(409, "A Bantah agent with this endpoint already exists");
     }
 
-    const provisionedWallet = await provisionBantahAgentWallet(
-      agentId,
-      DEFAULT_BANTAH_AGENT_NETWORK_ID,
-    );
+    const provisionedWallet = await provisionBantahAgentWallet(agentId, requestedNetworkId);
     const existingByWallet = await storage.getAgentByWalletAddress(provisionedWallet.walletAddress);
     if (existingByWallet) {
       throw new HttpError(409, "A Bantah agent wallet collision occurred. Please try again.");
     }
+
+    const elizaCharacter = buildBantahElizaCharacter({
+      agentId,
+      agentName: parsedBody.agentName.trim(),
+      specialty: parsedBody.specialty,
+      walletAddress: provisionedWallet.walletAddress,
+      chainId: requestedChainId,
+      chainName: requestedChainConfig?.name || `Chain ${requestedChainId}`,
+      walletNetworkId: provisionedWallet.walletNetworkId,
+      skillActions: [...DEFAULT_BANTAH_AGENT_SKILLS],
+      endpointUrl,
+    });
+    const elizaRuntime = buildBantahElizaRuntimeConfig({
+      agentId,
+      endpointUrl,
+      chainId: requestedChainId,
+      chainName: requestedChainConfig?.name || `Chain ${requestedChainId}`,
+      walletAddress: provisionedWallet.walletAddress,
+      walletNetworkId: provisionedWallet.walletNetworkId,
+      walletProvider: provisionedWallet.walletProvider,
+      skillActions: [...DEFAULT_BANTAH_AGENT_SKILLS],
+      character: elizaCharacter,
+    });
 
     await storage.createAgent({
       agentId,
@@ -362,10 +431,31 @@ router.post("/create", PrivyAuthMiddleware, async (req, res) => {
       walletProvider: provisionedWallet.walletProvider,
       ownerWalletAddress: provisionedWallet.ownerWalletAddress,
       walletData: provisionedWallet.walletData,
+      runtimeEngine: elizaRuntime.engine,
+      runtimeStatus: elizaRuntime.status,
+      runtimeConfig: elizaRuntime,
       isTokenized: false,
     });
 
-    const skillCheck = await runAgentSkillCheck(endpointUrl);
+    let activeRuntimeConfig = elizaRuntime;
+    try {
+      activeRuntimeConfig = await startManagedBantahAgentRuntime(agentId);
+    } catch (error: any) {
+      await db.delete(agents).where(eq(agents.agentId, agentId));
+      throw new HttpError(
+        502,
+        error?.message || "Failed to start Bantah Eliza runtime.",
+      );
+    }
+
+    let skillCheck;
+    try {
+      skillCheck = await runAgentSkillCheck(endpointUrl);
+    } catch (error) {
+      await stopManagedBantahAgentRuntime(agentId, { persist: false });
+      await db.delete(agents).where(eq(agents.agentId, agentId));
+      throw error;
+    }
     await storage.updateAgentSkillCheck(agentId, {
       bantahSkillVersion: BANTAH_SKILL_VERSION,
       lastSkillCheckAt: new Date(skillCheck.checkedAt),
@@ -379,10 +469,12 @@ router.post("/create", PrivyAuthMiddleware, async (req, res) => {
       provisioned: {
         walletAddress: provisionedWallet.walletAddress,
         endpointUrl,
+        chainId: requestedChainId,
         walletNetworkId: provisionedWallet.walletNetworkId,
         walletProvider: provisionedWallet.walletProvider,
         skillActions: DEFAULT_BANTAH_AGENT_SKILLS,
       },
+      runtime: activeRuntimeConfig,
     });
   } catch (error) {
     handleError(res, error);
@@ -411,6 +503,8 @@ router.get("/", async (req, res) => {
       skillActions: Array.isArray((item as any).skillActions) ? (item as any).skillActions : [],
       walletNetworkId: (item as any).walletNetworkId ?? null,
       walletProvider: (item as any).walletProvider ?? null,
+      runtimeEngine: (item as any).runtimeEngine ?? null,
+      runtimeStatus: (item as any).runtimeStatus ?? null,
       points: item.points,
       winCount: item.winCount,
       lossCount: item.lossCount,
@@ -461,341 +555,14 @@ router.post("/runtime/:agentId", async (req, res) => {
 
     const envelope = agentActionEnvelopeSchema.parse(req.body ?? {});
     requestId = envelope.requestId;
-
-    switch (envelope.action) {
-      case "create_market": {
-        const parsed = createMarketInputSchema.safeParse(envelope.payload);
-        if (!parsed.success) {
-          return res.status(400).json(
-            buildSkillErrorEnvelope(requestId, "invalid_input", "Market payload is invalid."),
-          );
-        }
-
-        const deadline = new Date(parsed.data.deadline);
-        if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) {
-          return res.status(400).json(
-            buildSkillErrorEnvelope(
-              requestId,
-              "invalid_input",
-              "Deadline must be a future ISO datetime.",
-            ),
-          );
-        }
-
-        const { tokenConfig, tokenSymbol, chainConfig } = resolveOnchainRuntimeToken(
-          parsed.data.chainId,
-          parsed.data.currency,
-        );
-        const { roundedAmount } = parseStakeAmount(parsed.data.stakeAmount);
-        const createdChallenge = await storage.createAdminChallenge({
-          title: parsed.data.question.trim(),
-          description: `Created by ${storedAgent.agentName} via Bantah agent runtime`,
-          category: storedAgent.specialty === "general" ? "general" : storedAgent.specialty,
-          amount: roundedAmount,
-          status: "open",
-          creatorType: "agent",
-          creatorAgentId: storedAgent.agentId,
-          createdByAgent: true,
-          agentInvolved: true,
-          dueDate: deadline,
-          settlementRail: "onchain",
-          chainId: chainConfig.chainId,
-          tokenSymbol,
-          tokenAddress: tokenConfig.address,
-          decimals: tokenConfig.decimals,
-          stakeAtomic: toAtomicUnits(parsed.data.stakeAmount, tokenConfig.decimals),
-          evidence: {
-            source: "bantah_agent_runtime",
-            createdByAgentId: storedAgent.agentId,
-            marketOptions: parsed.data.options,
-          },
-        } as any);
-
-        await storage.incrementAgentMarketCount(storedAgent.agentId);
-
-        return res.json(
-          buildSkillSuccessEnvelope(requestId, {
-            marketId: String(createdChallenge.id),
-            status: "open",
-            question: createdChallenge.title,
-            options: parsed.data.options.map((label, index) => ({
-              id: `option_${index + 1}`,
-              label,
-            })),
-            deadline: deadline.toISOString(),
-            stakeAmount: parsed.data.stakeAmount,
-            currency: parsed.data.currency,
-            creatorWalletAddress: storedAgent.walletAddress,
-          }),
-        );
-      }
-
-      case "join_yes":
-      case "join_no": {
-        const parsed = joinMarketInputSchema.safeParse(envelope.payload);
-        if (!parsed.success) {
-          return res.status(400).json(
-            buildSkillErrorEnvelope(requestId, "invalid_input", "Join payload is invalid."),
-          );
-        }
-
-        const numericMarketId = parseRuntimeMarketId(parsed.data.marketId);
-        const { challenge, dueDateIso } = await getRuntimeMarketSnapshot(numericMarketId);
-        const side = envelope.action === "join_yes" ? "yes" : "no";
-        const { roundedAmount } = parseStakeAmount(parsed.data.stakeAmount);
-
-        if (!challenge.adminCreated && challenge.createdByAgent !== true) {
-          return res.status(501).json(
-            buildSkillErrorEnvelope(
-              requestId,
-              "unsupported_action",
-              "Agent joins are currently limited to open Bantah market feeds.",
-              { marketId: parsed.data.marketId },
-            ),
-          );
-        }
-
-        if (String(challenge.status || "").trim().toLowerCase() !== "open") {
-          return res.status(409).json(
-            buildSkillErrorEnvelope(requestId, "market_closed", "Market is no longer open.", {
-              marketId: parsed.data.marketId,
-            }),
-          );
-        }
-
-        if (dueDateIso && new Date(dueDateIso).getTime() <= Date.now()) {
-          return res.status(409).json(
-            buildSkillErrorEnvelope(
-              requestId,
-              "market_closed",
-              "Market deadline has already passed.",
-              { marketId: parsed.data.marketId },
-            ),
-          );
-        }
-
-        if (String(challenge.settlementRail || "").trim().toLowerCase() === "onchain") {
-          return res.status(501).json(
-            buildSkillErrorEnvelope(
-              requestId,
-              "unsupported_action",
-              "Wallet-backed onchain agent staking is not live yet. Market creation and reads are enabled first.",
-              { marketId: parsed.data.marketId, side },
-            ),
-          );
-        }
-
-        if (String(challenge.tokenSymbol || "USDC").trim().toUpperCase() !== "USDC") {
-          return res.status(501).json(
-            buildSkillErrorEnvelope(
-              requestId,
-              "unsupported_action",
-              "This runtime phase only supports USDC market joins.",
-              { marketId: parsed.data.marketId },
-            ),
-          );
-        }
-
-        const requiredAmount = Number(challenge.amount || 0);
-        if (!Number.isInteger(requiredAmount) || requiredAmount <= 0 || roundedAmount !== requiredAmount) {
-          return res.status(400).json(
-            buildSkillErrorEnvelope(
-              requestId,
-              "invalid_input",
-              `Market requires exactly ${requiredAmount} USDC for each entry.`,
-              { marketId: parsed.data.marketId, requiredAmount: String(requiredAmount) },
-            ),
-          );
-        }
-
-        const [existingEntry] = await db
-          .select({
-            id: pairQueue.id,
-            status: pairQueue.status,
-          })
-          .from(pairQueue)
-          .where(
-            and(
-              eq(pairQueue.challengeId, numericMarketId),
-              eq(pairQueue.agentId, storedAgent.agentId),
-              inArray(pairQueue.status, ["waiting", "matched"]),
-            ),
-          )
-          .limit(1);
-
-        if (existingEntry) {
-          return res.json(
-            buildSkillSuccessEnvelope(requestId, {
-              marketId: String(numericMarketId),
-              side,
-              acceptedStakeAmount: String(requiredAmount),
-              currency: "USDC",
-              status: existingEntry.status === "matched" ? "matched" : "queued",
-            }),
-          );
-        }
-
-        const ownerBalance = await storage.getUserBalance(storedAgent.ownerId);
-        if (Number(ownerBalance.balance || 0) < requiredAmount) {
-          return res.status(409).json(
-            buildSkillErrorEnvelope(
-              requestId,
-              "insufficient_balance",
-              "Agent owner does not have enough offchain balance to queue this market.",
-              { marketId: parsed.data.marketId, requiredAmount: String(requiredAmount) },
-            ),
-          );
-        }
-
-        await db.insert(pairQueue).values({
-          challengeId: numericMarketId,
-          userId: storedAgent.ownerId,
-          participantType: "agent",
-          agentId: storedAgent.agentId,
-          side: side.toUpperCase(),
-          stakeAmount: requiredAmount,
-          status: "waiting",
-          createdAt: new Date(),
-        } as any);
-
-        await storage.createTransaction({
-          userId: storedAgent.ownerId,
-          type: "challenge_queue_stake",
-          amount: `-${requiredAmount}`,
-          description: `Agent ${storedAgent.agentName} queued on challenge #${numericMarketId} (${side.toUpperCase()})`,
-          relatedId: numericMarketId,
-          status: "completed",
-        });
-
-        return res.json(
-          buildSkillSuccessEnvelope(requestId, {
-            marketId: String(numericMarketId),
-            side,
-            acceptedStakeAmount: String(requiredAmount),
-            currency: "USDC",
-            status: "queued",
-          }),
-        );
-      }
-
-      case "read_market": {
-        const parsed = readMarketInputSchema.safeParse(envelope.payload);
-        if (!parsed.success) {
-          return res.status(400).json(
-            buildSkillErrorEnvelope(requestId, "invalid_input", "Market lookup payload is invalid."),
-          );
-        }
-
-        const numericMarketId = parseRuntimeMarketId(parsed.data.marketId);
-        const marketSnapshot = await getRuntimeMarketSnapshot(numericMarketId);
-
-        if (!marketSnapshot.dueDateIso) {
-          return res.status(400).json(
-            buildSkillErrorEnvelope(
-              requestId,
-              "invalid_input",
-              "Market exists but does not have a valid deadline.",
-              { marketId: parsed.data.marketId },
-            ),
-          );
-        }
-
-        const yesOdds = marketSnapshot.totalPool > 0
-          ? marketSnapshot.yesPool / marketSnapshot.totalPool
-          : 0.5;
-        const noOdds = marketSnapshot.totalPool > 0
-          ? marketSnapshot.noPool / marketSnapshot.totalPool
-          : 0.5;
-
-        return res.json(
-          buildSkillSuccessEnvelope(requestId, {
-            marketId: String(numericMarketId),
-            status: marketSnapshot.status,
-            odds: {
-              yes: Number(yesOdds.toFixed(4)),
-              no: Number(noOdds.toFixed(4)),
-            },
-            participants: marketSnapshot.participants.map((participant) => ({
-              participantId: participant.participantId,
-              participantType: participant.participantType,
-              side: participant.side,
-              stakeAmount: participant.stakeAmount,
-            })),
-            deadline: marketSnapshot.dueDateIso,
-            totalPool: String(marketSnapshot.totalPool),
-            yesPool: String(marketSnapshot.yesPool),
-            noPool: String(marketSnapshot.noPool),
-          }),
-        );
-      }
-
-      case "check_balance": {
-        const parsed = checkBalanceInputSchema.safeParse(envelope.payload);
-        if (!parsed.success) {
-          return res.status(400).json(
-            buildSkillErrorEnvelope(requestId, "invalid_input", "Balance payload is invalid."),
-          );
-        }
-
-        return res.json(
-          buildSkillSuccessEnvelope(requestId, {
-            walletAddress: storedAgent.walletAddress,
-            currency: parsed.data.currency,
-            chainId: parsed.data.chainId,
-            availableBalance: "0",
-            updatedAt: new Date().toISOString(),
-          }),
-        );
-      }
-
-      default:
-        return res.status(501).json(
-          buildSkillErrorEnvelope(
-            requestId,
-            "unsupported_action",
-            `Action ${envelope.action} is not supported by the Bantah runtime yet.`,
-          ),
-        );
-    }
-  } catch (error) {
-    if (error instanceof ZodError) {
-      return res.status(400).json(
-        buildSkillErrorEnvelope(requestId, "invalid_input", "Runtime payload failed validation.", {
-          issues: error.issues,
-        }),
-      );
-    }
-
-    if (error instanceof HttpError) {
-      const code =
-        error.status === 401
-          ? "unauthorized"
-          : error.status === 429
-            ? "rate_limited"
-            : error.status === 500
-              ? "internal_error"
-              : "invalid_input";
-
-      return res.status(error.status).json(
-        buildSkillErrorEnvelope(
-          requestId,
-          code,
-          error.message,
-          error.details && typeof error.details === "object"
-            ? (error.details as Record<string, unknown>)
-            : undefined,
-        ),
-      );
-    }
-
-    console.error("Bantah agent runtime error:", error);
-    return res.status(500).json(
-      buildSkillErrorEnvelope(
-        requestId,
-        "internal_error",
-        "Failed to execute Bantah agent runtime action",
-      ),
+    const runtimeResponse = await executeManagedBantahAgentRuntimeAction(
+      storedAgent.agentId,
+      envelope,
     );
+    return res.status(runtimeResponse.status).json(runtimeResponse.envelope);
+  } catch (error) {
+    const response = serializeBantahSkillError(requestId, error);
+    return res.status(response.status).json(response.envelope);
   }
 });
 

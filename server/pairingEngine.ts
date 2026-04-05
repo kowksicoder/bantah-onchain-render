@@ -25,8 +25,16 @@ interface MatchResult {
     challengeId: string;
     amount: number;
     escrowId: number;
+    user1DisplayName?: string;
+    user2DisplayName?: string;
   };
   queuePosition?: number;
+}
+
+interface JoinChallengeOptions {
+  participantType?: "human" | "agent";
+  agentId?: string | null;
+  participantLabel?: string | null;
 }
 
 type Database = typeof db;
@@ -42,9 +50,17 @@ export class PairingEngine {
     userId: string,
     challengeId: string,
     side: "YES" | "NO",
-    stakeAmount: number
+    stakeAmount: number,
+    options: JoinChallengeOptions = {},
   ): Promise<MatchResult> {
     try {
+      const participantType =
+        options.participantType === "agent" && options.agentId ? "agent" : "human";
+      const participantAgentId = participantType === "agent" ? String(options.agentId || "") : null;
+      const participantLabel =
+        typeof options.participantLabel === "string" && options.participantLabel.trim().length > 0
+          ? options.participantLabel.trim()
+          : null;
       // Convert string challengeId to numeric for database queries
       const numericChallengeId = parseInt(challengeId, 10);
       if (isNaN(numericChallengeId)) {
@@ -64,16 +80,21 @@ export class PairingEngine {
         }
 
         // Step 2: Verify user hasn't already joined this challenge
+        const existingQueueConditions = [
+          eq(pairQueue.challengeId, numericChallengeId),
+          isNull(pairQueue.matchedWith),
+        ];
+
+        if (participantType === "agent" && participantAgentId) {
+          existingQueueConditions.push(eq(pairQueue.agentId, participantAgentId));
+        } else {
+          existingQueueConditions.push(eq(pairQueue.userId, userId));
+        }
+
         const existingQueue = await tx
           .select()
           .from(pairQueue)
-          .where(
-            and(
-              eq(pairQueue.challengeId, numericChallengeId),
-              eq(pairQueue.userId, userId),
-              isNull(pairQueue.matchedWith)
-            )
-          );
+          .where(and(...existingQueueConditions));
 
         if (existingQueue.length > 0) {
           throw new Error("User already in queue for this challenge");
@@ -105,6 +126,20 @@ export class PairingEngine {
         // Step 4: If opponent found, match both users
         if (opponent) {
           const matchTime = new Date();
+          const opponentParticipantType =
+            String(opponent.participantType || "").trim().toLowerCase() === "agent" && opponent.agentId
+              ? "agent"
+              : "human";
+          const opponentDisplayName =
+            opponentParticipantType === "agent" && opponent.agentId
+              ? `Agent ${String(opponent.agentId).slice(0, 6)}`
+              : `User #${opponent.userId.slice(-6)}`;
+          const joiningDisplayName =
+            participantType === "agent" && participantLabel
+              ? participantLabel
+              : participantType === "agent" && participantAgentId
+                ? `Agent ${participantAgentId.slice(0, 6)}`
+                : `User #${userId.slice(-6)}`;
 
           // Update opponent: mark as matched
           await tx
@@ -122,6 +157,8 @@ export class PairingEngine {
             .values({
               challengeId: numericChallengeId,
               userId,
+              participantType,
+              agentId: participantAgentId,
               side,
               stakeAmount,
               status: "matched",
@@ -159,6 +196,26 @@ export class PairingEngine {
             updateData.yesStakeTotal = (challenge.yesStakeTotal || 0) + opponent.stakeAmount;
           }
 
+          const applyAgentChallengeMetadata = (
+            participantSide: "YES" | "NO",
+            kind: "human" | "agent",
+            agentIdValue?: string | null,
+          ) => {
+            if (kind !== "agent" || !agentIdValue) return;
+            updateData.agentInvolved = true;
+            if (participantSide === "YES" && !challenge.challengerAgentId) {
+              updateData.challengerType = "agent";
+              updateData.challengerAgentId = agentIdValue;
+            }
+            if (participantSide === "NO" && !challenge.challengedAgentId) {
+              updateData.challengedType = "agent";
+              updateData.challengedAgentId = agentIdValue;
+            }
+          };
+
+          applyAgentChallengeMetadata(side, participantType, participantAgentId);
+          applyAgentChallengeMetadata(opponent.side as "YES" | "NO", opponentParticipantType, opponent.agentId);
+
           await tx.update(challenges).set(updateData).where(eq(challenges.id, numericChallengeId));
 
           return {
@@ -170,6 +227,8 @@ export class PairingEngine {
               challengeId: numericChallengeId,
               amount: stakeAmount + opponent.stakeAmount,
               escrowId: escrowIds[0],
+              user1DisplayName: opponentDisplayName,
+              user2DisplayName: joiningDisplayName,
             },
           };
         }
@@ -178,14 +237,31 @@ export class PairingEngine {
         const [queueEntry] = await tx
           .insert(pairQueue)
           .values({
-              challengeId: numericChallengeId,
+            challengeId: numericChallengeId,
             userId,
+            participantType,
+            agentId: participantAgentId,
             side,
             stakeAmount,
             status: "waiting",
             createdAt: new Date(),
           })
           .returning();
+
+        if (participantType === "agent" && participantAgentId) {
+          const challengeUpdate: Record<string, unknown> = {
+            agentInvolved: true,
+          };
+          if (side === "YES" && !challenge.challengerAgentId) {
+            challengeUpdate.challengerType = "agent";
+            challengeUpdate.challengerAgentId = participantAgentId;
+          }
+          if (side === "NO" && !challenge.challengedAgentId) {
+            challengeUpdate.challengedType = "agent";
+            challengeUpdate.challengedAgentId = participantAgentId;
+          }
+          await tx.update(challenges).set(challengeUpdate).where(eq(challenges.id, numericChallengeId));
+        }
 
         // Get queue position
         const queuePosition = await tx
@@ -216,8 +292,8 @@ export class PairingEngine {
             String(result.match.challengeId),
             result.match.user1Id,
             result.match.user2Id,
-            `User #${result.match.user1Id.slice(-6)}`,
-            `User #${result.match.user2Id.slice(-6)}`,
+            result.match.user1DisplayName || `User #${result.match.user1Id.slice(-6)}`,
+            result.match.user2DisplayName || `User #${result.match.user2Id.slice(-6)}`,
             result.match.amount
           );
         } catch (notifError) {

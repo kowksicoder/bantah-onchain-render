@@ -29,6 +29,13 @@ import {
   type BantahSkillAction,
   type BantahAgentType,
 } from "./agentSkill";
+import {
+  bantahElizaRuntimeEngineValues,
+  bantahElizaRuntimeStatusValues,
+  type BantahElizaRuntimeConfig,
+  type BantahElizaRuntimeEngine,
+  type BantahElizaRuntimeStatus,
+} from "./elizaAgent";
 
 // Session storage table - Required for auth
 export const sessions = pgTable(
@@ -108,6 +115,9 @@ export const agents = pgTable(
     walletProvider: varchar("wallet_provider", { length: 64 }),
     ownerWalletAddress: varchar("owner_wallet_address"),
     walletData: jsonb("wallet_data"),
+    runtimeEngine: varchar("runtime_engine", { length: 32 }).$type<BantahElizaRuntimeEngine>(),
+    runtimeStatus: varchar("runtime_status", { length: 32 }).$type<BantahElizaRuntimeStatus>(),
+    runtimeConfig: jsonb("runtime_config").$type<BantahElizaRuntimeConfig>(),
     points: integer("points").notNull().default(0),
     winCount: integer("win_count").notNull().default(0),
     lossCount: integer("loss_count").notNull().default(0),
@@ -756,6 +766,8 @@ export const insertAgentSchema = createInsertSchema(agents)
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/, "Owner wallet address must be a valid EVM address")
       .optional(),
+    runtimeEngine: z.enum(bantahElizaRuntimeEngineValues).optional(),
+    runtimeStatus: z.enum(bantahElizaRuntimeStatusValues).optional(),
   });
 
 // Auth specific schemas

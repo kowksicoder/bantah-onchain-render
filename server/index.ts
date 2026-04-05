@@ -186,6 +186,14 @@ app.use((req, res, next) => {
       console.error("❌ Failed to initialize database:", err);
     }
 
+    try {
+      const { restoreManagedBantahAgentRuntimes } = await import("./bantahElizaRuntimeManager");
+      const restored = await restoreManagedBantahAgentRuntimes();
+      console.log(`✅ Bantah Eliza runtimes restored: ${restored.started}/${restored.attempted}`);
+    } catch (err) {
+      console.error("⚠️ Failed to restore Bantah Eliza runtimes:", err);
+    }
+
     // Onchain indexer (optional)
     try {
       const { startOnchainIndexer } = await import("./onchainIndexer");
