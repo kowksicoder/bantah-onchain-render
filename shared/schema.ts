@@ -18,6 +18,17 @@ import {
 import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import {
+  BANTAH_SKILL_VERSION,
+  bantahAgentSpecialtyValues,
+  bantahAgentStatusValues,
+  bantahSkillActionValues,
+  bantahAgentTypeValues,
+  type BantahAgentSpecialty,
+  type BantahAgentStatus,
+  type BantahSkillAction,
+  type BantahAgentType,
+} from "./agentSkill";
 
 // Session storage table - Required for auth
 export const sessions = pgTable(
@@ -66,6 +77,59 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+export const agents = pgTable(
+  "agents",
+  {
+    agentId: uuid("agent_id").defaultRandom().primaryKey().notNull(),
+    ownerId: varchar("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    agentName: varchar("agent_name").notNull(),
+    agentType: varchar("agent_type", { length: 32 }).$type<BantahAgentType>().notNull(),
+    walletAddress: varchar("wallet_address").notNull().unique(),
+    endpointUrl: varchar("endpoint_url", { length: 512 }).notNull().unique(),
+    bantahSkillVersion: varchar("bantah_skill_version", { length: 24 })
+      .notNull()
+      .default(BANTAH_SKILL_VERSION),
+    specialty: varchar("specialty", { length: 32 })
+      .$type<BantahAgentSpecialty>()
+      .notNull()
+      .default("general"),
+    status: varchar("status", { length: 32 })
+      .$type<BantahAgentStatus>()
+      .notNull()
+      .default("active"),
+    skillActions: jsonb("skill_actions")
+      .$type<BantahSkillAction[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    walletNetworkId: varchar("wallet_network_id", { length: 64 }),
+    walletProvider: varchar("wallet_provider", { length: 64 }),
+    ownerWalletAddress: varchar("owner_wallet_address"),
+    walletData: jsonb("wallet_data"),
+    points: integer("points").notNull().default(0),
+    winCount: integer("win_count").notNull().default(0),
+    lossCount: integer("loss_count").notNull().default(0),
+    marketCount: integer("market_count").notNull().default(0),
+    isTokenized: boolean("is_tokenized").notNull().default(false),
+    lastSkillCheckAt: timestamp("last_skill_check_at"),
+    lastSkillCheckScore: integer("last_skill_check_score"),
+    lastSkillCheckStatus: varchar("last_skill_check_status", { length: 16 }).$type<
+      "passed" | "failed"
+    >(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    ownerIdx: index("idx_agents_owner_id").on(table.ownerId),
+    typeIdx: index("idx_agents_agent_type").on(table.agentType),
+    endpointIdx: index("idx_agents_endpoint_url").on(table.endpointUrl),
+    statusIdx: index("idx_agents_status").on(table.status),
+    specialtyIdx: index("idx_agents_specialty").on(table.specialty),
+    pointsIdx: index("idx_agents_points").on(table.points),
+  }),
+);
 
 // Events for prediction betting
 export const events = pgTable("events", {
@@ -540,6 +604,7 @@ export const userInteractions = pgTable("user_interactions", {
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   events: many(events, { relationName: "creator" }),
+  ownedAgents: many(agents),
   eventParticipants: many(eventParticipants),
   eventMessages: many(eventMessages),
   challengesCreated: many(challenges, { relationName: "challenger" }),
@@ -558,6 +623,13 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   }),
   preferences: one(userPreferences),
   interactions: many(userInteractions),
+}));
+
+export const agentsRelations = relations(agents, ({ one }) => ({
+  owner: one(users, {
+    fields: [agents.ownerId],
+    references: [users.id],
+  }),
 }));
 
 export const eventsRelations = relations(events, ({ one, many }) => ({
@@ -633,6 +705,41 @@ export const insertUserSchema = createInsertSchema(users)
     email: z.string().email("Invalid email address"),
     password: z.string().min(6, "Password must be at least 6 characters"),
     username: z.string().min(3, "Username must be at least 3 characters").optional(),
+  });
+
+export const insertAgentSchema = createInsertSchema(agents)
+  .omit({
+    agentId: true,
+    createdAt: true,
+    updatedAt: true,
+    walletData: true,
+    points: true,
+    winCount: true,
+    lossCount: true,
+    marketCount: true,
+  })
+  .extend({
+    agentName: z.string().min(2, "Agent name must be at least 2 characters").max(80),
+    agentType: z.enum(bantahAgentTypeValues),
+    walletAddress: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/, "Wallet address must be a valid EVM address"),
+    endpointUrl: z
+      .string()
+      .url("Endpoint URL must be a valid URL")
+      .refine((value) => value.startsWith("http://") || value.startsWith("https://"), {
+        message: "Endpoint URL must use http or https",
+      }),
+    bantahSkillVersion: z.string().min(1).max(24).default(BANTAH_SKILL_VERSION),
+    specialty: z.enum(bantahAgentSpecialtyValues),
+    status: z.enum(bantahAgentStatusValues).optional(),
+    skillActions: z.array(z.enum(bantahSkillActionValues)).optional(),
+    walletNetworkId: z.string().min(1).max(64).optional(),
+    walletProvider: z.string().min(1).max(64).optional(),
+    ownerWalletAddress: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/, "Owner wallet address must be a valid EVM address")
+      .optional(),
   });
 
 // Auth specific schemas
@@ -864,6 +971,8 @@ export const userEventInteractionsRelations = relations(userEventInteractions, (
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+export type Agent = typeof agents.$inferSelect;
+export type InsertAgent = z.infer<typeof insertAgentSchema>;
 export type Event = typeof events.$inferSelect;
 export type InsertEvent = z.infer<typeof insertEventSchema>;
 export type Challenge = typeof challenges.$inferSelect;

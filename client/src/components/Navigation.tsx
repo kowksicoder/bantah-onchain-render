@@ -16,7 +16,6 @@ import { useBadges } from "@/hooks/useBadges";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +26,6 @@ import {
 import { formatBalance } from "@/utils/currencyUtils";
 import { getAvatarUrl } from "@/utils/avatarUtils";
 import { UserAvatar } from "@/components/UserAvatar";
-import { useEventsSearch } from "../context/EventsSearchContext"; // Corrected import
 import { SmartSearch } from "./SmartSearch";
 import { type OnchainRuntimeConfig } from "@/lib/onchainEscrow";
 import {
@@ -51,6 +49,7 @@ import {
   Search,
   Info,
   Network,
+  Bot,
 } from "lucide-react";
 import { Link } from "wouter"; // Import Link from wouter
 import { FloatingBantzzButton } from "./FloatingBantzzButton";
@@ -151,10 +150,6 @@ export function Navigation() {
     navigate(path);
   };
 
-  const goToChallenges = () => {
-    navigate("/challenges");
-  };
-
   // Show full navigation for both authenticated and unauthenticated users
   // if (!user) {
   //   return (
@@ -248,7 +243,8 @@ export function Navigation() {
 
     if (location.startsWith("/events/create")) return "Create Event";
     if (location.startsWith("/events/")) return "Event Chat";
-    if (location.startsWith("/challenges")) return "Challenges";
+    if (location.startsWith("/challenges")) return "Markets";
+    if (location.startsWith("/agents")) return "Agents";
     if (location.startsWith("/wallet")) return "Wallet";
     if (location.startsWith("/profile/edit")) return "Edit Profile";
     if (location.startsWith("/profile/settings")) return "Profile Settings";
@@ -277,17 +273,28 @@ export function Navigation() {
     navigate("/challenges");
   };
 
-  const { searchTerm, setSearchTerm } = useEventsSearch();
   const activeChain =
     chainOptions.find((chain) => Number(chain.chainId) === Number(selectedChainId)) ||
     chainOptions.find((chain) => Number(chain.chainId) === Number(onchainConfig?.defaultChainId)) ||
     chainOptions[0];
 
   const chainIconByKey: Record<string, { src: string; alt: string }> = {
-    base: { src: "/assets/chain-base.svg", alt: "Base" },
-    arbitrum: { src: "/assets/chain-arbitrum.svg", alt: "Arbitrum" },
-    bsc: { src: "/assets/chain-bsc.svg", alt: "BNB Chain" },
-    unichain: { src: "/assets/chain-unichain.svg", alt: "Unichain" },
+    base: {
+      src: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRgJzE3esFDDQJwxXfIEQy-TlsXLnWvlEOyTQ&s",
+      alt: "Base",
+    },
+    arbitrum: {
+      src: "https://cryptologos.cc/logos/arbitrum-arb-logo.svg?v=040",
+      alt: "Arbitrum",
+    },
+    bsc: {
+      src: "https://cryptologos.cc/logos/bnb-bnb-logo.svg?v=040",
+      alt: "BNB Chain",
+    },
+    unichain: {
+      src: "https://cryptologos.cc/logos/uniswap-uni-logo.svg?v=040",
+      alt: "Unichain",
+    },
   };
 
   const resolveChainIcon = (chain: { key?: string; name?: string } | null | undefined) => {
@@ -378,7 +385,7 @@ export function Navigation() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
-                          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800"
                           aria-label="Select chain"
                         >
                           {(() => {
@@ -396,7 +403,10 @@ export function Navigation() {
                           <span>{activeChain?.name || "Chain"}</span>
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuContent
+                        align="end"
+                        className="w-44 border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900"
+                      >
                         {chainOptions.map((chain) => (
                           <DropdownMenuItem
                             key={chain.chainId}
@@ -424,6 +434,14 @@ export function Navigation() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
+
+                  {/* Leaderboard Icon - Always visible on mobile */}
+                  <button
+                    onClick={() => handleNavigation("/agents")}
+                    className="p-2 text-slate-600 dark:text-slate-300 hover:text-primary transition-colors"
+                  >
+                    <Bot className="h-5 w-5" />
+                  </button>
 
                   {/* Leaderboard Icon - Always visible on mobile */}
                   <button
@@ -502,7 +520,7 @@ export function Navigation() {
                   data-tour="challenges"
                 >
                   <Trophy className="w-4 h-4" />
-                  Challenges
+                  Markets
                 </button>
                 <button
                   onClick={() => handleNavigation("/friends")}
@@ -515,6 +533,17 @@ export function Navigation() {
                 >
                   <Users className="w-4 h-4" />
                   Friends
+                </button>
+                <button
+                  onClick={() => handleNavigation("/agents")}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+                    location === "/agents" || location.startsWith("/agents")
+                      ? "bg-white dark:bg-slate-800 text-gray-900 dark:text-white shadow-lg"
+                      : "text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50"
+                  }`}
+                >
+                  <Bot className="w-4 h-4" />
+                  Agents
                 </button>
                 <button
                   onClick={() => handleNavigation("/leaderboard")}
@@ -545,27 +574,30 @@ export function Navigation() {
               {/* Secondary Navigation Group */}
               <div className="flex items-center bg-gray-50 dark:bg-slate-700/50 rounded-xl p-1 border border-gray-200 dark:border-slate-600"></div>
 
-              {/* Search Bar - Wire to events or challenges depending on page */}
+              {/* Search Bar */}
               <div className="ml-2">
-                <Input
-                  placeholder={location.startsWith("/challenges") ? "Search challenges..." : "Search events.."}
-                  value={searchTerm}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (location.startsWith("/challenges")) {
-                      window.dispatchEvent(new CustomEvent("challenges-search", { detail: v }));
-                    } else {
-                      setSearchTerm(v);
-                    }
-                  }}
-                  className="bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 w-3/4 focus:ring-2 focus:ring-slate-400 focus:ring-offset-0 focus:border-slate-400 focus-visible:ring-slate-400 placeholder:text-slate-400 placeholder:text-sm"
+                <SmartSearch
+                  placeholder={
+                    location.startsWith("/challenges")
+                      ? "Search markets, challenges, users..."
+                      : "Search events, markets, users..."
+                  }
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex w-[280px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                    >
+                      <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                      <span className="truncate">
+                        {location.startsWith("/challenges")
+                          ? "Search markets, users..."
+                          : "Search events, markets, users..."}
+                      </span>
+                    </button>
+                  }
                 />
               </div>
-              {isOnchainBuild ? (
-                <Badge className="ml-2 px-2.5 py-1 text-[10px] tracking-wide uppercase bg-emerald-600 text-white border-0">
-                  Onchain
-                </Badge>
-              ) : (
+              {!isOnchainBuild && (
                 <button
                   onClick={() => setShowOnchainModal(true)}
                   className="ml-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50 border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700"
@@ -581,7 +613,7 @@ export function Navigation() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
-                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800"
                       aria-label="Select chain"
                     >
                       {(() => {
@@ -599,7 +631,10 @@ export function Navigation() {
                       <span>{activeChain?.name || "Chain"}</span>
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-48 border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900"
+                  >
                     {chainOptions.map((chain) => (
                       <DropdownMenuItem
                         key={chain.chainId}

@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useWallets } from "@privy-io/react-auth";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { getGlobalChannel } from "@/lib/pusher";
 import { MobileNavigation } from "@/components/MobileNavigation";
@@ -49,6 +50,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { PlayfulLoadingOverlay } from "@/components/ui/playful-loading";
 import DateTimePicker from "react-datetime-picker";
 import {
+  CheckCircle2,
   MessageCircle,
   Clock,
   Calendar,
@@ -58,6 +60,7 @@ import {
   Users,
   Shield,
   Search,
+  Bot,
   ArrowUp,
   ArrowDown,
   Upload,
@@ -141,6 +144,14 @@ const tokenVisuals: Record<OnchainTokenSymbol, { src: string; alt: string }> = {
   BNB: { src: "/assets/token-bnb.svg", alt: "BNB logo" },
 };
 
+const defaultAgentSkills = [
+  "create_market",
+  "join_yes",
+  "join_no",
+  "read_market",
+  "check_balance",
+];
+
 function TokenMark({ token }: { token: OnchainTokenSymbol }) {
   const visual = tokenVisuals[token];
 
@@ -157,14 +168,17 @@ function TokenMark({ token }: { token: OnchainTokenSymbol }) {
 export default function Challenges() {
   const { user, isAuthenticated, isLoading: authLoading, login, getAccessToken } = useAuth();
   const { wallets } = useWallets();
+  const [location] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [createMode, setCreateMode] = useState<'direct' | 'open'>('direct');
+  const [createMode, setCreateMode] = useState<'direct' | 'open' | 'agent'>('direct');
+  const [agentDisplayName, setAgentDisplayName] = useState("");
+  const [agentSpecialty, setAgentSpecialty] = useState<"general" | "crypto" | "sports" | "politics">("general");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
   const [showChat, setShowChat] = useState(false);
-  const [challengeStatusTab, setChallengeStatusTab] = useState<'all' | 'polymarket' | 'p2p' | 'open' | 'updown' | 'communities' | 'active' | 'pending' | 'finished'>('all');
+  const [challengeStatusTab, setChallengeStatusTab] = useState<'all' | 'polymarket' | 'p2p' | 'open' | 'updown' | 'communities' | 'agents' | 'active' | 'pending' | 'finished'>('all');
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [preSelectedUser, setPreSelectedUser] = useState<any>(null);
   const [visibleChallengeCount, setVisibleChallengeCount] = useState(12);
@@ -178,6 +192,25 @@ export default function Challenges() {
   useEffect(() => {
     if (preSelectedUser) setCreateMode('direct');
   }, [preSelectedUser]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (
+      requestedTab === "all" ||
+      requestedTab === "polymarket" ||
+      requestedTab === "p2p" ||
+      requestedTab === "open" ||
+      requestedTab === "updown" ||
+      requestedTab === "communities" ||
+      requestedTab === "agents" ||
+      requestedTab === "active" ||
+      requestedTab === "pending" ||
+      requestedTab === "finished"
+    ) {
+      setChallengeStatusTab(requestedTab);
+    }
+  }, [location]);
   const [selectedTab, setSelectedTab] = useState<string>('featured');
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -189,7 +222,6 @@ export default function Challenges() {
   const [isPreparingChallenge, setIsPreparingChallenge] = useState(false);
   const [headerChainId, setHeaderChainId] = useState<number | null>(null);
   const dueDatePickerRef = useRef<HTMLDivElement | null>(null);
-  const dueDateInputRef = useRef<HTMLInputElement | null>(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isClockOpen, setIsClockOpen] = useState(false);
 
@@ -202,7 +234,11 @@ export default function Challenges() {
     const onOpen = () => setIsSearchOpen(true);
     const onOpenCreateDialog = (e: any) => {
       const mode = e?.detail?.mode || 'direct';
-      setCreateMode(mode === 'open' ? 'open' : 'direct');
+      if (mode === 'open' || mode === 'agent' || mode === 'direct') {
+        setCreateMode(mode);
+      } else {
+        setCreateMode('direct');
+      }
       setIsCreateDialogOpen(true);
     };
 
@@ -691,6 +727,49 @@ export default function Challenges() {
     },
   });
 
+  const createAgentMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/agents/create", {
+        agentName: agentDisplayName.trim(),
+        specialty: agentSpecialty,
+      });
+    },
+    onSuccess: (result: any) => {
+      const createdAgent = result?.agent;
+      toast({
+        title: "Agent created",
+        description: createdAgent?.walletAddress
+          ? `${createdAgent.agentName} is live with wallet ${String(createdAgent.walletAddress).slice(0, 6)}...${String(createdAgent.walletAddress).slice(-4)}`
+          : "Your Bantah agent is now live in the registry.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
+      setIsCreateDialogOpen(false);
+      setAgentDisplayName("");
+      setAgentSpecialty("general");
+      window.setTimeout(() => {
+        window.location.href = "/agents";
+      }, 150);
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Unable to create agent",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const categoryTabs = [
     { id: "create", label: "Create", icon: "/assets/create.png", emoji: "✨", gradient: "from-green-400 to-emerald-500", isCreate: true, value: "create" },
     { id: "all", label: "All", icon: "/assets/versus.svg", emoji: "🌐", gradient: "from-blue-400 to-purple-500", value: "all" },
@@ -726,6 +805,50 @@ export default function Challenges() {
     if (!title.startsWith("onchain challenge")) return false;
     if (challenge?.adminCreated !== true) return false;
     return true;
+  };
+
+  const isAgentChallenge = (challenge: any) => {
+    if (!challenge) return false;
+
+    const typeFields = [
+      challenge?.creatorType,
+      challenge?.challengerType,
+      challenge?.challengedType,
+      challenge?.ownerType,
+      challenge?.creator?.type,
+      challenge?.challenger?.type,
+      challenge?.challenged?.type,
+      challenge?.challengerUser?.type,
+      challenge?.challengedUser?.type,
+    ];
+
+    if (
+      typeFields.some((value) => String(value || "").trim().toLowerCase() === "agent")
+    ) {
+      return true;
+    }
+
+    const idFields = [
+      challenge?.agentId,
+      challenge?.creatorAgentId,
+      challenge?.challengerAgentId,
+      challenge?.challengedAgentId,
+      challenge?.creator?.agentId,
+      challenge?.challenger?.agentId,
+      challenge?.challenged?.agentId,
+      challenge?.challengerUser?.agentId,
+      challenge?.challengedUser?.agentId,
+    ];
+
+    if (idFields.some(Boolean)) {
+      return true;
+    }
+
+    return (
+      challenge?.createdByAgent === true ||
+      challenge?.isAgentChallenge === true ||
+      challenge?.agentInvolved === true
+    );
   };
 
   const filteredChallenges = useMemo(() => challenges.filter((challenge: any) => {
@@ -767,6 +890,7 @@ export default function Challenges() {
       challengeStatusTab === 'open' ? (normalizedStatus === 'open' && !isFinishedChallenge) :
       challengeStatusTab === 'updown' ? isBtcUpDownChallenge(challenge) :
       challengeStatusTab === 'communities' ? isCommunityChallenge :
+      challengeStatusTab === 'agents' ? isAgentChallenge(challenge) :
       challengeStatusTab === 'active' ? (normalizedStatus === 'active' && !isFinishedChallenge) :
       challengeStatusTab === 'pending' ? (normalizedStatus === 'pending' && !isFinishedChallenge) :
       challengeStatusTab === 'finished' ? isFinishedChallenge :
@@ -856,6 +980,18 @@ export default function Challenges() {
 
 
   const onSubmit = async (data: z.infer<typeof createChallengeSchema>) => {
+    if (createMode === "agent") {
+      if (!agentDisplayName.trim()) {
+        toast({
+          title: "Agent name required",
+          description: "Give your agent a name to continue.",
+          variant: "destructive",
+        });
+        return;
+      }
+      createAgentMutation.mutate();
+      return;
+    }
     // Ensure direct-mode has a challenged user selected
     if (createMode === 'direct' && !data.challenged && !preSelectedUser) {
       toast({
@@ -959,6 +1095,15 @@ export default function Challenges() {
     }
   };
 
+  const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    if (createMode === "agent") {
+      event.preventDefault();
+      onSubmit(form.getValues());
+      return;
+    }
+    form.handleSubmit(onSubmit)(event);
+  };
+
   const handleChallengeClick = (challenge: any) => {
     // Navigate to the challenge activity page instead of opening the modal.
     // This allows users to view the activity page even if they're not a participant.
@@ -1053,6 +1198,9 @@ export default function Challenges() {
       };
 
       if (requiresContractEscrow) {
+        if (!onchainConfig) {
+          throw new Error("Onchain config is unavailable right now.");
+        }
         const preferredWalletAddress = (
           [
             (user as any)?.walletAddress,
@@ -1258,10 +1406,20 @@ export default function Challenges() {
         ) : (
           <div className="text-center py-20">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
-              <Search className="w-8 h-8 text-slate-400" />
+              {challengeStatusTab === "agents" ? (
+                <Bot className="w-8 h-8 text-slate-400" />
+              ) : (
+                <Search className="w-8 h-8 text-slate-400" />
+              )}
             </div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">No challenges found</h3>
-            <p className="text-slate-500 dark:text-slate-400">Try adjusting your search or category filters</p>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              {challengeStatusTab === "agents" ? "No agent challenges yet" : "No challenges found"}
+            </h3>
+            <p className="text-slate-500 dark:text-slate-400">
+              {challengeStatusTab === "agents"
+                ? "Agent-created and agent-involved challenges will appear here once we start matching them into the feed."
+                : "Try adjusting your search or category filters"}
+            </p>
           </div>
         )}
         {!isLoading && hasMoreChallenges && (
@@ -1312,6 +1470,12 @@ export default function Challenges() {
                 <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200 border border-white dark:border-slate-900 pointer-events-none">
                   {allTabCount}
                 </span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="agents" 
+                className="text-xs px-3 py-1.5 rounded-full data-[state=active]:bg-[#ccff00] data-[state=active]:text-black whitespace-nowrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all h-auto"
+              >
+                Agents
               </TabsTrigger>
               <TabsTrigger
                 value="polymarket"
@@ -1389,6 +1553,8 @@ export default function Challenges() {
               setCoverPreview(null);
               setCoverUrl("");
               setCoverInputType("upload");
+              setAgentDisplayName("");
+              setAgentSpecialty("general");
             }
           }}
         >
@@ -1411,7 +1577,7 @@ export default function Challenges() {
                 ) : (
                   <>
                     <img src="/assets/bantahblue.svg" alt="Bantah" className="h-6 w-6" />
-                    <span>Create a Challenge</span>
+                    <span>{createMode === "agent" ? "Create an Agent" : "Create a Challenge"}</span>
                   </>
                 )}
               </DialogTitle>
@@ -1444,16 +1610,106 @@ export default function Challenges() {
               >
                 P2P
               </button>
+              <button
+                type="button"
+                onClick={() => setCreateMode('agent')}
+                className={cn(
+                  "flex-1 rounded-full px-3 py-1 text-xs font-semibold",
+                  createMode === 'agent'
+                    ? 'bg-[#ccff00] text-black'
+                    : 'bg-transparent text-slate-600 dark:text-slate-300 border border-transparent hover:bg-slate-100'
+                )}
+              >
+                Agent
+              </button>
             </div>
             <p className="mb-1 hidden text-center text-[10px] leading-tight text-slate-500 dark:text-slate-400 sm:block">
-              Open: Anyone can join • P2P: Direct challenger
+              Open: Anyone can join - P2P: Direct challenger - Agent: Create a Bantah agent
             </p>
 
             <Form {...form}>
               <form
-                onSubmit={form.handleSubmit(onSubmit)}
+                onSubmit={handleFormSubmit}
                 className="space-y-2.5"
               >
+                {createMode === 'agent' ? (
+                  <div className="space-y-2.5">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                        Agent name
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Bantah Alpha"
+                          className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
+                          value={agentDisplayName}
+                          onChange={(event) => setAgentDisplayName(event.target.value)}
+                        />
+                      </FormControl>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400">
+                        Agent specialty
+                      </FormLabel>
+                      <Select
+                        value={agentSpecialty}
+                        onValueChange={(value) =>
+                          setAgentSpecialty(value as "general" | "crypto" | "sports" | "politics")
+                        }
+                      >
+                        <FormControl>
+                          <SelectTrigger className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0">
+                            <SelectValue placeholder="Select a specialty" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
+                          {[
+                            { value: "general", label: "General" },
+                            { value: "crypto", label: "Crypto" },
+                            { value: "sports", label: "Sports" },
+                            { value: "politics", label: "Politics" },
+                          ].map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Default Bantah skills
+                          </p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            Included automatically for every Bantah agent.
+                          </p>
+                        </div>
+                        <Badge className="border-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
+                          Default
+                        </Badge>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {defaultAgentSkills.map((skill) => (
+                          <span
+                            key={skill}
+                            className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                        Wallet and AgentKit are provisioned automatically.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                <>
                 {!preSelectedUser && createMode === 'direct' && (
                   <FormField
                     control={form.control}
@@ -1673,8 +1929,7 @@ export default function Challenges() {
                                 "bantah-datetime",
                                 !field.value && "bantah-datetime--icon-only",
                               )}
-                              calendarClassName="bantah-datetime__calendar"
-                              inputRef={dueDateInputRef}
+                              calendarProps={{ className: "bantah-datetime__calendar" }}
                             />
                             {!field.value && (
                               <span
@@ -1905,6 +2160,9 @@ export default function Challenges() {
                   </div>
                 </div>
 
+                </>
+                )}
+
                 <div className="flex space-x-2 pt-1">
                   <Button
                     type="button"
@@ -1915,11 +2173,19 @@ export default function Challenges() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={createChallengeMutation.isPending || isCoverUploading || isPreparingChallenge}
+                    disabled={
+                      createMode === "agent"
+                        ? !agentDisplayName.trim() || createAgentMutation.isPending
+                        : createChallengeMutation.isPending || isCoverUploading || isPreparingChallenge
+                    }
                     className="h-9 flex-1 rounded-xl text-sm text-black hover:opacity-90"
                     style={{ backgroundColor: '#ccff00' }}
                   >
-                    {isPreparingChallenge
+                    {createMode === "agent"
+                      ? createAgentMutation.isPending
+                        ? "Creating Agent..."
+                        : "Create Agent"
+                      : isPreparingChallenge
                       ? "Locking stake..."
                       : createChallengeMutation.isPending
                       ? "Creating..."

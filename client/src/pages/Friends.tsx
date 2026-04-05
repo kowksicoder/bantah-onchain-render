@@ -1,6 +1,7 @@
 ﻿import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useLocation } from "wouter";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { formatDistanceToNow } from "date-fns";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { Bot, ExternalLink, ShieldCheck, Sparkles } from "lucide-react";
 
 const createChallengeSchema = z.object({
   challenged: z.string().min(1, "Challenged user required"),
@@ -39,6 +41,39 @@ const createChallengeSchema = z.object({
   amount: z.string().min(1, "Amount required"),
   dueDate: z.string().min(1, "Due date required"),
 });
+
+type AgentFriendRecord = {
+  agentId: string;
+  agentName: string;
+  walletAddress: string;
+  endpointUrl: string;
+  specialty: "sports" | "crypto" | "politics" | "general";
+  points: number;
+  winCount: number;
+  marketCount: number;
+  lastSkillCheckStatus: "passed" | "failed" | null;
+  owner: {
+    id: string;
+    username?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+  };
+};
+
+type AgentFriendResponse = {
+  items: AgentFriendRecord[];
+};
+
+function getAgentOwnerLabel(owner: AgentFriendRecord["owner"]) {
+  const fullName = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
+  if (fullName) return fullName;
+  if (owner.username) return `@${owner.username}`;
+  return "Bantah user";
+}
+
+function getAgentSpecialtyLabel(value: AgentFriendRecord["specialty"]) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 
 function FriendRowSkeleton() {
   return (
@@ -82,6 +117,7 @@ function RequestRowSkeleton() {
 }
   export default function Friends() {
     const { user } = useAuth();
+    const [, navigate] = useLocation();
     const queryClient = useQueryClient();
     const [searchTerm, setSearchTerm] = useState("");
     const [friendEmail, setFriendEmail] = useState("");
@@ -117,6 +153,13 @@ function RequestRowSkeleton() {
     enabled: !!user,
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60,
+  });
+
+  const { data: agentsResponse, isLoading: isAgentsLoading } = useQuery<AgentFriendResponse>({
+    queryKey: ["/api/agents"],
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 1000 * 60 * 5,
   });
 
   const sendFriendRequestMutation = useMutation({
@@ -443,6 +486,17 @@ function RequestRowSkeleton() {
   }
 
   const filteredUsersFinal = filteredUsers;
+  const agentSearch = searchTerm.trim().toLowerCase();
+  const filteredAgents = (agentsResponse?.items || []).filter((agent) => {
+    if (!agentSearch) return true;
+    return (
+      agent.agentName.toLowerCase().includes(agentSearch) ||
+      agent.walletAddress.toLowerCase().includes(agentSearch) ||
+      agent.endpointUrl.toLowerCase().includes(agentSearch) ||
+      getAgentSpecialtyLabel(agent.specialty).toLowerCase().includes(agentSearch) ||
+      getAgentOwnerLabel(agent.owner).toLowerCase().includes(agentSearch)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[80px] md:pb-0">
@@ -455,7 +509,7 @@ function RequestRowSkeleton() {
         {/* Search and Add Friend */}
         <div className="flex items-center gap-4 mb-4 w-full">
           <Input
-            placeholder="Search username, email, or wallet..."
+            placeholder="Search users, agents, email, or wallet..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-slate-400 focus:ring-offset-0 focus:border-slate-400 focus-visible:ring-slate-400 placeholder:text-slate-400 placeholder:text-sm rounded-md"
@@ -512,12 +566,13 @@ function RequestRowSkeleton() {
 
         {/* Friends Tabs */}
         <Tabs defaultValue="friends" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="friends">Friends ({acceptedFriends.length})</TabsTrigger>
-            <TabsTrigger value="users">Users ({filteredUsers.length})</TabsTrigger>
-            <TabsTrigger value="requests">
+            <TabsList className="grid w-full grid-cols-4 gap-1 rounded-full bg-transparent p-0">
+            <TabsTrigger value="friends" className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition-all data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">Friends ({acceptedFriends.length})</TabsTrigger>
+            <TabsTrigger value="users" className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition-all data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">Users ({filteredUsers.length})</TabsTrigger>
+            <TabsTrigger value="agents" className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition-all data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">Agents ({filteredAgents.length})</TabsTrigger>
+            <TabsTrigger value="requests" className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition-all data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">
               <div className="flex flex-col leading-tight">
-                <span className="text-sm">Requests ({pendingRequests.length})</span>
+                <span className="text-xs">Requests ({pendingRequests.length})</span>
               </div>
             </TabsTrigger>
           </TabsList>
@@ -659,7 +714,93 @@ function RequestRowSkeleton() {
             ))}
           </TabsContent>
 
-          
+          <TabsContent value="agents" className="space-y-2">
+            {isAgentsLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <FriendRowSkeleton key={`agents-skeleton-${index}`} />
+                ))}
+              </div>
+            ) : filteredAgents.length === 0 ? (
+              <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                <CardContent className="text-center py-12">
+                  <Bot className="mx-auto mb-4 h-10 w-10 text-slate-400" />
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                    No agents found
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-400">
+                    Agent registry entries will show here as soon as they are imported or created.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              filteredAgents.map((agent) => (
+                <Card
+                  key={agent.agentId}
+                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                >
+                  <CardContent className="p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100">
+                          <Bot className="h-5 w-5" />
+                          {agent.lastSkillCheckStatus === "passed" && (
+                            <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                              <ShieldCheck className="h-3 w-3" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+                              {agent.agentName}
+                            </h3>
+                            <Badge className="border-0 bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                              {getAgentSpecialtyLabel(agent.specialty)}
+                            </Badge>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-medium truncate">
+                            Owned by {getAgentOwnerLabel(agent.owner)}
+                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                            <span>{agent.points.toLocaleString()} BantCredit</span>
+                            <span>•</span>
+                            <span>{agent.winCount || 0} wins</span>
+                            <span>•</span>
+                            <span>{agent.marketCount || 0} markets</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-1.5 shrink-0">
+                        <Button
+                          size="sm"
+                          className="h-8 rounded-lg bg-slate-100 px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+                          onClick={() => navigate("/agents")}
+                        >
+                          Registry
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-8 rounded-lg bg-[#ccff00] px-2.5 text-[11px] font-bold text-black hover:bg-[#b8eb00]"
+                          onClick={() => navigate("/challenges?tab=agents")}
+                        >
+                          Feed
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-8 rounded-lg bg-white px-2.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700 dark:hover:bg-slate-700"
+                          onClick={() => window.open(agent.endpointUrl, "_blank", "noopener,noreferrer")}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </TabsContent>
 
           <TabsContent value="requests" className="space-y-4">
             {isFriendsLoading ? (

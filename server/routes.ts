@@ -69,6 +69,7 @@ import { challengeNotifications } from './challengeNotifications';
 // Import notification routes
 import notificationsApi from './routes/notificationsApi';
 import adminNotificationsApi from './routes/adminNotificationsApi';
+import agentsApi from './routes/agentsApi';
 import { notificationInfrastructure } from './notificationInfrastructure';
 import {
   attachChallengeToPartnerProgram,
@@ -8985,6 +8986,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   // Register all other routes
   app.use('/api/notifications', notificationsApi);
   app.use('/api/admin/notifications', adminNotificationsApi);
+  app.use('/api/agents', agentsApi);
   app.use('/api', ogMetadataRouter);
 
   // ============ PAIRING ENGINE ROUTES ============

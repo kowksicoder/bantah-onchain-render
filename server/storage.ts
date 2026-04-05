@@ -1,5 +1,6 @@
 import {
   users,
+  agents,
   events,
   challenges,
   notifications,
@@ -30,6 +31,8 @@ import {
   storyViews,
   adminWalletTransactions,
   pairQueue,
+  type Agent,
+  type InsertAgent,
   type User,
   type UpsertUser,
   type Event,
@@ -62,6 +65,7 @@ import {
   groups,
   groupMembers,
 } from "@shared/schema";
+import type { AgentListQuery } from "@shared/agentApi";
 import { db, pool } from "./db";
 import { eq, desc, and, or, sql, count, sum, inArray, asc, isNull } from "drizzle-orm";
 import { nanoid } from 'nanoid';
@@ -72,6 +76,15 @@ import { normalizeEvmAddress, parseWalletAddresses } from "@shared/onchainConfig
 import { getOnchainServerConfig } from "./onchainConfig";
 
 const ONCHAIN_CONFIG = getOnchainServerConfig();
+
+type StoredAgentWithOwner = Agent & {
+  owner: Pick<User, "id" | "username" | "firstName" | "lastName" | "profileImageUrl">;
+};
+
+export type CreateAgentRecordInput = InsertAgent & {
+  agentId?: string;
+  walletData?: unknown;
+};
 
 export interface IStorage {
   // User operations - Updated for email/password auth
@@ -89,6 +102,25 @@ export interface IStorage {
     telegramUsername: string | null;
     isTelegramUser: boolean;
   }): Promise<void>;
+
+  // Agent registry operations
+  createAgent(agent: CreateAgentRecordInput): Promise<Agent>;
+  getAgentById(agentId: string): Promise<StoredAgentWithOwner | undefined>;
+  getAgentByWalletAddress(walletAddress: string): Promise<Agent | undefined>;
+  getAgentByEndpointUrl(endpointUrl: string): Promise<Agent | undefined>;
+  listAgents(
+    options: Pick<AgentListQuery, "page" | "limit" | "specialty" | "agentType" | "status" | "sort">,
+  ): Promise<{ items: StoredAgentWithOwner[]; total: number }>;
+  countImportedAgentsByOwnerSince(ownerId: string, since: Date): Promise<number>;
+  updateAgentSkillCheck(
+    agentId: string,
+    updates: {
+      bantahSkillVersion?: string;
+      lastSkillCheckAt: Date;
+      lastSkillCheckScore: number;
+      lastSkillCheckStatus: "passed" | "failed";
+    },
+  ): Promise<Agent>;
 
   // User preferences operations
   getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
@@ -801,6 +833,152 @@ export class DatabaseStorage implements IStorage {
       console.error("Error creating user:", error);
       throw error;
     }
+  }
+
+  async createAgent(agent: CreateAgentRecordInput): Promise<Agent> {
+    const values = {
+      ...agent,
+      updatedAt: new Date(),
+    } as typeof agents.$inferInsert;
+
+    const [createdAgent] = await this.db
+      .insert(agents)
+      .values(values)
+      .returning();
+
+    return createdAgent;
+  }
+
+  async getAgentById(agentId: string): Promise<StoredAgentWithOwner | undefined> {
+    const [row] = await this.db
+      .select({
+        agent: agents,
+        owner: {
+          id: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+        },
+      })
+      .from(agents)
+      .innerJoin(users, eq(agents.ownerId, users.id))
+      .where(eq(agents.agentId, agentId))
+      .limit(1);
+
+    if (!row) return undefined;
+
+    return {
+      ...row.agent,
+      owner: row.owner,
+    };
+  }
+
+  async getAgentByWalletAddress(walletAddress: string): Promise<Agent | undefined> {
+    const [agent] = await this.db
+      .select()
+      .from(agents)
+      .where(eq(agents.walletAddress, walletAddress))
+      .limit(1);
+
+    return agent;
+  }
+
+  async getAgentByEndpointUrl(endpointUrl: string): Promise<Agent | undefined> {
+    const [agent] = await this.db
+      .select()
+      .from(agents)
+      .where(eq(agents.endpointUrl, endpointUrl))
+      .limit(1);
+
+    return agent;
+  }
+
+  async listAgents(
+    options: Pick<AgentListQuery, "page" | "limit" | "specialty" | "agentType" | "status" | "sort">,
+  ): Promise<{ items: StoredAgentWithOwner[]; total: number }> {
+    const { page, limit, specialty, agentType, status, sort } = options;
+    const offset = (page - 1) * limit;
+    const conditions = [];
+
+    if (specialty) conditions.push(eq(agents.specialty, specialty));
+    if (agentType) conditions.push(eq(agents.agentType, agentType));
+    if (status) conditions.push(eq(agents.status, status));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const orderByClause =
+      sort === "points"
+        ? [desc(agents.points), desc(agents.createdAt)]
+        : sort === "wins"
+          ? [desc(agents.winCount), desc(agents.createdAt)]
+          : [desc(agents.createdAt)];
+
+    const rows = await this.db
+      .select({
+        agent: agents,
+        owner: {
+          id: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+        },
+      })
+      .from(agents)
+      .innerJoin(users, eq(agents.ownerId, users.id))
+      .where(whereClause)
+      .orderBy(...orderByClause)
+      .limit(limit)
+      .offset(offset);
+
+    const [totalRow] = await this.db
+      .select({ value: count() })
+      .from(agents)
+      .where(whereClause);
+
+    return {
+      items: rows.map((row) => ({
+        ...row.agent,
+        owner: row.owner,
+      })),
+      total: Number(totalRow?.value ?? 0),
+    };
+  }
+
+  async countImportedAgentsByOwnerSince(ownerId: string, since: Date): Promise<number> {
+    const [row] = await this.db
+      .select({ value: count() })
+      .from(agents)
+      .where(and(eq(agents.ownerId, ownerId), eq(agents.agentType, "imported"), sql`${agents.createdAt} >= ${since}`));
+
+    return Number(row?.value ?? 0);
+  }
+
+  async updateAgentSkillCheck(
+    agentId: string,
+    updates: {
+      bantahSkillVersion?: string;
+      lastSkillCheckAt: Date;
+      lastSkillCheckScore: number;
+      lastSkillCheckStatus: "passed" | "failed";
+    },
+  ): Promise<Agent> {
+    const [updatedAgent] = await this.db
+      .update(agents)
+      .set({
+        ...(updates.bantahSkillVersion
+          ? { bantahSkillVersion: updates.bantahSkillVersion }
+          : {}),
+        lastSkillCheckAt: updates.lastSkillCheckAt,
+        lastSkillCheckScore: updates.lastSkillCheckScore,
+        lastSkillCheckStatus: updates.lastSkillCheckStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.agentId, agentId))
+      .returning();
+
+    return updatedAgent;
   }
 
   async updateUserProfile(id: string, updates: Partial<User>): Promise<User> {

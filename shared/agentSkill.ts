@@ -1,0 +1,189 @@
+import { z } from "zod";
+
+export const BANTAH_SKILL_VERSION = "1.0.0";
+
+export const bantahAgentTypeValues = ["imported", "bantah_created"] as const;
+export const bantahAgentSpecialtyValues = [
+  "sports",
+  "crypto",
+  "politics",
+  "general",
+] as const;
+export const bantahAgentStatusValues = ["active", "suspended", "rekt"] as const;
+
+export type BantahAgentType = (typeof bantahAgentTypeValues)[number];
+export type BantahAgentSpecialty = (typeof bantahAgentSpecialtyValues)[number];
+export type BantahAgentStatus = (typeof bantahAgentStatusValues)[number];
+
+export const bantahSkillActionValues = [
+  "create_market",
+  "join_yes",
+  "join_no",
+  "read_market",
+  "check_balance",
+  "challenge_user",
+  "settle_market",
+] as const;
+
+export type BantahSkillAction = (typeof bantahSkillActionValues)[number];
+
+export const bantahRequiredSkillActionValues = [
+  "create_market",
+  "join_yes",
+  "join_no",
+  "read_market",
+  "check_balance",
+] as const;
+
+export type BantahRequiredSkillAction =
+  (typeof bantahRequiredSkillActionValues)[number];
+
+export const bantahSkillErrorCodeValues = [
+  "insufficient_balance",
+  "market_closed",
+  "invalid_input",
+  "unauthorized",
+  "unsupported_action",
+  "rate_limited",
+  "internal_error",
+] as const;
+
+export type BantahSkillErrorCode = (typeof bantahSkillErrorCodeValues)[number];
+
+export const bantahWebhookEventValues = [
+  "market_settled",
+  "bet_won",
+  "bet_lost",
+  "challenge_received",
+] as const;
+
+export type BantahWebhookEvent = (typeof bantahWebhookEventValues)[number];
+
+export const evmAddressSchema = z
+  .string()
+  .regex(/^0x[a-fA-F0-9]{40}$/, "Wallet address must be a valid EVM address");
+
+export const marketOptionSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(120),
+});
+
+export const agentActionEnvelopeSchema = z.object({
+  action: z.enum(bantahSkillActionValues),
+  skillVersion: z.string().default(BANTAH_SKILL_VERSION),
+  requestId: z.string().min(1).max(128),
+  timestamp: z.string().datetime().optional(),
+  payload: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const createMarketInputSchema = z.object({
+  question: z.string().min(5).max(280),
+  options: z.array(z.string().min(1).max(120)).min(2).max(10),
+  deadline: z.string().datetime(),
+  stakeAmount: z.string().min(1).max(32),
+  currency: z.literal("USDC").default("USDC"),
+  chainId: z.number().int().positive().default(8453),
+});
+
+export const joinMarketInputSchema = z.object({
+  marketId: z.string().min(1).max(128),
+  stakeAmount: z.string().min(1).max(32),
+});
+
+export const readMarketInputSchema = z.object({
+  marketId: z.string().min(1).max(128),
+});
+
+export const checkBalanceInputSchema = z.object({
+  currency: z.literal("USDC").default("USDC"),
+  chainId: z.number().int().positive().default(8453),
+});
+
+export const marketParticipantSchema = z.object({
+  participantId: z.string().min(1).max(128),
+  participantType: z.enum(["agent", "human"]),
+  side: z.enum(["yes", "no"]),
+  stakeAmount: z.string().min(1).max(32),
+});
+
+export const readMarketResultSchema = z.object({
+  marketId: z.string().min(1).max(128),
+  status: z.enum(["open", "pending", "matched", "settled", "cancelled"]),
+  odds: z.object({
+    yes: z.number().min(0).max(1),
+    no: z.number().min(0).max(1),
+  }),
+  participants: z.array(marketParticipantSchema),
+  deadline: z.string().datetime(),
+  totalPool: z.string().min(1).max(32),
+  yesPool: z.string().min(1).max(32),
+  noPool: z.string().min(1).max(32),
+});
+
+export const createMarketResultSchema = z.object({
+  marketId: z.string().min(1).max(128),
+  status: z.enum(["open", "pending"]),
+  question: z.string().min(5).max(280),
+  options: z.array(marketOptionSchema).min(2).max(10),
+  deadline: z.string().datetime(),
+  stakeAmount: z.string().min(1).max(32),
+  currency: z.literal("USDC"),
+  creatorWalletAddress: evmAddressSchema,
+});
+
+export const joinMarketResultSchema = z.object({
+  marketId: z.string().min(1).max(128),
+  side: z.enum(["yes", "no"]),
+  acceptedStakeAmount: z.string().min(1).max(32),
+  currency: z.literal("USDC"),
+  status: z.enum(["queued", "matched", "accepted"]),
+});
+
+export const checkBalanceResultSchema = z.object({
+  walletAddress: evmAddressSchema,
+  currency: z.literal("USDC"),
+  chainId: z.number().int().positive(),
+  availableBalance: z.string().min(1).max(32),
+  updatedAt: z.string().datetime(),
+});
+
+export const skillErrorSchema = z.object({
+  ok: z.literal(false),
+  error: z.object({
+    code: z.enum(bantahSkillErrorCodeValues),
+    message: z.string().min(1).max(280),
+    details: z.record(z.string(), z.unknown()).optional(),
+  }),
+  requestId: z.string().min(1).max(128),
+  skillVersion: z.string().default(BANTAH_SKILL_VERSION),
+});
+
+export const skillSuccessEnvelopeSchema = z.object({
+  ok: z.literal(true),
+  requestId: z.string().min(1).max(128),
+  skillVersion: z.string().default(BANTAH_SKILL_VERSION),
+  result: z.unknown(),
+});
+
+export const webhookPayloadSchema = z.object({
+  event: z.enum(bantahWebhookEventValues),
+  webhookId: z.string().min(1).max(128),
+  agentId: z.string().min(1).max(128),
+  marketId: z.string().min(1).max(128),
+  occurredAt: z.string().datetime(),
+  data: z.record(z.string(), z.unknown()).default({}),
+});
+
+export type AgentActionEnvelope = z.infer<typeof agentActionEnvelopeSchema>;
+export type CreateMarketInput = z.infer<typeof createMarketInputSchema>;
+export type JoinMarketInput = z.infer<typeof joinMarketInputSchema>;
+export type ReadMarketInput = z.infer<typeof readMarketInputSchema>;
+export type CheckBalanceInput = z.infer<typeof checkBalanceInputSchema>;
+export type MarketParticipant = z.infer<typeof marketParticipantSchema>;
+export type ReadMarketResult = z.infer<typeof readMarketResultSchema>;
+export type CreateMarketResult = z.infer<typeof createMarketResultSchema>;
+export type JoinMarketResult = z.infer<typeof joinMarketResultSchema>;
+export type CheckBalanceResult = z.infer<typeof checkBalanceResultSchema>;
+export type SkillErrorResponse = z.infer<typeof skillErrorSchema>;
+export type SkillSuccessEnvelope = z.infer<typeof skillSuccessEnvelopeSchema>;
+export type BantahWebhookPayload = z.infer<typeof webhookPayloadSchema>;
