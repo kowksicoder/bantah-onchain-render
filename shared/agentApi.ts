@@ -174,6 +174,79 @@ export const agentListResponseSchema = z.object({
   }),
 });
 
+export const agentActivityItemSchema = z.object({
+  activityId: z.string().min(1),
+  type: z.enum(["created_market", "joined_market", "won_market", "lost_market"]),
+  challengeId: z.number().int().positive(),
+  title: z.string().min(1),
+  category: z.string().nullable().optional(),
+  side: z.enum(["yes", "no"]).nullable().optional(),
+  occurredAt: z.string().datetime().nullable(),
+});
+
+export const agentActivityResponseSchema = z.object({
+  agentId: z.string().uuid(),
+  items: z.array(agentActivityItemSchema),
+});
+
+export const agentFollowStateResponseSchema = z.object({
+  agentId: z.string().uuid(),
+  isFollowing: z.boolean(),
+  followerCount: z.number().int().nonnegative(),
+});
+
+export const agentRuntimeStateResponseSchema = z.object({
+  agentId: z.string().uuid(),
+  runtimeEngine: z.enum(bantahElizaRuntimeEngineValues).nullable().optional(),
+  runtimeStatus: z.enum(bantahElizaRuntimeStatusValues).nullable().optional(),
+  health: z.enum(["healthy", "starting", "stopped", "error", "external"]),
+  isManagedRuntimeLive: z.boolean(),
+  startedAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime().nullable(),
+  chainId: z.number().int().positive().nullable(),
+  chainName: z.string().nullable(),
+  wallet: z.object({
+    address: evmAddressSchema,
+    provider: z.string().nullable(),
+    networkId: z.string().nullable(),
+    balance: z.string().nullable(),
+    currency: z.string().nullable(),
+    status: z.enum(["ready", "external", "error", "unavailable"]),
+    message: z.string().nullable(),
+  }),
+  controls: z.object({
+    canPause: z.boolean(),
+    canResume: z.boolean(),
+    canRestart: z.boolean(),
+  }),
+});
+
+export const agentLeaderboardEntrySchema = z.object({
+  rank: z.number().int().positive(),
+  agentId: z.string().uuid(),
+  agentName: z.string().min(2).max(80),
+  specialty: z.enum(bantahAgentSpecialtyValues),
+  points: z.number().int().nonnegative(),
+  winCount: z.number().int().nonnegative(),
+  lossCount: z.number().int().nonnegative(),
+  marketCount: z.number().int().nonnegative(),
+  followerCount: z.number().int().nonnegative(),
+  lastSkillCheckStatus: z.enum(["passed", "failed"]).nullable(),
+  owner: agentOwnerSummarySchema,
+});
+
+export const agentLeaderboardResponseSchema = z.object({
+  items: z.array(agentLeaderboardEntrySchema),
+  totalAgents: z.number().int().nonnegative(),
+});
+
+export const agentRankResponseSchema = z.object({
+  agentId: z.string().uuid(),
+  rank: z.number().int().positive().nullable(),
+  totalAgents: z.number().int().nonnegative(),
+  followerCount: z.number().int().nonnegative(),
+});
+
 export type AgentImportRequest = z.infer<typeof agentImportRequestSchema>;
 export type AgentSkillCheckRequest = z.infer<typeof agentSkillCheckRequestSchema>;
 export type AgentCreateRequest = z.infer<typeof agentCreateRequestSchema>;
@@ -187,3 +260,10 @@ export type AgentSkillCheckResult = z.infer<typeof agentSkillCheckResultSchema>;
 export type AgentImportResponse = z.infer<typeof agentImportResponseSchema>;
 export type AgentCreateResponse = z.infer<typeof agentCreateResponseSchema>;
 export type AgentListResponse = z.infer<typeof agentListResponseSchema>;
+export type AgentActivityItem = z.infer<typeof agentActivityItemSchema>;
+export type AgentActivityResponse = z.infer<typeof agentActivityResponseSchema>;
+export type AgentFollowStateResponse = z.infer<typeof agentFollowStateResponseSchema>;
+export type AgentRuntimeStateResponse = z.infer<typeof agentRuntimeStateResponseSchema>;
+export type AgentLeaderboardEntry = z.infer<typeof agentLeaderboardEntrySchema>;
+export type AgentLeaderboardResponse = z.infer<typeof agentLeaderboardResponseSchema>;
+export type AgentRankResponse = z.infer<typeof agentRankResponseSchema>;

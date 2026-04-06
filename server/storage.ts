@@ -1,6 +1,7 @@
 import {
   users,
   agents,
+  agentFollows,
   events,
   challenges,
   notifications,
@@ -76,6 +77,7 @@ import { normalizeEvmAddress, parseWalletAddresses } from "@shared/onchainConfig
 import { getOnchainServerConfig } from "./onchainConfig";
 
 const ONCHAIN_CONFIG = getOnchainServerConfig();
+const AGENT_WIN_BANTCREDIT_REWARD = 100;
 
 type StoredAgentWithOwner = Agent & {
   owner: Pick<User, "id" | "username" | "firstName" | "lastName" | "profileImageUrl">;
@@ -122,6 +124,20 @@ export interface IStorage {
     },
   ): Promise<Agent>;
   incrementAgentMarketCount(agentId: string, delta?: number): Promise<Agent>;
+  recordAgentChallengeOutcome(
+    agentId: string,
+    outcome: "win" | "loss",
+    delta?: number,
+  ): Promise<Agent>;
+  toggleAgentFollow(
+    userId: string,
+    agentId: string,
+  ): Promise<{ action: "followed" | "unfollowed" }>;
+  getAgentFollowState(
+    agentId: string,
+    userId?: string | null,
+  ): Promise<{ isFollowing: boolean; followerCount: number }>;
+  getAgentFollowerIds(agentId: string): Promise<string[]>;
 
   // User preferences operations
   getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
@@ -1011,6 +1027,98 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     return updatedAgent;
+  }
+
+  async recordAgentChallengeOutcome(
+    agentId: string,
+    outcome: "win" | "loss",
+    delta = 1,
+  ): Promise<Agent> {
+    const sanitizedDelta = Math.max(1, Math.trunc(delta || 1));
+    const rewardDelta =
+      outcome === "win" ? sanitizedDelta * AGENT_WIN_BANTCREDIT_REWARD : 0;
+    const [updatedAgent] = await this.db
+      .update(agents)
+      .set({
+        points:
+          outcome === "win"
+            ? sql`${agents.points} + ${rewardDelta}`
+            : agents.points,
+        winCount:
+          outcome === "win"
+            ? sql`${agents.winCount} + ${sanitizedDelta}`
+            : agents.winCount,
+        lossCount:
+          outcome === "loss"
+            ? sql`${agents.lossCount} + ${sanitizedDelta}`
+            : agents.lossCount,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.agentId, agentId))
+      .returning();
+
+    return updatedAgent;
+  }
+
+  async toggleAgentFollow(
+    userId: string,
+    agentId: string,
+  ): Promise<{ action: "followed" | "unfollowed" }> {
+    const [existingFollow] = await this.db
+      .select()
+      .from(agentFollows)
+      .where(and(eq(agentFollows.userId, userId), eq(agentFollows.agentId, agentId)))
+      .limit(1);
+
+    if (existingFollow) {
+      await this.db.delete(agentFollows).where(eq(agentFollows.id, existingFollow.id));
+      return { action: "unfollowed" };
+    }
+
+    try {
+      await this.db.insert(agentFollows).values({
+        userId,
+        agentId,
+      });
+      return { action: "followed" };
+    } catch (_error) {
+      return { action: "followed" };
+    }
+  }
+
+  async getAgentFollowState(
+    agentId: string,
+    userId?: string | null,
+  ): Promise<{ isFollowing: boolean; followerCount: number }> {
+    const [followerCountRow, followRecord] = await Promise.all([
+      this.db
+        .select({ count: count() })
+        .from(agentFollows)
+        .where(eq(agentFollows.agentId, agentId))
+        .then((rows) => rows[0]),
+      userId
+        ? this.db
+            .select({ id: agentFollows.id })
+            .from(agentFollows)
+            .where(and(eq(agentFollows.userId, userId), eq(agentFollows.agentId, agentId)))
+            .limit(1)
+            .then((rows) => rows[0])
+        : Promise.resolve(undefined),
+    ]);
+
+    return {
+      isFollowing: Boolean(followRecord),
+      followerCount: Number(followerCountRow?.count ?? 0),
+    };
+  }
+
+  async getAgentFollowerIds(agentId: string): Promise<string[]> {
+    const followerRows = await this.db
+      .select({ userId: agentFollows.userId })
+      .from(agentFollows)
+      .where(eq(agentFollows.agentId, agentId));
+
+    return followerRows.map((row) => row.userId);
   }
 
   async updateUserProfile(id: string, updates: Partial<User>): Promise<User> {

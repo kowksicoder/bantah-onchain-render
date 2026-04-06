@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import Pusher from "pusher";
 import { ZodError } from "zod";
 import {
   type AgentActionEnvelope,
@@ -31,6 +32,13 @@ import { assertAllowedStakeToken } from "./onchainEscrowService";
 
 const ONCHAIN_CONFIG = getOnchainServerConfig();
 const pairingEngine = createPairingEngine(db);
+const pusher = new Pusher({
+  appId: "1553294",
+  key: "decd2cca5e39cf0cbcd4",
+  secret: "1dd966e56c465ea285d9",
+  cluster: "mt1",
+  useTLS: true,
+});
 
 export class BantahSkillHttpError extends Error {
   status: number;
@@ -55,6 +63,65 @@ function toIsoString(value: Date | string | null | undefined): string | null {
   if (value instanceof Date) return value.toISOString();
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function sanitizePusherChannel(value: string): string {
+  return String(value || "").replace(/[^a-zA-Z0-9_\-=@,.;]/g, "_");
+}
+
+async function triggerNotificationPush(userId: string, payload: Record<string, unknown>) {
+  const sanitizedUserId = sanitizePusherChannel(userId);
+  if (!sanitizedUserId) return;
+
+  try {
+    await pusher.trigger(`user-${sanitizedUserId}`, "notification", payload);
+  } catch (error) {
+    console.error("Error sending agent follower notification:", error);
+  }
+}
+
+async function notifyAgentFollowers(params: {
+  agentId: string;
+  agentName: string;
+  type: "followed_agent_created_market" | "followed_agent_joined_market";
+  title: string;
+  message: string;
+  challengeId: number;
+  data?: Record<string, unknown>;
+}) {
+  const followerIds = await storage.getAgentFollowerIds(params.agentId);
+  if (followerIds.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    followerIds.map(async (followerId) => {
+      const notification = await storage.createNotification({
+        userId: followerId,
+        type: params.type,
+        title: params.title,
+        message: params.message,
+        icon: "agent",
+        data: {
+          agentId: params.agentId,
+          agentName: params.agentName,
+          challengeId: params.challengeId,
+          ...params.data,
+        },
+      } as any);
+
+      await triggerNotificationPush(followerId, {
+        ...notification,
+        event: params.type,
+        challengeId: String(params.challengeId),
+        timestamp: new Date().toISOString(),
+        data: {
+          ...(notification as any).data,
+          challengeId: params.challengeId,
+        },
+      });
+    }),
+  );
 }
 
 function parseRuntimeMarketId(marketId: string): number {
@@ -89,6 +156,32 @@ function mergeEscrowTxHashes(existing: unknown, incomingHash: string): string {
   }
 
   return `${raw},${incoming}`;
+}
+
+function buildAgentWalletSnapshot(storedAgent: Awaited<ReturnType<typeof getStoredBantahAgent>>) {
+  return {
+    agentId: storedAgent.agentId,
+    walletProvider: storedAgent.walletProvider ?? null,
+    walletNetworkId: storedAgent.walletNetworkId ?? null,
+    walletAddress: storedAgent.walletAddress,
+    ownerWalletAddress: storedAgent.ownerWalletAddress ?? null,
+    walletData: storedAgent.walletData ?? null,
+  };
+}
+
+function toSkillHttpErrorFromWalletError(
+  error: BantahAgentWalletError,
+  details?: Record<string, unknown>,
+) {
+  if (error.code === "insufficient_balance") {
+    return new BantahSkillHttpError(409, error.message, details, "insufficient_balance");
+  }
+
+  if (error.code === "unsupported_chain") {
+    return new BantahSkillHttpError(501, error.message, details, "unsupported_action");
+  }
+
+  return new BantahSkillHttpError(502, error.message, details, "internal_error");
 }
 
 function resolveOnchainRuntimeToken(chainId: number, currency: string) {
@@ -248,6 +341,18 @@ export async function executeBantahSkillEnvelope(
       } as any);
 
       await storage.incrementAgentMarketCount(storedAgent.agentId);
+      await notifyAgentFollowers({
+        agentId: storedAgent.agentId,
+        agentName: storedAgent.agentName,
+        type: "followed_agent_created_market",
+        title: "Followed agent created a market",
+        message: `${storedAgent.agentName} created "${createdChallenge.title}".`,
+        challengeId: createdChallenge.id,
+        data: {
+          action: "create_market",
+          side: null,
+        },
+      });
 
       return buildSkillSuccessEnvelope(requestId, {
         marketId: String(createdChallenge.id),
@@ -307,6 +412,7 @@ export async function executeBantahSkillEnvelope(
         String(challenge.settlementRail || "").trim().toLowerCase() === "onchain";
       const { chainConfig, tokenConfig } = resolveOnchainRuntimeToken(chainId, tokenSymbol);
       let joinEscrowTxHash: string | null = null;
+      const agentWalletSnapshot = buildAgentWalletSnapshot(storedAgent);
 
       if (isOnchainChallenge && ONCHAIN_CONFIG.contractEnabled && !tokenConfig.isNative) {
         const resolvedTokenAddress = challenge.tokenAddress || tokenConfig.address;
@@ -388,25 +494,68 @@ export async function executeBantahSkillEnvelope(
       }
 
       if (isOnchainChallenge && ONCHAIN_CONFIG.contractEnabled) {
-        const escrowExecution = await executeBantahAgentEscrowStakeTx({
-          snapshot: {
-            agentId: storedAgent.agentId,
-            walletProvider: storedAgent.walletProvider ?? null,
-            walletNetworkId: storedAgent.walletNetworkId ?? null,
-            walletAddress: storedAgent.walletAddress,
-            ownerWalletAddress: storedAgent.ownerWalletAddress ?? null,
-            walletData: storedAgent.walletData ?? null,
-          },
-          chainId,
-          chainConfig,
-          tokenSymbol,
-          amount: String(requiredAmount),
-          amountAtomic:
-            typeof challenge.stakeAtomic === "string" && /^\d+$/.test(challenge.stakeAtomic)
-              ? challenge.stakeAtomic
-              : toAtomicUnits(String(requiredAmount), tokenConfig.decimals),
-        });
-        joinEscrowTxHash = escrowExecution.escrowTxHash;
+        const requiredAmountAtomic =
+          typeof challenge.stakeAtomic === "string" && /^\d+$/.test(challenge.stakeAtomic)
+            ? challenge.stakeAtomic
+            : toAtomicUnits(String(requiredAmount), tokenConfig.decimals);
+
+        try {
+          const walletBalance = await getBantahAgentWalletBalance({
+            snapshot: agentWalletSnapshot,
+            chainId,
+            chainConfig,
+            tokenSymbol,
+          });
+          if (BigInt(walletBalance.amountAtomic) < BigInt(requiredAmountAtomic)) {
+            throw new BantahSkillHttpError(
+              409,
+              `Agent wallet balance is too low for this ${tokenSymbol} stake.`,
+              {
+                marketId: parsed.data.marketId,
+                chainId,
+                currency: tokenSymbol,
+                walletAddress: walletBalance.walletAddress,
+                walletNetworkId: walletBalance.walletNetworkId,
+                availableBalance: walletBalance.amountFormatted,
+                requiredAmount: String(requiredAmount),
+              },
+              "insufficient_balance",
+            );
+          }
+        } catch (error) {
+          if (error instanceof BantahSkillHttpError) {
+            throw error;
+          }
+          if (error instanceof BantahAgentWalletError) {
+            throw toSkillHttpErrorFromWalletError(error, {
+              marketId: parsed.data.marketId,
+              chainId,
+              currency: tokenSymbol,
+            });
+          }
+          throw error;
+        }
+
+        try {
+          const escrowExecution = await executeBantahAgentEscrowStakeTx({
+            snapshot: agentWalletSnapshot,
+            chainId,
+            chainConfig,
+            tokenSymbol,
+            amount: String(requiredAmount),
+            amountAtomic: requiredAmountAtomic,
+          });
+          joinEscrowTxHash = escrowExecution.escrowTxHash;
+        } catch (error) {
+          if (error instanceof BantahAgentWalletError) {
+            throw toSkillHttpErrorFromWalletError(error, {
+              marketId: parsed.data.marketId,
+              chainId,
+              currency: tokenSymbol,
+            });
+          }
+          throw error;
+        }
       }
 
       const joinResult = await pairingEngine.joinChallenge(
@@ -439,6 +588,20 @@ export async function executeBantahSkillEnvelope(
           status: "completed",
         });
       }
+
+      await storage.incrementAgentMarketCount(storedAgent.agentId);
+      await notifyAgentFollowers({
+        agentId: storedAgent.agentId,
+        agentName: storedAgent.agentName,
+        type: "followed_agent_joined_market",
+        title: "Followed agent joined a market",
+        message: `${storedAgent.agentName} joined ${side.toUpperCase()} on "${challenge.title}".`,
+        challengeId: numericMarketId,
+        data: {
+          action: envelope.action,
+          side,
+        },
+      });
 
       if (joinEscrowTxHash) {
         const refreshedChallenge = await storage.getChallengeById(numericMarketId);
@@ -600,12 +763,21 @@ export function serializeBantahSkillError(
   }
 
   if (error instanceof BantahAgentWalletError) {
-    const status = error.code === "unsupported_chain" ? 501 : 500;
+    const status =
+      error.code === "unsupported_chain"
+        ? 501
+        : error.code === "insufficient_balance"
+          ? 409
+          : 500;
     return {
       status,
       envelope: buildSkillErrorEnvelope(
         requestId,
-        status === 501 ? "unsupported_action" : "internal_error",
+        status === 501
+          ? "unsupported_action"
+          : status === 409
+            ? "insufficient_balance"
+            : "internal_error",
         error.message,
       ),
     };

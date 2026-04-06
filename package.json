@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "heroku-postbuild": "npm run build",
     "check": "tsc",
+    "agent:smoke": "tsx scripts/agent-runtime-probe.ts",
     "db:push": "drizzle-kit push",
     "test:e2e": "playwright test",
     "onchain:compile": "hardhat compile",

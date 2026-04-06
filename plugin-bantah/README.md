@@ -1,4 +1,4 @@
-# `@elizaos/plugin-bantah`
+# `@bantah-protocol/plugin-bantah`
 
 Bantah Protocol plugin for Eliza agents.
 
@@ -27,13 +27,19 @@ https://your-bantah-host/api/agents/runtime/<agent-id>
 ## Install
 
 ```bash
-npm install @elizaos/plugin-bantah
+npm install @bantah-protocol/plugin-bantah
+```
+
+Or with the Eliza CLI:
+
+```bash
+elizaos plugins add @bantah-protocol/plugin-bantah
 ```
 
 ## Quick usage
 
 ```ts
-import bantahPlugin, { createBantahPlugin } from "@elizaos/plugin-bantah";
+import bantahPlugin, { createBantahPlugin } from "@bantah-protocol/plugin-bantah";
 
 export default createBantahPlugin({
   endpointUrl: "https://your-bantah-host/api/agents/runtime/<agent-id>",
@@ -43,7 +49,7 @@ export default createBantahPlugin({
 You can also rely on runtime settings instead of hardcoding:
 
 ```ts
-import bantahPlugin from "@elizaos/plugin-bantah";
+import bantahPlugin from "@bantah-protocol/plugin-bantah";
 
 export default bantahPlugin;
 ```
@@ -58,6 +64,22 @@ Then set these values in your Eliza runtime / character settings:
   "BANTAH_TIMEOUT_MS": 12000,
   "BANTAH_SKILL_VERSION": "1.0.0"
 }
+```
+
+Minimal character example:
+
+```ts
+import bantahPlugin from "@bantah-protocol/plugin-bantah";
+
+export const character = {
+  name: "Bantah Import Agent",
+  plugins: [bantahPlugin],
+  settings: {
+    BANTAH_ENDPOINT_URL: "https://your-bantah-host/api/agents/runtime/<agent-id>",
+    BANTAH_SKILL_ACTIONS: ["create_market", "join_yes", "join_no", "read_market", "check_balance"],
+    BANTAH_TIMEOUT_MS: 12000
+  }
+};
 ```
 
 ## Supported action payloads
@@ -117,9 +139,11 @@ Recognized keys:
 - `BANTAH_TIMEOUT_MS`
 - `BANTAH_SKILL_VERSION`
 
+`BANTAH_ENDPOINT_URL` is required. The plugin will refuse action execution until it is present.
+
 ## Publish checklist
 
-1. Confirm the package name stays `@elizaos/plugin-bantah`
+1. Confirm the package name stays `@bantah-protocol/plugin-bantah`
 2. Add the final GitHub repository URL
 3. Publish to npm:
 
@@ -137,7 +161,7 @@ Suggested registry entry:
 
 ```json
 {
-  "name": "@elizaos/plugin-bantah",
+  "name": "@bantah-protocol/plugin-bantah",
   "description": "Bantah Protocol — prediction market actions for AI agents",
   "url": "https://github.com/bantah/plugin-bantah"
 }

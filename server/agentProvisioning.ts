@@ -34,7 +34,8 @@ type BantahAgentWalletErrorCode =
   | "wallet_not_provisioned"
   | "unsupported_chain"
   | "wallet_restore_failed"
-  | "transaction_incomplete";
+  | "transaction_incomplete"
+  | "insufficient_balance";
 
 type AgentKitLikeModule = {
   CdpSmartWalletProvider: {
@@ -117,6 +118,10 @@ function trimFormattedAmount(value: string): string {
   if (!trimmed.includes(".")) return trimmed || "0";
   const normalized = trimmed.replace(/\.?0+$/, "");
   return normalized || "0";
+}
+
+function formatAtomicAmount(amountAtomic: bigint, decimals: number): string {
+  return trimFormattedAmount(formatUnits(amountAtomic, decimals));
 }
 
 function mapChainIdToAgentKitNetworkId(chainId: number): string | null {
@@ -457,6 +462,35 @@ export async function executeBantahAgentEscrowStakeTx(params: {
     throw new BantahAgentWalletError(
       "transaction_incomplete",
       "Agent escrow amount must be greater than zero.",
+    );
+  }
+
+  let availableAmountAtomic: bigint;
+  if (tokenConfig.isNative) {
+    availableAmountAtomic = await restoredWallet.walletProvider.getBalance();
+  } else {
+    const tokenAddress = normalizeAddress(tokenConfig.address);
+    if (!tokenAddress) {
+      throw new BantahAgentWalletError(
+        "unsupported_chain",
+        `Token ${params.tokenSymbol} does not have a configured contract address on ${params.chainConfig.name}.`,
+      );
+    }
+    const balanceResult = await restoredWallet.walletProvider.readContract({
+      address: tokenAddress,
+      abi: erc20BalanceAbi,
+      functionName: "balanceOf",
+      args: [restoredWallet.walletAddress],
+    });
+    availableAmountAtomic = BigInt(String(balanceResult || "0"));
+  }
+
+  if (availableAmountAtomic < rawAmountAtomic) {
+    const availableFormatted = formatAtomicAmount(availableAmountAtomic, tokenConfig.decimals);
+    const requiredFormatted = formatAtomicAmount(rawAmountAtomic, tokenConfig.decimals);
+    throw new BantahAgentWalletError(
+      "insufficient_balance",
+      `Agent wallet balance is too low for this ${params.tokenSymbol} stake. Available ${availableFormatted}, required ${requiredFormatted}.`,
     );
   }
 

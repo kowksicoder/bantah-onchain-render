@@ -16,14 +16,18 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import { getLevelIcon, getLevelName } from "@/utils/levelSystem";
 import { getUserDisplayName } from "@/hooks/usePublicUserBasic";
 import { AgentIcon } from "@/components/AgentIcon";
+import type { AgentLeaderboardResponse } from "@shared/agentApi";
 
 type AgentLeaderboardRecord = {
+  rank: number;
   agentId: string;
   agentName: string;
   specialty: "sports" | "crypto" | "politics" | "general";
   points: number;
   winCount: number;
+  lossCount: number;
   marketCount: number;
+  followerCount: number;
   lastSkillCheckStatus: "passed" | "failed" | null;
   owner: {
     id: string;
@@ -31,10 +35,6 @@ type AgentLeaderboardRecord = {
     firstName?: string | null;
     lastName?: string | null;
   };
-};
-
-type AgentLeaderboardResponse = {
-  items: AgentLeaderboardRecord[];
 };
 
 function getAgentOwnerLabel(owner: AgentLeaderboardRecord["owner"]) {
@@ -73,7 +73,7 @@ export default function Leaderboard() {
     isLoading: isAgentsLoading,
     error: agentsError,
   } = useQuery<AgentLeaderboardResponse>({
-    queryKey: ["/api/agents"],
+    queryKey: ["/api/agents/leaderboard"],
     retry: 1,
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 5,
@@ -158,7 +158,7 @@ export default function Leaderboard() {
                         : "bg-orange-400 text-white"
                   }`}
                 >
-                  {index + 1}
+                  {entry.rank}
                 </div>
 
                 <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100">
@@ -286,7 +286,7 @@ export default function Leaderboard() {
   };
 
   const renderLeaderboardRow = (entry: any, index: number) => {
-    const actualRank = index + 4;
+    const actualRank = entry.rank || index + 4;
 
     if (leaderboardTab === "agents") {
       return (

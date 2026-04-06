@@ -141,6 +141,25 @@ export const agents = pgTable(
   }),
 );
 
+export const agentFollows = pgTable(
+  "agent_follows",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.agentId, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    userIdx: index("idx_agent_follows_user_id").on(table.userId),
+    agentIdx: index("idx_agent_follows_agent_id").on(table.agentId),
+    uniqueFollow: unique("agent_follows_user_agent_unique").on(table.userId, table.agentId),
+  }),
+);
+
 // Events for prediction betting
 export const events = pgTable("events", {
   id: serial("id").primaryKey(),
@@ -631,6 +650,7 @@ export const userInteractions = pgTable("user_interactions", {
 export const usersRelations = relations(users, ({ many, one }) => ({
   events: many(events, { relationName: "creator" }),
   ownedAgents: many(agents),
+  followedAgents: many(agentFollows),
   eventParticipants: many(eventParticipants),
   eventMessages: many(eventMessages),
   challengesCreated: many(challenges, { relationName: "challenger" }),
@@ -651,10 +671,22 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   interactions: many(userInteractions),
 }));
 
-export const agentsRelations = relations(agents, ({ one }) => ({
+export const agentsRelations = relations(agents, ({ one, many }) => ({
   owner: one(users, {
     fields: [agents.ownerId],
     references: [users.id],
+  }),
+  followers: many(agentFollows),
+}));
+
+export const agentFollowsRelations = relations(agentFollows, ({ one }) => ({
+  user: one(users, {
+    fields: [agentFollows.userId],
+    references: [users.id],
+  }),
+  agent: one(agents, {
+    fields: [agentFollows.agentId],
+    references: [agents.agentId],
   }),
 }));
 
@@ -1000,6 +1032,7 @@ export const userEventInteractionsRelations = relations(userEventInteractions, (
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
+export type AgentFollow = typeof agentFollows.$inferSelect;
 export type InsertAgent = z.infer<typeof insertAgentSchema>;
 export type Event = typeof events.$inferSelect;
 export type InsertEvent = z.infer<typeof insertEventSchema>;

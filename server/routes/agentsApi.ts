@@ -1,12 +1,16 @@
 import { randomUUID } from "crypto";
 import { Router, type Request, type Response } from "express";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import { ZodError } from "zod";
 import {
   agentImportRequestSchema,
   agentListQuerySchema,
   agentCreateRequestSchema,
   agentSkillCheckRequestSchema,
+  agentFollowStateResponseSchema,
+  agentLeaderboardResponseSchema,
+  agentRankResponseSchema,
+  agentRuntimeStateResponseSchema,
   bantahAgentKitSupportedChainIds,
   getBantahAgentKitNetworkIdForChainId,
   type AgentRegistryProfile,
@@ -19,7 +23,7 @@ import {
   joinMarketInputSchema,
   readMarketInputSchema,
 } from "@shared/agentSkill";
-import { agents, pairQueue } from "@shared/schema";
+import { agents, challenges, pairQueue, users } from "@shared/schema";
 import {
   normalizeOnchainTokenSymbol,
   toAtomicUnits,
@@ -30,6 +34,7 @@ import { db } from "../db";
 import { createPairingEngine } from "../pairingEngine";
 import { runAgentSkillCheck } from "../agentSkillCheck";
 import { PrivyAuthMiddleware } from "../privyAuth";
+import { verifyPrivyToken } from "../privyAuth";
 import { normalizeEvmAddress } from "@shared/onchainConfig";
 import { getOnchainServerConfig } from "../onchainConfig";
 import {
@@ -38,6 +43,9 @@ import {
 } from "../elizaAgentBuilder";
 import {
   executeManagedBantahAgentRuntimeAction,
+  getManagedBantahAgentRuntime,
+  listManagedBantahAgentRuntimes,
+  restartManagedBantahAgentRuntime,
   startManagedBantahAgentRuntime,
   stopManagedBantahAgentRuntime,
 } from "../bantahElizaRuntimeManager";
@@ -82,6 +90,30 @@ function getAuthenticatedUserId(req: Request): string {
     throw new HttpError(401, "Unauthorized");
   }
   return userId;
+}
+
+async function getOptionalAuthenticatedUserId(req: Request): Promise<string | null> {
+  const existingUserId = (req as AuthenticatedRequest).user?.id;
+  if (existingUserId) {
+    return existingUserId;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return null;
+  }
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const claims = await verifyPrivyToken(token);
+    return claims?.userId || claims?.sub || null;
+  } catch {
+    return null;
+  }
 }
 
 function toIsoString(value: Date | string | null | undefined): string | null {
@@ -269,6 +301,125 @@ async function serializeAgent(agentId: string): Promise<AgentRegistryProfile> {
   };
 }
 
+async function listRankedAgents() {
+  const rows = await db
+    .select({
+      agent: agents,
+      owner: {
+        id: users.id,
+        username: users.username,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profileImageUrl: users.profileImageUrl,
+      },
+    })
+    .from(agents)
+    .innerJoin(users, eq(agents.ownerId, users.id))
+    .where(eq(agents.status, "active"))
+    .orderBy(
+      desc(agents.points),
+      desc(agents.winCount),
+      desc(agents.marketCount),
+      desc(agents.createdAt),
+    );
+
+  const items = await Promise.all(
+    rows.map(async (row, index) => {
+      const followState = await storage.getAgentFollowState(row.agent.agentId, null);
+      return {
+        rank: index + 1,
+        agentId: row.agent.agentId,
+        agentName: row.agent.agentName,
+        specialty: row.agent.specialty,
+        points: row.agent.points,
+        winCount: row.agent.winCount,
+        lossCount: row.agent.lossCount,
+        marketCount: row.agent.marketCount,
+        followerCount: followState.followerCount,
+        lastSkillCheckStatus:
+          row.agent.lastSkillCheckStatus === "passed" ||
+          row.agent.lastSkillCheckStatus === "failed"
+            ? row.agent.lastSkillCheckStatus
+            : null,
+        owner: {
+          id: row.owner.id,
+          username: row.owner.username ?? null,
+          firstName: row.owner.firstName ?? null,
+          lastName: row.owner.lastName ?? null,
+          profileImageUrl: row.owner.profileImageUrl ?? null,
+        },
+      };
+    }),
+  );
+
+  return items;
+}
+
+async function assertAgentOwner(req: Request, agentId: string) {
+  const userId = getAuthenticatedUserId(req);
+  const storedAgent = await storage.getAgentById(agentId);
+
+  if (!storedAgent) {
+    throw new HttpError(404, "Agent not found");
+  }
+
+  if (storedAgent.ownerId !== userId) {
+    throw new HttpError(403, "Only the owning Bantah user can manage this agent");
+  }
+
+  return storedAgent;
+}
+
+function resolveRuntimeHealth(
+  agentType: string,
+  runtimeStatus: string | null | undefined,
+  isManagedRuntimeLive: boolean,
+) {
+  if (agentType !== "bantah_created") {
+    return "external" as const;
+  }
+
+  if (runtimeStatus === "starting") {
+    return "starting" as const;
+  }
+
+  if (runtimeStatus === "active" && isManagedRuntimeLive) {
+    return "healthy" as const;
+  }
+
+  if (runtimeStatus === "inactive" || !runtimeStatus) {
+    return "stopped" as const;
+  }
+
+  return "error" as const;
+}
+
+function resolveRuntimeWalletToken(chainId: number) {
+  const chainConfig = ONCHAIN_CONFIG.chains[String(chainId)];
+  if (!chainConfig) return null;
+
+  const preferred = normalizeOnchainTokenSymbol(
+    ONCHAIN_CONFIG.defaultToken || "USDC",
+  ) as OnchainTokenSymbol;
+  if (chainConfig.tokens[preferred]) {
+    return {
+      chainConfig,
+      tokenSymbol: preferred,
+    };
+  }
+
+  const fallbackSymbol =
+    (Array.isArray(chainConfig.supportedTokens) && chainConfig.supportedTokens[0]) ||
+    Object.keys(chainConfig.tokens || {})[0];
+
+  if (!fallbackSymbol) return null;
+
+  return {
+    chainConfig,
+    tokenSymbol: fallbackSymbol as OnchainTokenSymbol,
+  };
+}
+
 function handleError(res: Response, error: unknown) {
   if (error instanceof ZodError) {
     return res.status(400).json({
@@ -286,6 +437,104 @@ function handleError(res: Response, error: unknown) {
 
   console.error("Agents API error:", error);
   return res.status(500).json({ message: "Failed to process agent request" });
+}
+
+async function listAgentActivity(agentId: string, limit = 6) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 6, 1), 20);
+
+  const [createdMarkets, joinedMarkets, settledMarkets] = await Promise.all([
+    db
+      .select({
+        challengeId: challenges.id,
+        title: challenges.title,
+        category: challenges.category,
+        occurredAt: challenges.createdAt,
+      })
+      .from(challenges)
+      .where(eq(challenges.creatorAgentId, agentId))
+      .orderBy(desc(challenges.createdAt))
+      .limit(safeLimit),
+    db
+      .select({
+        queueId: pairQueue.id,
+        challengeId: challenges.id,
+        title: challenges.title,
+        category: challenges.category,
+        side: pairQueue.side,
+        occurredAt: pairQueue.createdAt,
+      })
+      .from(pairQueue)
+      .innerJoin(challenges, eq(pairQueue.challengeId, challenges.id))
+      .where(eq(pairQueue.agentId, agentId))
+      .orderBy(desc(pairQueue.createdAt))
+      .limit(safeLimit),
+    db
+      .select({
+        challengeId: challenges.id,
+        title: challenges.title,
+        category: challenges.category,
+        result: challenges.result,
+        challengerAgentId: challenges.challengerAgentId,
+        challengedAgentId: challenges.challengedAgentId,
+        occurredAt: challenges.completedAt,
+      })
+      .from(challenges)
+      .where(
+        and(
+          or(
+            eq(challenges.challengerAgentId, agentId),
+            eq(challenges.challengedAgentId, agentId),
+          ),
+          inArray(challenges.result, ["challenger_won", "challenged_won"]),
+        ),
+      )
+      .orderBy(desc(challenges.completedAt))
+      .limit(safeLimit),
+  ]);
+
+  const items = [
+    ...createdMarkets.map((item) => ({
+      activityId: `created_${item.challengeId}`,
+      type: "created_market" as const,
+      challengeId: item.challengeId,
+      title: item.title,
+      category: item.category,
+      side: null,
+      occurredAt: toIsoString(item.occurredAt),
+    })),
+    ...joinedMarkets.map((item) => ({
+      activityId: `joined_${item.queueId}`,
+      type: "joined_market" as const,
+      challengeId: item.challengeId,
+      title: item.title,
+      category: item.category,
+      side: String(item.side || "").trim().toLowerCase() === "no" ? "no" : "yes",
+      occurredAt: toIsoString(item.occurredAt),
+    })),
+    ...settledMarkets
+      .map((item) => {
+        const won =
+          (item.result === "challenger_won" && item.challengerAgentId === agentId) ||
+          (item.result === "challenged_won" && item.challengedAgentId === agentId);
+        return {
+          activityId: `${won ? "won" : "lost"}_${item.challengeId}`,
+          type: won ? ("won_market" as const) : ("lost_market" as const),
+          challengeId: item.challengeId,
+          title: item.title,
+          category: item.category,
+          side: null,
+          occurredAt: toIsoString(item.occurredAt),
+        };
+      }),
+  ]
+    .sort((a, b) => {
+      const aTime = a.occurredAt ? new Date(a.occurredAt).getTime() : 0;
+      const bTime = b.occurredAt ? new Date(b.occurredAt).getTime() : 0;
+      return bTime - aTime;
+    })
+    .slice(0, safeLimit);
+
+  return items;
 }
 
 router.post("/skill-check", async (req, res) => {
@@ -535,6 +784,320 @@ router.get("/", async (req, res) => {
         total,
         totalPages: total === 0 ? 0 : Math.ceil(total / parsedQuery.limit),
       },
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/leaderboard", async (_req, res) => {
+  try {
+    const rankedAgents = await listRankedAgents();
+    const payload = agentLeaderboardResponseSchema.parse({
+      items: rankedAgents.slice(0, 10),
+      totalAgents: rankedAgents.length,
+    });
+    res.json(payload);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/health/managed-runtimes", async (_req, res) => {
+  try {
+    const runtimeRows = await db
+      .select({
+        agentId: agents.agentId,
+        agentName: agents.agentName,
+        agentType: agents.agentType,
+        runtimeEngine: agents.runtimeEngine,
+        runtimeStatus: agents.runtimeStatus,
+        updatedAt: agents.updatedAt,
+      })
+      .from(agents)
+      .where(eq(agents.agentType, "bantah_created"))
+      .orderBy(desc(agents.updatedAt));
+
+    const liveRuntimeMap = new Map(
+      listManagedBantahAgentRuntimes().map((item) => [item.agentId, item]),
+    );
+
+    const items = runtimeRows.map((row) => {
+      const live = liveRuntimeMap.get(row.agentId);
+      const health = resolveRuntimeHealth(
+        row.agentType,
+        live?.runtimeStatus || row.runtimeStatus,
+        Boolean(live),
+      );
+
+      return {
+        agentId: row.agentId,
+        agentName: row.agentName,
+        runtimeEngine: row.runtimeEngine ?? live?.runtimeEngine ?? null,
+        runtimeStatus: live?.runtimeStatus || row.runtimeStatus || null,
+        health,
+        isManagedRuntimeLive: Boolean(live),
+        startedAt: live?.startedAt || null,
+        updatedAt: toIsoString(row.updatedAt),
+        chainId: live?.chainId ?? null,
+        chainName: live?.chainName ?? null,
+      };
+    });
+
+    const summary = {
+      total: items.length,
+      live: items.filter((item) => item.isManagedRuntimeLive).length,
+      healthy: items.filter((item) => item.health === "healthy").length,
+      starting: items.filter((item) => item.health === "starting").length,
+      stopped: items.filter((item) => item.health === "stopped").length,
+      error: items.filter((item) => item.health === "error").length,
+    };
+
+    res.json({
+      summary,
+      items,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/:agentId/rank", async (req, res) => {
+  try {
+    await serializeAgent(req.params.agentId);
+    const rankedAgents = await listRankedAgents();
+    const rankedAgent = rankedAgents.find((item) => item.agentId === req.params.agentId) || null;
+    const followerState = await storage.getAgentFollowState(req.params.agentId, null);
+    const payload = agentRankResponseSchema.parse({
+      agentId: req.params.agentId,
+      rank: rankedAgent?.rank ?? null,
+      totalAgents: rankedAgents.length,
+      followerCount: followerState.followerCount,
+    });
+    res.json(payload);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/:agentId/activity", async (req, res) => {
+  try {
+    await serializeAgent(req.params.agentId);
+    const limitRaw = Number(req.query.limit ?? 6);
+    const items = await listAgentActivity(req.params.agentId, limitRaw);
+    res.json({
+      agentId: req.params.agentId,
+      items,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/:agentId/follow-state", async (req, res) => {
+  try {
+    await serializeAgent(req.params.agentId);
+    const userId = await getOptionalAuthenticatedUserId(req);
+    const state = await storage.getAgentFollowState(req.params.agentId, userId);
+    const payload = agentFollowStateResponseSchema.parse({
+      agentId: req.params.agentId,
+      isFollowing: state.isFollowing,
+      followerCount: state.followerCount,
+    });
+    res.json(payload);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/:agentId/runtime-state", async (req, res) => {
+  try {
+    const storedAgent = await storage.getAgentById(req.params.agentId);
+    if (!storedAgent) {
+      throw new HttpError(404, "Agent not found");
+    }
+
+    const runtimeConfig = storedAgent.runtimeConfig ?? null;
+    const runtimeEntry = getManagedBantahAgentRuntime(req.params.agentId);
+    const isManagedRuntimeLive = Boolean(runtimeEntry);
+    const runtimeStatus =
+      runtimeEntry?.config.status ||
+      (storedAgent.runtimeStatus ?? runtimeConfig?.status ?? null);
+    const chainId =
+      Number(runtimeEntry?.config.chainId || runtimeConfig?.chainId || 0) || null;
+    const chainName =
+      runtimeEntry?.config.chainName || runtimeConfig?.chainName || null;
+    const walletProvider =
+      runtimeEntry?.config.walletProvider ||
+      storedAgent.walletProvider ||
+      runtimeConfig?.walletProvider ||
+      null;
+    const walletNetworkId =
+      runtimeEntry?.config.walletNetworkId ||
+      storedAgent.walletNetworkId ||
+      runtimeConfig?.walletNetworkId ||
+      null;
+
+    let wallet: {
+      address: string;
+      provider: string | null;
+      networkId: string | null;
+      balance: string | null;
+      currency: string | null;
+      status: "ready" | "external" | "error" | "unavailable";
+      message: string | null;
+    } = {
+      address: storedAgent.walletAddress,
+      provider: walletProvider,
+      networkId: walletNetworkId,
+      balance: null,
+      currency: null,
+      status: storedAgent.agentType === "bantah_created" ? "unavailable" : "external",
+      message:
+        storedAgent.agentType === "bantah_created"
+          ? "Wallet balance not fetched yet."
+          : "Imported agents manage wallet execution outside Bantah.",
+    };
+
+    if (storedAgent.agentType === "bantah_created" && chainId) {
+      const walletToken = resolveRuntimeWalletToken(chainId);
+      if (walletToken) {
+        try {
+          const balance = await getBantahAgentWalletBalance({
+            snapshot: {
+              agentId: storedAgent.agentId,
+              walletAddress: storedAgent.walletAddress,
+              walletProvider: storedAgent.walletProvider ?? undefined,
+              walletNetworkId: storedAgent.walletNetworkId ?? undefined,
+              ownerWalletAddress: storedAgent.ownerWalletAddress ?? undefined,
+              walletData: storedAgent.walletData ?? undefined,
+            },
+            chainId,
+            chainConfig: walletToken.chainConfig,
+            tokenSymbol: walletToken.tokenSymbol,
+          });
+
+          wallet = {
+            address: storedAgent.walletAddress,
+            provider: walletProvider,
+            networkId: walletNetworkId,
+            balance: balance.amountFormatted,
+            currency: walletToken.tokenSymbol,
+            status: "ready",
+            message: null,
+          };
+        } catch (error: any) {
+          wallet = {
+            address: storedAgent.walletAddress,
+            provider: walletProvider,
+            networkId: walletNetworkId,
+            balance: null,
+            currency: walletToken.tokenSymbol,
+            status: "error",
+            message: error?.message || "Failed to load wallet status.",
+          };
+        }
+      }
+    }
+
+    const payload = agentRuntimeStateResponseSchema.parse({
+      agentId: storedAgent.agentId,
+      runtimeEngine: storedAgent.runtimeEngine ?? runtimeConfig?.engine ?? null,
+      runtimeStatus,
+      health: resolveRuntimeHealth(
+        storedAgent.agentType,
+        runtimeStatus,
+        isManagedRuntimeLive,
+      ),
+      isManagedRuntimeLive,
+      startedAt: runtimeEntry?.startedAt || null,
+      updatedAt: toIsoString(storedAgent.updatedAt),
+      chainId,
+      chainName,
+      wallet,
+      controls: {
+        canPause: storedAgent.agentType === "bantah_created" && runtimeStatus === "active",
+        canResume:
+          storedAgent.agentType === "bantah_created" &&
+          (runtimeStatus === "inactive" || runtimeStatus === "error"),
+        canRestart: storedAgent.agentType === "bantah_created",
+      },
+    });
+
+    res.json(payload);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/:agentId/follow", PrivyAuthMiddleware, async (req, res) => {
+  try {
+    const userId = getAuthenticatedUserId(req);
+    await serializeAgent(req.params.agentId);
+    const result = await storage.toggleAgentFollow(userId, req.params.agentId);
+    const state = await storage.getAgentFollowState(req.params.agentId, userId);
+
+    res.json({
+      ...result,
+      agentId: req.params.agentId,
+      isFollowing: state.isFollowing,
+      followerCount: state.followerCount,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/:agentId/runtime/pause", PrivyAuthMiddleware, async (req, res) => {
+  try {
+    const storedAgent = await assertAgentOwner(req, req.params.agentId);
+    if (storedAgent.agentType !== "bantah_created") {
+      throw new HttpError(422, "Only Bantah-created agents support managed runtime controls");
+    }
+
+    await stopManagedBantahAgentRuntime(req.params.agentId, { persist: true });
+    const agent = await serializeAgent(req.params.agentId);
+    res.json({
+      action: "paused",
+      agent,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/:agentId/runtime/resume", PrivyAuthMiddleware, async (req, res) => {
+  try {
+    const storedAgent = await assertAgentOwner(req, req.params.agentId);
+    if (storedAgent.agentType !== "bantah_created") {
+      throw new HttpError(422, "Only Bantah-created agents support managed runtime controls");
+    }
+
+    const runtime = await startManagedBantahAgentRuntime(req.params.agentId);
+    const agent = await serializeAgent(req.params.agentId);
+    res.json({
+      action: "resumed",
+      agent,
+      runtime,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/:agentId/runtime/restart", PrivyAuthMiddleware, async (req, res) => {
+  try {
+    const storedAgent = await assertAgentOwner(req, req.params.agentId);
+    if (storedAgent.agentType !== "bantah_created") {
+      throw new HttpError(422, "Only Bantah-created agents support managed runtime controls");
+    }
+
+    const runtime = await restartManagedBantahAgentRuntime(req.params.agentId);
+    const agent = await serializeAgent(req.params.agentId);
+    res.json({
+      action: "restarted",
+      agent,
+      runtime,
     });
   } catch (error) {
     handleError(res, error);

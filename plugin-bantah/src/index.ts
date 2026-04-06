@@ -1,110 +1,19 @@
 import {
   createActionResult,
   type Action,
-  type IAgentRuntime,
   type Plugin,
 } from "@elizaos/core";
 
 import { callBantahSkill } from "./client.js";
 import {
-  BANTAH_SKILL_VERSION,
+  isBantahActionEnabled,
+  resolveBantahPluginConfig,
+} from "./environment.js";
+import {
   bantahSkillActionValues,
   type BantahPluginConfig,
   type BantahSkillAction,
 } from "./types.js";
-
-function getRuntimeSetting(runtime: IAgentRuntime, key: string): unknown {
-  const runtimeValue = runtime.getSetting(key);
-  if (runtimeValue !== undefined && runtimeValue !== null) {
-    return runtimeValue;
-  }
-
-  const characterSettings = runtime.character?.settings as Record<string, unknown> | undefined;
-  return characterSettings?.[key];
-}
-
-function parseNumber(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return undefined;
-}
-
-function parseEnabledActions(value: unknown): BantahSkillAction[] | undefined {
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => String(entry || "").trim())
-      .filter((entry): entry is BantahSkillAction =>
-        bantahSkillActionValues.includes(entry as BantahSkillAction),
-      );
-  }
-
-  if (typeof value === "string" && value.trim()) {
-    try {
-      return parseEnabledActions(JSON.parse(value));
-    } catch {
-      return value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry): entry is BantahSkillAction =>
-          bantahSkillActionValues.includes(entry as BantahSkillAction),
-        );
-    }
-  }
-
-  return undefined;
-}
-
-function resolveConfig(runtime: IAgentRuntime, baseConfig: BantahPluginConfig) {
-  const endpointUrl =
-    String(
-      baseConfig.endpointUrl ??
-        getRuntimeSetting(runtime, "BANTAH_ENDPOINT_URL") ??
-        "",
-    ).trim() || undefined;
-
-  const apiKey =
-    String(baseConfig.apiKey ?? getRuntimeSetting(runtime, "BANTAH_API_KEY") ?? "").trim() ||
-    undefined;
-
-  const timeoutMs =
-    baseConfig.timeoutMs ??
-    parseNumber(getRuntimeSetting(runtime, "BANTAH_TIMEOUT_MS")) ??
-    12_000;
-
-  const skillVersion =
-    String(
-      baseConfig.skillVersion ??
-        getRuntimeSetting(runtime, "BANTAH_SKILL_VERSION") ??
-        BANTAH_SKILL_VERSION,
-    ).trim() || BANTAH_SKILL_VERSION;
-
-  const enabledActions =
-    baseConfig.enabledActions ??
-    parseEnabledActions(getRuntimeSetting(runtime, "BANTAH_SKILL_ACTIONS"));
-
-  return {
-    endpointUrl,
-    apiKey,
-    timeoutMs,
-    skillVersion,
-    enabledActions,
-    headers: baseConfig.headers,
-  };
-}
-
-function isActionEnabled(
-  config: ReturnType<typeof resolveConfig>,
-  action: BantahSkillAction,
-): boolean {
-  if (!config.enabledActions || config.enabledActions.length === 0) {
-    return true;
-  }
-
-  return config.enabledActions.includes(action);
-}
 
 function describeAction(action: BantahSkillAction): string {
   switch (action) {
@@ -129,11 +38,11 @@ function createBantahAction(actionName: BantahSkillAction, baseConfig: BantahPlu
     similes: [actionName.toUpperCase()],
     description: describeAction(actionName),
     validate: async (runtime) => {
-      const resolved = resolveConfig(runtime, baseConfig);
-      return Boolean(resolved.endpointUrl) && isActionEnabled(resolved, actionName);
+      const resolved = resolveBantahPluginConfig(runtime, baseConfig);
+      return Boolean(resolved.endpointUrl) && isBantahActionEnabled(resolved, actionName);
     },
     handler: async (runtime, _message, _state, options) => {
-      const resolved = resolveConfig(runtime, baseConfig);
+      const resolved = resolveBantahPluginConfig(runtime, baseConfig);
       if (!resolved.endpointUrl) {
         return createActionResult({
           success: false,
@@ -202,4 +111,5 @@ const bantahPlugin = createBantahPlugin();
 
 export default bantahPlugin;
 export * from "./client.js";
+export * from "./environment.js";
 export * from "./types.js";

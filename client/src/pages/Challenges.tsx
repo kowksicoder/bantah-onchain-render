@@ -456,7 +456,16 @@ export default function Challenges() {
 
               const isAdminChallenge = Boolean(c.adminCreated ?? existing.adminCreated);
               if (!isAdminChallenge) {
-                map.set(c.id, { ...existing, ...c });
+                map.set(c.id, {
+                  ...existing,
+                  ...c,
+                  coverImageUrl:
+                    c.coverImageUrl ??
+                    (c as any).cover_image_url ??
+                    existing.coverImageUrl ??
+                    (existing as any).cover_image_url ??
+                    null,
+                });
                 return;
               }
 
@@ -470,6 +479,12 @@ export default function Challenges() {
               map.set(c.id, {
                 ...existing,
                 ...c,
+                coverImageUrl:
+                  c.coverImageUrl ??
+                  (c as any).cover_image_url ??
+                  existing.coverImageUrl ??
+                  (existing as any).cover_image_url ??
+                  null,
                 participantCount: Math.max(
                   Number(existing.participantCount || 0),
                   Number(c.participantCount || 0),
@@ -933,6 +948,10 @@ export default function Challenges() {
       challenge?.challengerType,
       challenge?.challengedType,
       challenge?.ownerType,
+      challenge?.creator_type,
+      challenge?.challenger_type,
+      challenge?.challenged_type,
+      challenge?.owner_type,
       challenge?.creator?.type,
       challenge?.challenger?.type,
       challenge?.challenged?.type,
@@ -951,6 +970,10 @@ export default function Challenges() {
       challenge?.creatorAgentId,
       challenge?.challengerAgentId,
       challenge?.challengedAgentId,
+      challenge?.agent_id,
+      challenge?.creator_agent_id,
+      challenge?.challenger_agent_id,
+      challenge?.challenged_agent_id,
       challenge?.creator?.agentId,
       challenge?.challenger?.agentId,
       challenge?.challenged?.agentId,
@@ -965,7 +988,10 @@ export default function Challenges() {
     return (
       challenge?.createdByAgent === true ||
       challenge?.isAgentChallenge === true ||
-      challenge?.agentInvolved === true
+      challenge?.agentInvolved === true ||
+      challenge?.created_by_agent === true ||
+      challenge?.agent_involved === true ||
+      challenge?.is_agent_challenge === true
     );
   };
 
@@ -1022,6 +1048,29 @@ export default function Challenges() {
       challenges.filter((challenge: any) => {
         if (isFiveMinuteChallenge(challenge)) return false;
         if (isGenericOnchainChallenge(challenge)) return false;
+        const searchLower = searchTerm ? searchTerm.toLowerCase() : "";
+        const matchesSearch =
+          !searchTerm ||
+          (challenge.title || "").toLowerCase().includes(searchLower) ||
+          (challenge.description || "").toLowerCase().includes(searchLower) ||
+          (challenge.category || "").toLowerCase().includes(searchLower) ||
+          (challenge.challengerUser?.username || "").toLowerCase().includes(searchLower) ||
+          (challenge.challengedUser?.username || "").toLowerCase().includes(searchLower);
+
+        const matchesCategory =
+          selectedCategory === "all" || challenge.category === selectedCategory;
+
+        return matchesSearch && matchesCategory;
+      }).length,
+    [challenges, searchTerm, selectedCategory],
+  );
+
+  const agentTabCount = useMemo(
+    () =>
+      challenges.filter((challenge: any) => {
+        if (isFiveMinuteChallenge(challenge)) return false;
+        if (isGenericOnchainChallenge(challenge)) return false;
+        if (!isAgentChallenge(challenge)) return false;
         const searchLower = searchTerm ? searchTerm.toLowerCase() : "";
         const matchesSearch =
           !searchTerm ||
@@ -1417,6 +1466,52 @@ export default function Challenges() {
   }, [searchTerm, selectedCategory, challengeStatusTab]);
 
   const sortedChallenges = useMemo(() => {
+    const mockAgentChallenges = [
+      {
+        id: "agent-mock-1",
+        title: "Will BTC close above $80k this week?",
+        category: "crypto",
+        status: "open",
+        adminCreated: true,
+        createdAt: new Date().toISOString(),
+        createdByAgent: true,
+        agentInvolved: true,
+        creatorAgentId: "agent_mock_1",
+        challengerSide: "YES",
+        challengedSide: "NO",
+        amount: "50",
+        tokenSymbol: "USDC",
+        description: "Agent Alpha opens a weekly BTC momentum market.",
+      },
+      {
+        id: "agent-mock-2",
+        title: "Will Lakers win tonight?",
+        category: "sports",
+        status: "open",
+        adminCreated: true,
+        createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+        createdByAgent: true,
+        agentInvolved: true,
+        challengerAgentId: "agent_mock_2",
+        challengedAgentId: "agent_mock_3",
+        amount: "20",
+        tokenSymbol: "USDC",
+        description: "Agent vs Agent: matchup read and confidence check.",
+      },
+      {
+        id: "agent-mock-3",
+        title: "Will a rate cut happen this quarter?",
+        category: "politics",
+        status: "open",
+        adminCreated: true,
+        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
+        agentInvolved: true,
+        challengerAgentId: "agent_mock_4",
+        amount: "35",
+        tokenSymbol: "USDC",
+        description: "Agent Beta joins a macro rate decision market.",
+      },
+    ];
     const resolveSortTime = (challenge: any) => {
       const raw =
         challenge?.createdAt ??
@@ -1443,7 +1538,12 @@ export default function Challenges() {
       return Number.isFinite(parsed) ? parsed : 0;
     };
 
-    return [...filteredChallenges].sort((a: any, b: any) => {
+    const base = [...filteredChallenges];
+    const shouldInjectMocks =
+      challengeStatusTab === "agents" && base.filter((c: any) => isAgentChallenge(c)).length === 0;
+    const seeded = shouldInjectMocks ? [...mockAgentChallenges, ...base] : base;
+
+    return [...seeded].sort((a: any, b: any) => {
     // Priority 0: Pinned challenges first
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
@@ -1501,12 +1601,32 @@ export default function Challenges() {
         ) : sortedChallenges.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
             {visibleChallenges.map((challenge, index) => (
-              <ChallengeCard
+              <div
                 key={challenge?.id ?? `challenge-${index}-${challenge?.createdAt ?? "unknown"}`}
-                challenge={challenge}
-                onChatClick={handleChallengeClick}
-                onJoin={handleJoin}
-              />
+                className="relative"
+              >
+                {challengeStatusTab === "agents" &&
+                  (() => {
+                    const createdByAgent = Boolean(
+                      challenge?.createdByAgent ||
+                        challenge?.created_by_agent ||
+                        challenge?.creatorAgentId ||
+                        challenge?.creator_agent_id,
+                    );
+                    if (!createdByAgent) return null;
+                    return (
+                      <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded-full bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 text-[10px] px-2 py-0.5">
+                        <AgentIcon className="h-3 w-3" alt="" />
+                        Agent
+                      </span>
+                    );
+                  })()}
+                <ChallengeCard
+                  challenge={challenge}
+                  onChatClick={handleChallengeClick}
+                  onJoin={handleJoin}
+                />
+              </div>
             ))}
           </div>
         ) : (
@@ -1579,9 +1699,12 @@ export default function Challenges() {
               </TabsTrigger>
               <TabsTrigger 
                 value="agents" 
-                className="text-xs px-3 py-1.5 rounded-full data-[state=active]:bg-[#ccff00] data-[state=active]:text-black whitespace-nowrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all h-auto"
+                className="relative text-xs px-3 py-1.5 rounded-full data-[state=active]:bg-[#ccff00] data-[state=active]:text-black whitespace-nowrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all h-auto"
               >
-                Agents
+                <span>Agents</span>
+                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200 border border-white dark:border-slate-900 pointer-events-none">
+                  {agentTabCount}
+                </span>
               </TabsTrigger>
               <TabsTrigger
                 value="polymarket"

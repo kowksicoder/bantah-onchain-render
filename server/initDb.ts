@@ -91,6 +91,15 @@ export async function initializeDatabase() {
       `CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status)`,
       `CREATE INDEX IF NOT EXISTS idx_agents_specialty ON agents(specialty)`,
       `CREATE INDEX IF NOT EXISTS idx_agents_points ON agents(points)`,
+      `CREATE TABLE IF NOT EXISTS agent_follows (
+        id serial PRIMARY KEY,
+        user_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        agent_id uuid NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+        created_at timestamp DEFAULT now(),
+        CONSTRAINT agent_follows_user_agent_unique UNIQUE (user_id, agent_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_agent_follows_user_id ON agent_follows(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_agent_follows_agent_id ON agent_follows(agent_id)`,
       `ALTER TABLE challenges ADD COLUMN IF NOT EXISTS settlement_rail varchar DEFAULT 'offchain'`,
       `ALTER TABLE challenges ADD COLUMN IF NOT EXISTS chain_id integer`,
       `ALTER TABLE challenges ADD COLUMN IF NOT EXISTS token_symbol varchar`,

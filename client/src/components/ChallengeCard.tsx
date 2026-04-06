@@ -22,6 +22,7 @@ import {
 import { CompactShareButton } from "@/components/ShareButton";
 import { shareChallenge } from "@/utils/sharing";
 import { UserAvatar } from "@/components/UserAvatar";
+import { AgentIcon } from "@/components/AgentIcon";
 import { getUserDisplayName, getUserHandle } from "@/hooks/usePublicUserBasic";
 import { useLocation } from "wouter";
 import { useEffect, useMemo, useState } from "react";
@@ -100,6 +101,11 @@ interface ChallengeCardProps {
     tokenSymbol?: string | null;
     decimals?: number | null;
     stakeAtomic?: string | null;
+    createdByAgent?: boolean;
+    agentInvolved?: boolean;
+    creatorAgentId?: string | null;
+    challengerAgentId?: string | null;
+    challengedAgentId?: string | null;
   };
   onChatClick?: (challenge: any) => void;
   onJoin?: (challenge: any) => void;
@@ -118,7 +124,7 @@ const isUpDownMarketChallenge = (challenge: any) => {
   return hasBitcoin && hasDirectionPhrase && category === "crypto";
 };
 
-const resolveChallengeCoverImage = (value?: string | null) => {
+const normalizeChallengeImageValue = (value?: string | null) => {
   const raw = String(value || "").trim();
   if (!raw) return null;
   if (raw.startsWith("data:image/")) return raw;
@@ -129,13 +135,35 @@ const resolveChallengeCoverImage = (value?: string | null) => {
   return null;
 };
 
+const resolveChallengeCoverImage = (challenge: Record<string, any> | null | undefined) => {
+  if (!challenge) return null;
+
+  const candidates = [
+    challenge.coverImageUrl,
+    challenge.cover_image_url,
+    challenge.coverImage,
+    challenge.imageUrl,
+    challenge.image_url,
+    challenge.image,
+    challenge.bannerUrl,
+    challenge.banner_url,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeChallengeImageValue(candidate);
+    if (normalized) return normalized;
+  }
+
+  return null;
+};
+
 export function ChallengeCard({
   challenge,
   onChatClick,
   onJoin,
 }: ChallengeCardProps) {
   const [coverImageFailed, setCoverImageFailed] = useState(false);
-  const normalizedCoverImageUrl = resolveChallengeCoverImage(challenge.coverImageUrl);
+  const normalizedCoverImageUrl = resolveChallengeCoverImage(challenge as any);
 
   useEffect(() => {
     setCoverImageFailed(false);
@@ -215,6 +243,19 @@ export function ChallengeCard({
     }
 
     return rawStatus || "pending";
+  })();
+
+  const agentMarketLabel = (() => {
+    const challengerAgentId = String((challenge as any).challengerAgentId || (challenge as any).challenger_agent_id || "").trim();
+    const challengedAgentId = String((challenge as any).challengedAgentId || (challenge as any).challenged_agent_id || "").trim();
+    const creatorAgentId = String((challenge as any).creatorAgentId || (challenge as any).creator_agent_id || "").trim();
+    const createdByAgent = Boolean((challenge as any).createdByAgent || (challenge as any).created_by_agent);
+    const agentInvolved = Boolean((challenge as any).agentInvolved || (challenge as any).agent_involved);
+
+    if (challengerAgentId && challengedAgentId) return "Agent vs Agent";
+    if (challengerAgentId || challengedAgentId) return "Agent vs Human";
+    if (creatorAgentId || createdByAgent || agentInvolved) return "Created by Agent";
+    return null;
   })();
 
   const handleAvatarClick = (e: React.MouseEvent, profileId: string | undefined) => {
@@ -958,6 +999,16 @@ export function ChallengeCard({
                   <span className="ml-0.5 font-bold">{bonus.label}</span>
                 </Badge>
               ))}
+              {agentMarketLabel && (
+                <Badge className="border-none bg-transparent text-slate-600 dark:text-slate-300 text-[9px] px-1.5 py-0.5">
+                  <span className="inline-flex items-center justify-center">
+                    <AgentIcon className="h-3 w-3" alt="" />
+                  </span>
+                  {agentMarketLabel === "Created by Agent" ? null : (
+                    <span className="ml-1">{agentMarketLabel}</span>
+                  )}
+                </Badge>
+              )}
             </div>
             {/* Admin pin button */}
             {(user as any)?.isAdmin && challenge.adminCreated && (

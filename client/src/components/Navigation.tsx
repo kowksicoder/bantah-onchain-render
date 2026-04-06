@@ -280,19 +280,19 @@ export function Navigation() {
 
   const chainIconByKey: Record<string, { src: string; alt: string }> = {
     base: {
-      src: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRgJzE3esFDDQJwxXfIEQy-TlsXLnWvlEOyTQ&s",
+      src: "/assets/chain-base.svg",
       alt: "Base",
     },
     arbitrum: {
-      src: "https://cryptologos.cc/logos/arbitrum-arb-logo.svg?v=040",
+      src: "/assets/chain-arbitrum.svg",
       alt: "Arbitrum",
     },
     bsc: {
-      src: "https://cryptologos.cc/logos/bnb-bnb-logo.svg?v=040",
+      src: "/assets/chain-bsc.svg",
       alt: "BNB Chain",
     },
     unichain: {
-      src: "https://cryptologos.cc/logos/uniswap-uni-logo.svg?v=040",
+      src: "/assets/chain-unichain.svg",
       alt: "Unichain",
     },
   };

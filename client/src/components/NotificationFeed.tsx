@@ -9,6 +9,7 @@ import { Bell, X, Check, Zap, Clock, Eye, Flame, Rocket, CheckCircle2, Megaphone
 import { useAuth } from '@/hooks/useAuth';
 import Pusher from 'pusher-js';
 import { AgentIcon } from '@/components/AgentIcon';
+import { useLocation } from "wouter";
 
 interface Notification {
   id: string;
@@ -16,7 +17,7 @@ interface Notification {
   title: string;
   body: string;
   priority: 'low' | 'medium' | 'high';
-  challengeId: string;
+  challengeId?: string;
   timestamp: Date;
   read?: boolean;
 }
@@ -25,11 +26,61 @@ interface NotificationFeedProps {
   maxDisplay?: number;
 }
 
+const isAgentEvent = (event?: string) => {
+  const normalized = String(event || "").toLowerCase();
+  return normalized.includes("agent");
+};
+
+const getEventTitleFallback = (event?: string) => {
+  const normalized = String(event || "").toLowerCase();
+  if (normalized === "agent_challenge_won") return "Agent won a market";
+  if (normalized === "agent_challenge_lost") return "Agent lost a market";
+  if (normalized === "challenge_won") return "Market won";
+  if (normalized === "challenge_lost") return "Market lost";
+  return "Notification";
+};
+
+const getEventBodyFallback = (event?: string) => {
+  const normalized = String(event || "").toLowerCase();
+  if (normalized === "agent_challenge_won") return "Your agent closed a winning market.";
+  if (normalized === "agent_challenge_lost") return "Your agent lost this market.";
+  if (normalized === "challenge_won") return "You won this market.";
+  if (normalized === "challenge_lost") return "You lost this market.";
+  return "";
+};
+
 export const NotificationFeed: React.FC<NotificationFeedProps> = ({ maxDisplay = 5 }) => {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+
+  const normalizeNotification = useCallback((raw: any): Notification => {
+    const level = String(raw?.fomoLevel || raw?.fomo_level || "").toLowerCase();
+    const priorityValue = Number(raw?.priority || 0);
+    const normalizedPriority: 'low' | 'medium' | 'high' =
+      level === 'urgent' || level === 'high' || priorityValue >= 3
+        ? 'high'
+        : level === 'medium' || priorityValue === 2
+          ? 'medium'
+          : 'low';
+
+    return {
+      id: String(raw?.id || `notif_${Date.now()}`),
+      event: String(raw?.event || raw?.type || "system"),
+      title: String(raw?.title || raw?.messageTitle || getEventTitleFallback(raw?.event || raw?.type)),
+      body: String(raw?.body || raw?.message || getEventBodyFallback(raw?.event || raw?.type)),
+      priority: normalizedPriority,
+      challengeId:
+        raw?.challengeId?.toString?.() ||
+        raw?.challenge_id?.toString?.() ||
+        raw?.data?.challengeId?.toString?.() ||
+        undefined,
+      timestamp: raw?.timestamp ? new Date(raw.timestamp) : new Date(raw?.createdAt || raw?.created_at || Date.now()),
+      read: Boolean(raw?.read),
+    };
+  }, []);
 
   // Initialize Pusher on mount
   useEffect(() => {
@@ -40,8 +91,9 @@ export const NotificationFeed: React.FC<NotificationFeedProps> = ({ maxDisplay =
     });
 
     const channel = pusherInstance.subscribe(`user-${user.id}`);
-    channel.bind('notification', (data: Notification) => {
-      setNotifications((prev) => [data, ...prev].slice(0, 50)); // Keep last 50
+    channel.bind('notification', (data: any) => {
+      const normalized = normalizeNotification(data);
+      setNotifications((prev) => [normalized, ...prev].slice(0, 50)); // Keep last 50
       setUnreadCount((prev) => prev + 1);
     });
 
@@ -49,7 +101,7 @@ export const NotificationFeed: React.FC<NotificationFeedProps> = ({ maxDisplay =
       channel.unbind('notification');
       pusherInstance.unsubscribe(`user-${user.id}`);
     };
-  }, [user?.id]);
+  }, [normalizeNotification, user?.id]);
 
   // Load initial notifications
   useEffect(() => {
@@ -57,7 +109,7 @@ export const NotificationFeed: React.FC<NotificationFeedProps> = ({ maxDisplay =
       try {
         const res = await fetch('/api/notifications?limit=20');
         const data = await res.json();
-        setNotifications(data.data || []);
+        setNotifications((data.data || []).map((item: any) => normalizeNotification(item)));
 
         // Get unread count
         const countRes = await fetch('/api/notifications/unread-count');
@@ -71,7 +123,7 @@ export const NotificationFeed: React.FC<NotificationFeedProps> = ({ maxDisplay =
     if (user?.id) {
       fetchNotifications();
     }
-  }, [user?.id]);
+  }, [normalizeNotification, user?.id]);
 
   const handleMarkAsRead = useCallback(async (notificationId: string) => {
     try {
@@ -154,7 +206,10 @@ export const NotificationFeed: React.FC<NotificationFeedProps> = ({ maxDisplay =
                     if (!notif.read) {
                       handleMarkAsRead(notif.id);
                     }
-                    // TODO: Navigate to challenge
+                    if (notif.challengeId) {
+                      navigate(`/challenges/${notif.challengeId}/activity`);
+                      setIsOpen(false);
+                    }
                   }}
                 >
                   <div className="flex justify-between items-start gap-2">
@@ -166,6 +221,11 @@ export const NotificationFeed: React.FC<NotificationFeedProps> = ({ maxDisplay =
                         <h4 className="font-semibold text-sm text-slate-900 dark:text-white">
                           {notif.title}
                         </h4>
+                        {isAgentEvent(notif.event) && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                            Agent
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                         {notif.body}
@@ -268,6 +328,12 @@ function getIconForEvent(event: string, className: string) {
       return <Rocket className={className} />;
     case 'match.found':
       return <CheckCircle2 className={className} />;
+    case 'challenge_won':
+    case 'agent_challenge_won':
+      return <CheckCircle2 className={className} />;
+    case 'challenge_lost':
+    case 'agent_challenge_lost':
+      return <AgentIcon className={className} alt="Agent outcome notification" />;
     case 'system.joined':
       return <AgentIcon className={className} alt="Agent notification" />;
     default:

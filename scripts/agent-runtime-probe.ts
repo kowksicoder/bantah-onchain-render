@@ -24,6 +24,23 @@ function loadEnv(filePath: string) {
   }
 }
 
+async function readJson(url: string, init?: RequestInit) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  let data: any = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+  };
+}
+
 async function main() {
   loadEnv(path.resolve(process.cwd(), ".env"));
 
@@ -126,7 +143,7 @@ async function main() {
       ],
     );
 
-    const response = await fetch(`http://localhost:5100/api/agents/runtime/${agentId}`, {
+    const runtimeAction = await readJson(`http://localhost:5100/api/agents/runtime/${agentId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -143,15 +160,65 @@ async function main() {
       }),
     });
 
-    const text = await response.text();
-    console.log(`status=${response.status}`);
-    console.log(text);
+    console.log(`[probe] runtime action status=${runtimeAction.status}`);
+    console.log(JSON.stringify(runtimeAction.data, null, 2));
 
-    try {
-      const data = JSON.parse(text);
-      challengeId = data?.result?.challengeId ?? null;
-    } catch {
-      challengeId = null;
+    if (!runtimeAction.ok || runtimeAction.data?.ok !== true) {
+      throw new Error("Runtime action probe failed.");
+    }
+
+    challengeId =
+      Number(runtimeAction?.data?.result?.marketId || runtimeAction?.data?.result?.challengeId) || null;
+
+    const runtimeState = await readJson(
+      `http://localhost:5100/api/agents/${agentId}/runtime-state`,
+    );
+    console.log(`[probe] runtime-state status=${runtimeState.status}`);
+    console.log(JSON.stringify(runtimeState.data, null, 2));
+
+    if (!runtimeState.ok || runtimeState.data?.health !== "healthy" || runtimeState.data?.isManagedRuntimeLive !== true) {
+      throw new Error("Runtime state probe failed.");
+    }
+
+    const walletStatus = runtimeState.data?.wallet?.status;
+    const walletMessage = String(runtimeState.data?.wallet?.message || "");
+    if (walletStatus === "error" && /account with given address not found/i.test(walletMessage)) {
+      console.warn(
+        "[probe] wallet warning: disposable probe uses synthetic wallet data, so balance lookup can fail without indicating a managed-runtime regression.",
+      );
+    }
+
+    const managedHealth = await readJson(
+      `http://localhost:5100/api/agents/health/managed-runtimes`,
+    );
+    console.log(`[probe] managed-runtime-health status=${managedHealth.status}`);
+    console.log(
+      JSON.stringify(
+        {
+          summary: managedHealth.data?.summary || null,
+          probeAgent: Array.isArray(managedHealth.data?.items)
+            ? managedHealth.data.items.find((item: any) => item.agentId === agentId) || null
+            : null,
+        },
+        null,
+        2,
+      ),
+    );
+
+    const probeSummary = managedHealth.data?.summary;
+    const probeAgent =
+      Array.isArray(managedHealth.data?.items)
+        ? managedHealth.data.items.find((item: any) => item.agentId === agentId) || null
+        : null;
+
+    if (
+      !managedHealth.ok ||
+      !probeSummary ||
+      probeSummary.healthy < 1 ||
+      !probeAgent ||
+      probeAgent.health !== "healthy"
+    ) {
+      throw new Error("Managed runtime health probe failed.");
     }
   } finally {
     if (challengeId) {

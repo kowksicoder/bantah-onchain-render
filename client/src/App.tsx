@@ -76,6 +76,7 @@ import { privyConfig } from './lib/privyConfig';
 const Challenges = lazy(() => import("./pages/Challenges"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const Agents = lazy(() => import("./pages/Agents"));
+const AgentDetail = lazy(() => import("./pages/AgentDetail"));
 const PartnerPrograms = lazy(() => import("./pages/PartnerPrograms"));
 const PartnerSignup = lazy(() => import("./pages/PartnerSignup"));
 
@@ -237,6 +238,7 @@ function AppRouter() {
       <Route path="/about" component={About} />
       <Route path="/partners" component={PartnerPrograms} />
       <Route path="/partner-signup" component={PartnerSignup} />
+      <Route path="/agents/:agentId" component={AgentDetail} />
       <Route path="/events/:id/chat" component={EventChatPage} />
       <Route path="/challenges/:id/activity" component={ChallengeChatPage} />
       <Route path="/challenges/:id/chat" component={ChallengeChatPage} />

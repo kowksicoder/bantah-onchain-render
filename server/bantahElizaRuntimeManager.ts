@@ -117,6 +117,19 @@ export function getManagedBantahAgentRuntime(agentId: string) {
   return managedRuntimes.get(agentId) || null;
 }
 
+export function listManagedBantahAgentRuntimes() {
+  return Array.from(managedRuntimes.values()).map((entry) => ({
+    agentId: entry.agentId,
+    startedAt: entry.startedAt,
+    runtimeStatus: entry.config.status,
+    runtimeEngine: entry.config.engine,
+    chainId: entry.config.chainId,
+    chainName: entry.config.chainName,
+    walletAddress: entry.config.walletAddress,
+    walletNetworkId: entry.config.walletNetworkId,
+  }));
+}
+
 export async function startManagedBantahAgentRuntime(
   agentId: string,
 ): Promise<BantahElizaRuntimeConfig> {
@@ -174,7 +187,17 @@ export async function stopManagedBantahAgentRuntime(
   options: { persist?: boolean } = {},
 ) {
   const entry = managedRuntimes.get(agentId);
-  if (!entry) return false;
+  if (!entry) {
+    if (options.persist !== false) {
+      const storedAgent = await storage.getAgentById(agentId);
+      if (storedAgent?.runtimeConfig) {
+        const parsedConfig = bantahElizaRuntimeConfigSchema.parse(storedAgent.runtimeConfig);
+        const inactiveConfig = withRuntimeStatus(parsedConfig, "inactive");
+        await persistRuntimeState(agentId, inactiveConfig);
+      }
+    }
+    return false;
+  }
 
   managedRuntimes.delete(agentId);
 
@@ -188,6 +211,16 @@ export async function stopManagedBantahAgentRuntime(
   }
 
   return true;
+}
+
+export async function restartManagedBantahAgentRuntime(
+  agentId: string,
+): Promise<BantahElizaRuntimeConfig> {
+  if (managedRuntimes.has(agentId)) {
+    await stopManagedBantahAgentRuntime(agentId, { persist: false });
+  }
+
+  return startManagedBantahAgentRuntime(agentId);
 }
 
 export async function stopAllManagedBantahAgentRuntimes(

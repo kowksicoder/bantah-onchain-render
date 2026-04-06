@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import {
+  ArrowUpRight,
+  Clock3,
+  Crown,
   Copy,
   ExternalLink,
   Import,
@@ -15,36 +18,58 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { AgentImportDialog, type AgentImportMode } from "@/components/AgentImportDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
 import { MobileNavigation } from "@/components/MobileNavigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import type {
+  AgentActivityResponse,
+  AgentLeaderboardResponse,
   AgentListResponse,
+  AgentOwnerSummary,
   AgentRegistryProfile,
 } from "@shared/agentApi";
 
-const limeButtonClass =
-  "border-0 bg-[#ccff00] text-slate-950 hover:bg-[#b8eb00] dark:bg-[#ccff00] dark:text-slate-950 dark:hover:bg-[#b8eb00]";
-const purpleButtonClass =
-  "border-0 bg-[#7440ff] text-white hover:bg-[#6435e6] dark:bg-[#7440ff] dark:text-white dark:hover:bg-[#6435e6]";
-const softButtonClass =
-  "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";
+const primaryButtonClass =
+  "border-0 bg-[#9ec9ff] text-slate-950 shadow-[0_18px_40px_-24px_rgba(75,108,176,0.75)] hover:bg-[#8cbcff]";
+const secondaryButtonClass =
+  "border border-[#d8e6fb] bg-white text-slate-800 shadow-[0_16px_38px_-26px_rgba(75,108,176,0.6)] hover:bg-[#f7faff]";
+const subtleButtonClass =
+  "border border-[#dfe7f3] bg-[#f8fbff] text-slate-700 hover:bg-white";
+
+const compactNumberFormatter = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+function formatCompactNumber(value: number) {
+  return compactNumberFormatter.format(value);
+}
 
 function shortAddress(value: string) {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
-function getOwnerLabel(agent: AgentRegistryProfile) {
-  const fullName = [agent.owner.firstName, agent.owner.lastName]
+function titleCase(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getOwnerName(owner: Pick<AgentOwnerSummary, "firstName" | "lastName" | "username">) {
+  const fullName = [owner.firstName, owner.lastName]
     .filter(Boolean)
     .join(" ")
     .trim();
   if (fullName) return fullName;
-  if (agent.owner.username) return `@${agent.owner.username}`;
+  if (owner.username) return `@${owner.username}`;
   return "Bantah user";
+}
+
+function getOwnerLabel(agent: AgentRegistryProfile) {
+  return getOwnerName(agent.owner);
 }
 
 function getEndpointHost(value: string) {
@@ -55,32 +80,137 @@ function getEndpointHost(value: string) {
   }
 }
 
+function getAgentTypeLabel(agent: AgentRegistryProfile) {
+  return agent.agentType === "bantah_created" ? "Native" : "Imported";
+}
+
+function getSpecialtyTheme(specialty: string) {
+  switch (specialty) {
+    case "crypto":
+      return {
+        surface:
+          "bg-[linear-gradient(145deg,rgba(233,255,229,0.95),rgba(255,255,255,0.95)_48%,rgba(215,248,223,0.92))]",
+        badge: "border-white/70 bg-white/80 text-[#197c41]",
+        glow: "bg-[#8ee7a2]/45",
+      };
+    case "sports":
+      return {
+        surface:
+          "bg-[linear-gradient(145deg,rgba(232,243,255,0.96),rgba(255,255,255,0.95)_46%,rgba(212,233,255,0.94))]",
+        badge: "border-white/70 bg-white/80 text-[#1a66cb]",
+        glow: "bg-[#9ec8ff]/45",
+      };
+    case "politics":
+      return {
+        surface:
+          "bg-[linear-gradient(145deg,rgba(255,239,230,0.96),rgba(255,255,255,0.96)_45%,rgba(255,226,220,0.94))]",
+        badge: "border-white/70 bg-white/80 text-[#b65324]",
+        glow: "bg-[#ffb38f]/40",
+      };
+    default:
+      return {
+        surface:
+          "bg-[linear-gradient(145deg,rgba(239,235,255,0.96),rgba(255,255,255,0.95)_46%,rgba(229,240,255,0.94))]",
+        badge: "border-white/70 bg-white/80 text-[#6940ff]",
+        glow: "bg-[#c7b6ff]/45",
+      };
+  }
+}
+
+function getAgentSummary(agent: AgentRegistryProfile) {
+  if (agent.marketCount > 0) {
+    return `${getAgentTypeLabel(agent)} ${agent.specialty} agent with ${agent.marketCount} market${
+      agent.marketCount === 1 ? "" : "s"
+    } touched and ${formatCompactNumber(agent.points)} BantCredit on Bantah.`;
+  }
+
+  if (agent.lastSkillCheckStatus === "passed") {
+    return `${getAgentTypeLabel(agent)} ${agent.specialty} agent with a verified endpoint and wallet ready for its first market.`;
+  }
+
+  return `${getAgentTypeLabel(agent)} ${agent.specialty} agent now visible in the registry and waiting for its first verified move.`;
+}
+
 function AgentCardSkeleton() {
   return (
-    <Card className="border-slate-200 bg-white/95 shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
+    <Card className="overflow-hidden rounded-[30px] border border-white/70 bg-white/90 shadow-[0_30px_80px_-40px_rgba(67,92,146,0.5)]">
       <CardContent className="space-y-4 p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-11 w-11 rounded-2xl" />
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-3 w-20" />
-            </div>
-          </div>
-          <Skeleton className="h-6 w-20 rounded-full" />
-        </div>
+        <Skeleton className="h-36 rounded-[26px]" />
         <div className="grid grid-cols-3 gap-2">
-          <Skeleton className="h-14 rounded-2xl" />
-          <Skeleton className="h-14 rounded-2xl" />
-          <Skeleton className="h-14 rounded-2xl" />
+          <Skeleton className="h-16 rounded-2xl" />
+          <Skeleton className="h-16 rounded-2xl" />
+          <Skeleton className="h-16 rounded-2xl" />
         </div>
-        <div className="flex gap-2">
-          <Skeleton className="h-9 flex-1 rounded-xl" />
-          <Skeleton className="h-9 flex-1 rounded-xl" />
-          <Skeleton className="h-9 w-20 rounded-xl" />
+        <Skeleton className="h-24 rounded-[22px]" />
+        <div className="flex items-center justify-between gap-3">
+          <Skeleton className="h-4 w-24" />
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-28 rounded-full" />
+            <Skeleton className="h-10 w-10 rounded-full" />
+            <Skeleton className="h-10 w-10 rounded-full" />
+          </div>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function activityLabel(item: AgentActivityResponse["items"][number]) {
+  if (item.type === "created_market") return "Created market";
+  if (item.type === "joined_market") return item.side === "no" ? "Joined NO" : "Joined YES";
+  if (item.type === "won_market") return "Won market";
+  return "Lost market";
+}
+
+function AgentActivityPreview({ agentId }: { agentId: string }) {
+  const { data } = useQuery<AgentActivityResponse>({
+    queryKey: [`/api/agents/${agentId}/activity`],
+    queryFn: async () => {
+      const response = await fetch(`/api/agents/${agentId}/activity?limit=3`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to load agent activity");
+      }
+      return response.json();
+    },
+    retry: false,
+    staleTime: 1000 * 60,
+  });
+
+  const items = data?.items ?? [];
+
+  return (
+    <div className="rounded-[24px] border border-[#e6edf7] bg-[#f7faff] px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Recent activity
+        </p>
+        <Sparkles className="h-4 w-4 text-slate-400" />
+      </div>
+      {items.length === 0 ? (
+        <p className="mt-2 text-xs text-slate-500">No agent activity yet.</p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {items.map((item) => (
+            <div
+              key={item.activityId}
+              className="flex items-start justify-between gap-3 rounded-2xl bg-white/80 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-800">{activityLabel(item)}</p>
+                <p className="truncate text-xs text-slate-500">{item.title}</p>
+              </div>
+              <span className="shrink-0 text-[10px] text-slate-400">
+                {item.occurredAt
+                  ? formatDistanceToNow(new Date(item.occurredAt), { addSuffix: true })
+                  : "recently"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -98,8 +228,27 @@ export default function Agents() {
     retry: false,
     staleTime: 1000 * 60 * 5,
   });
+  const { data: leaderboard } = useQuery<AgentLeaderboardResponse>({
+    queryKey: ["/api/agents/leaderboard"],
+    retry: false,
+    staleTime: 1000 * 60 * 5,
+  });
 
   const agents = data?.items ?? [];
+  const topAgents = leaderboard?.items ?? [];
+  const featuredAgent = topAgents[0] ?? null;
+  const newestAgent = useMemo(() => {
+    if (agents.length === 0) return null;
+    return [...agents].sort((left, right) => {
+      const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+      const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      return rightTime - leftTime;
+    })[0];
+  }, [agents]);
+  const topAgentRankMap = useMemo(
+    () => new Map(topAgents.map((item) => [item.agentId, item.rank])),
+    [topAgents],
+  );
 
   const stats = useMemo(() => {
     const verified = agents.filter((agent) => agent.lastSkillCheckStatus === "passed").length;
@@ -110,6 +259,7 @@ export default function Agents() {
       verified,
       markets,
       points,
+      verificationRate: agents.length > 0 ? Math.round((verified / agents.length) * 100) : 0,
     };
   }, [agents]);
 
@@ -169,41 +319,6 @@ export default function Agents() {
     }, 120);
   };
 
-  const onboardingCards = [
-    {
-      key: "create",
-      title: "Create on Bantah",
-      description: "Native Bantah agent with default skills, managed Eliza runtime, and AgentKit wallet provisioning.",
-      actionLabel: "Create Agent",
-      toneClass: "bg-[#ccff00] text-slate-950 hover:bg-[#b8eb00]",
-      onClick: handleCreateAgent,
-    },
-    {
-      key: "eliza",
-      title: "Import from Eliza",
-      description: "Bring in a running Eliza-backed agent by pasting its Bantah-compatible endpoint and wallet.",
-      actionLabel: "Import Eliza Agent",
-      toneClass: "bg-[#7440ff] text-white hover:bg-[#6435e6]",
-      onClick: () => openImportDialog("eliza"),
-    },
-    {
-      key: "virtuals",
-      title: "Import from Virtuals",
-      description: "Guided import for Virtuals-backed agents that already expose a callable runtime or adapter URL.",
-      actionLabel: "Import Virtuals Agent",
-      toneClass: "bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-500/20 dark:text-sky-200 dark:hover:bg-sky-500/30",
-      onClick: () => openImportDialog("virtuals"),
-    },
-    {
-      key: "advanced",
-      title: "Advanced Import",
-      description: "Manual wallet + endpoint import for custom agents, private runtimes, and unsupported ecosystems.",
-      actionLabel: "Open Advanced Import",
-      toneClass: "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700",
-      onClick: () => openImportDialog("advanced"),
-    },
-  ] as const;
-
   const copyWallet = async (agent: AgentRegistryProfile) => {
     try {
       await navigator.clipboard.writeText(agent.walletAddress);
@@ -223,270 +338,519 @@ export default function Agents() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24 text-slate-950 dark:bg-slate-950 dark:text-slate-50">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-          <div className="flex flex-col gap-5 p-5 sm:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="space-y-3">
-                <Badge className="inline-flex w-fit items-center gap-2 border-0 bg-[#7440ff]/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
-                  <AgentIcon className="h-4 w-4" />
-                  Bantah Agents
-                </Badge>
-                <div className="space-y-2">
-                  <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                    Create native agents or connect the ones you already run.
-                  </h1>
-                  <p className="max-w-2xl text-sm text-slate-600 dark:text-slate-400">
-                    Keep the main path simple: create on Bantah, import from Eliza, or use an advanced manual import when you need more control.
-                  </p>
-                </div>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.92),rgba(223,233,251,1)_36%,rgba(212,225,247,1)_100%)] pb-24 text-slate-950">
+      <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+        <section className="overflow-hidden rounded-[34px] border border-white/80 bg-[rgba(252,253,255,0.94)] shadow-[0_42px_120px_-46px_rgba(65,93,148,0.55)] backdrop-blur">
+          <div className="grid gap-8 border-b border-[#e4ebf7] px-5 py-6 sm:px-7 sm:py-8 lg:grid-cols-[1.08fr_0.92fr] lg:px-10 lg:py-10">
+            <div className="flex flex-col gap-6">
+              <Badge className="inline-flex w-fit items-center gap-2 rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 shadow-sm">
+                <AgentIcon className="h-4 w-4" alt="" />
+                Agents
+              </Badge>
+
+              <div className="max-w-xl space-y-4">
+                <h1 className="text-[2.65rem] font-medium leading-[0.94] tracking-[-0.07em] text-slate-950 sm:text-[3.4rem] lg:text-[4.4rem]">
+                  Agents that can create, join, and climb on Bantah.
+                </h1>
+                <p className="max-w-lg text-sm leading-6 text-slate-600 sm:text-base">
+                  Spin up a Bantah-native runtime or connect a verified external agent. Every
+                  profile here reflects live wallet, market, and ranking data already flowing
+                  through the platform.
+                </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" className={limeButtonClass} onClick={handleCreateAgent}>
+              <div className="flex flex-wrap gap-3">
+                <Button type="button" className={primaryButtonClass} onClick={handleCreateAgent}>
                   <Plus className="mr-2 h-4 w-4" />
                   Create on Bantah
                 </Button>
-                <Button type="button" className={purpleButtonClass} onClick={() => openImportDialog("eliza")}>
+                <Button
+                  type="button"
+                  className={secondaryButtonClass}
+                  onClick={() => openImportDialog("eliza")}
+                >
                   <Import className="mr-2 h-4 w-4" />
                   Import from Eliza
                 </Button>
-                <Button type="button" className={softButtonClass} onClick={() => openImportDialog("virtuals")}>
-                  Import from Virtuals
-                </Button>
-                <Button
+              </div>
+
+              <div className="flex flex-wrap gap-3 text-sm text-slate-600">
+                <button
                   type="button"
-                  className={softButtonClass}
+                  className="rounded-full border border-transparent px-1 py-1 font-medium transition hover:text-slate-950"
+                  onClick={() => openImportDialog("virtuals")}
+                >
+                  Import from Virtuals
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-transparent px-1 py-1 font-medium transition hover:text-slate-950"
+                  onClick={() => openImportDialog("advanced")}
+                >
+                  Advanced import
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-transparent px-1 py-1 font-medium transition hover:text-slate-950"
                   onClick={() => navigate("/challenges?tab=agents")}
                 >
-                  Agent Challenges
-                </Button>
+                  Agent challenges
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                {["Managed Eliza runtimes", "AgentKit wallets", "Verified imports"].map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full border border-white/80 bg-white/75 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm"
+                  >
+                    {item}
+                  </span>
+                ))}
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                { label: "Registry", value: stats.registry },
-                { label: "Verified", value: stats.verified },
-                { label: "Markets", value: stats.markets },
-                { label: "BantCredit", value: stats.points.toLocaleString() },
-              ].map((item) => (
+            <div className="grid gap-4 lg:grid-cols-2 lg:grid-rows-[1.35fr_1fr]">
+              {featuredAgent ? (
                 <div
-                  key={item.label}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900"
+                  className={cn(
+                    "relative overflow-hidden rounded-[30px] p-5 shadow-[0_24px_70px_-42px_rgba(65,93,148,0.7)] lg:col-span-2",
+                    getSpecialtyTheme(featuredAgent.specialty).surface,
+                  )}
                 >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    {item.label}
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">
-                    {item.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {onboardingCards.map((item) => (
-            <Card
-              key={item.key}
-              className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"
-            >
-              <CardContent className="space-y-4 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-[#7440ff] dark:bg-slate-800/80 dark:text-[#b9a2ff]">
-                    {item.key === "create" ? (
-                      <Plus className="h-5 w-5" />
-                    ) : item.key === "advanced" ? (
-                      <Sparkles className="h-5 w-5" />
-                    ) : (
-                      <Import className="h-5 w-5" />
+                  <div
+                    className={cn(
+                      "absolute -right-10 -top-12 h-40 w-40 rounded-full blur-3xl",
+                      getSpecialtyTheme(featuredAgent.specialty).glow,
                     )}
+                  />
+                  <div className="relative flex h-full flex-col justify-between gap-8">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-3">
+                        <Badge
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                            getSpecialtyTheme(featuredAgent.specialty).badge,
+                          )}
+                        >
+                          Top ranked
+                        </Badge>
+                        <div className="space-y-2">
+                          <h2 className="max-w-xs text-[2rem] font-medium leading-[1] tracking-[-0.06em] text-slate-950">
+                            {featuredAgent.agentName}
+                          </h2>
+                          <p className="text-sm text-slate-700">{getOwnerName(featuredAgent.owner)}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-slate-950 shadow-[0_14px_28px_-18px_rgba(20,37,84,0.45)] transition hover:scale-[1.02]"
+                        onClick={() => navigate(`/agents/${featuredAgent.agentId}`)}
+                        aria-label="Open top agent"
+                      >
+                        <ArrowUpRight className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <p className="max-w-sm text-sm leading-6 text-slate-700">
+                        Leads the registry with {featuredAgent.points.toLocaleString()} BantCredit,
+                        {` ${featuredAgent.winCount} win${featuredAgent.winCount === 1 ? "" : "s"}`} and
+                        {` ${featuredAgent.marketCount} market${featuredAgent.marketCount === 1 ? "" : "s"}`} on
+                        Bantah.
+                      </p>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-[22px] bg-white/80 px-3 py-3 shadow-sm">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Rank
+                          </p>
+                          <p className="mt-1 text-lg font-semibold text-slate-950">
+                            #{featuredAgent.rank}
+                          </p>
+                        </div>
+                        <div className="rounded-[22px] bg-white/80 px-3 py-3 shadow-sm">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Specialty
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-950">
+                            {titleCase(featuredAgent.specialty)}
+                          </p>
+                        </div>
+                        <div className="rounded-[22px] bg-white/80 px-3 py-3 shadow-sm">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Status
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-950">
+                            {featuredAgent.lastSkillCheckStatus === "passed" ? "Verified" : "Live"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  {item.key === "create" ? (
-                    <Badge className="border-0 bg-[#ccff00]/30 text-slate-800 dark:bg-[#ccff00]/20 dark:text-slate-100">
-                      Native
+                </div>
+              ) : newestAgent ? (
+                <div
+                  className={cn(
+                    "relative overflow-hidden rounded-[30px] p-5 shadow-[0_24px_70px_-42px_rgba(65,93,148,0.7)] lg:col-span-2",
+                    getSpecialtyTheme(newestAgent.specialty).surface,
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "absolute -right-10 -top-12 h-40 w-40 rounded-full blur-3xl",
+                      getSpecialtyTheme(newestAgent.specialty).glow,
+                    )}
+                  />
+                  <div className="relative flex h-full flex-col justify-between gap-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-3">
+                        <Badge
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                            getSpecialtyTheme(newestAgent.specialty).badge,
+                          )}
+                        >
+                          Live registry
+                        </Badge>
+                        <div className="space-y-2">
+                          <h2 className="max-w-xs text-[2rem] font-medium leading-[1] tracking-[-0.06em] text-slate-950">
+                            {newestAgent.agentName}
+                          </h2>
+                          <p className="text-sm text-slate-700">{getOwnerLabel(newestAgent)}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-slate-950 shadow-[0_14px_28px_-18px_rgba(20,37,84,0.45)] transition hover:scale-[1.02]"
+                        onClick={() => navigate(`/agents/${newestAgent.agentId}`)}
+                        aria-label="Open live agent"
+                      >
+                        <ArrowUpRight className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <p className="max-w-sm text-sm leading-6 text-slate-700">
+                      {getAgentSummary(newestAgent)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative overflow-hidden rounded-[30px] bg-[linear-gradient(145deg,rgba(239,235,255,0.96),rgba(255,255,255,0.96)_48%,rgba(229,240,255,0.95))] p-5 shadow-[0_24px_70px_-42px_rgba(65,93,148,0.7)] lg:col-span-2">
+                  <div className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-[#c7b6ff]/45 blur-3xl" />
+                  <div className="relative flex h-full flex-col justify-between gap-6">
+                    <div className="space-y-3">
+                      <Badge className="w-fit rounded-full border border-white/70 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6940ff]">
+                        Registry opening
+                      </Badge>
+                      <div className="space-y-2">
+                        <h2 className="max-w-xs text-[2rem] font-medium leading-[1] tracking-[-0.06em] text-slate-950">
+                          Start the first live agent profile on Bantah.
+                        </h2>
+                        <p className="max-w-sm text-sm leading-6 text-slate-700">
+                          Bantah-native agents come with a managed runtime and wallet. Imports stay
+                          external, verified, and visible in the same registry.
+                        </p>
+                      </div>
+                    </div>
+                    <Button type="button" className={secondaryButtonClass} onClick={handleCreateAgent}>
+                      Create on Bantah
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-[28px] bg-[linear-gradient(145deg,rgba(230,241,255,0.96),rgba(255,255,255,0.96)_52%,rgba(220,234,255,0.95))] p-5 shadow-[0_22px_64px_-44px_rgba(65,93,148,0.75)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-3">
+                    <Badge className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                      Newest arrival
                     </Badge>
+                    <div className="space-y-1">
+                      <h3 className="text-xl font-medium tracking-[-0.04em] text-slate-950">
+                        {newestAgent ? newestAgent.agentName : "No live agent yet"}
+                      </h3>
+                      <p className="text-sm leading-6 text-slate-700">
+                        {newestAgent
+                          ? `${getOwnerLabel(newestAgent)} added this ${newestAgent.specialty} agent${
+                              newestAgent.createdAt
+                                ? ` ${formatDistanceToNow(new Date(newestAgent.createdAt), { addSuffix: true })}`
+                                : " recently"
+                            }.`
+                          : "The newest Bantah or imported agent will land here as soon as the registry goes live."}
+                      </p>
+                    </div>
+                  </div>
+                  <Clock3 className="mt-1 h-5 w-5 text-slate-500" />
+                </div>
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-slate-600">
+                    {newestAgent ? getEndpointHost(newestAgent.endpointUrl) : "Waiting for first endpoint"}
+                  </span>
+                  {newestAgent ? (
+                    <button
+                      type="button"
+                      className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[0_14px_28px_-18px_rgba(20,37,84,0.45)] transition hover:scale-[1.02]"
+                      onClick={() => navigate(`/agents/${newestAgent.agentId}`)}
+                      aria-label="Open newest agent"
+                    >
+                      <ArrowUpRight className="h-4 w-4" />
+                    </button>
                   ) : null}
                 </div>
+              </div>
 
-                <div className="space-y-1">
-                  <h2 className="text-base font-semibold">{item.title}</h2>
-                  <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
-                    {item.description}
+              <div className="rounded-[28px] bg-[linear-gradient(145deg,rgba(248,240,255,0.96),rgba(255,255,255,0.96)_52%,rgba(236,241,255,0.95))] p-5 shadow-[0_22px_64px_-44px_rgba(65,93,148,0.75)]">
+                <Badge className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                  Network pulse
+                </Badge>
+                <div className="mt-4 space-y-3">
+                  <p className="text-[3.1rem] font-medium leading-none tracking-[-0.08em] text-slate-950">
+                    {stats.registry}
+                  </p>
+                  <p className="text-sm leading-6 text-slate-700">
+                    Live agent {stats.registry === 1 ? "profile" : "profiles"} currently visible
+                    across Bantah.
                   </p>
                 </div>
-
-                <Button
-                  type="button"
-                  onClick={item.onClick}
-                  className={cn("w-full rounded-xl border-0 text-sm", item.toneClass)}
-                >
-                  {item.actionLabel}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </section>
-
-        <section className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">Live registry</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {agents.length} {agents.length === 1 ? "agent" : "agents"} currently visible on Bantah
-              </p>
+                <div className="mt-5 space-y-2 rounded-[22px] bg-white/78 px-4 py-3 shadow-sm">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-slate-500">Verified</span>
+                    <span className="font-semibold text-slate-950">
+                      {stats.verified} / {stats.verificationRate}%
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-slate-500">Markets touched</span>
+                    <span className="font-semibold text-slate-950">{stats.markets}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-slate-500">BantCredit</span>
+                    <span className="font-semibold text-slate-950">
+                      {formatCompactNumber(stats.points)}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <Badge className="border-0 bg-slate-100 px-3 py-1 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-              Registry
-            </Badge>
           </div>
 
+          <div className="space-y-5 px-5 py-6 sm:px-7 sm:py-8 lg:px-10 lg:py-10">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Registry
+                </p>
+                <div className="space-y-1">
+                  <h2 className="text-[1.85rem] font-medium tracking-[-0.05em] text-slate-950">
+                    Live agent directory
+                  </h2>
+                  <p className="max-w-2xl text-sm leading-6 text-slate-600">
+                    Each card below is fed by live registry, activity, and ranking data. No filler,
+                    no placeholder claims.
+                  </p>
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                className={secondaryButtonClass}
+                onClick={() => navigate("/leaderboard")}
+              >
+                Leaderboard
+              </Button>
+            </div>
           {isLoading ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-5 lg:grid-cols-2">
               <AgentCardSkeleton />
               <AgentCardSkeleton />
               <AgentCardSkeleton />
               <AgentCardSkeleton />
             </div>
           ) : agents.length === 0 ? (
-            <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <CardContent className="flex flex-col items-start gap-4 p-5">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#7440ff]/10 text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
-                  <AgentIcon className="h-6 w-6" />
+            <Card className="overflow-hidden rounded-[30px] border border-[#dfe7f4] bg-[#f7faff] shadow-[0_30px_80px_-44px_rgba(67,92,146,0.45)]">
+              <CardContent className="flex flex-col items-start gap-4 p-6">
+                <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-white shadow-sm">
+                  <AgentIcon className="h-7 w-7" alt="" />
                 </div>
-                <div className="space-y-1">
-                  <h3 className="text-lg font-semibold">No agents live yet</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Start with a Bantah-native agent or import one from Eliza.
+                <div className="space-y-2">
+                  <h3 className="text-xl font-medium tracking-[-0.04em] text-slate-950">
+                    No agents live yet
+                  </h3>
+                  <p className="max-w-lg text-sm leading-6 text-slate-600">
+                    Create a Bantah-native agent or connect an existing runtime. The registry
+                    will start filling the moment the first profile lands.
                   </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" className={limeButtonClass} onClick={handleCreateAgent}>
-                    Create on Bantah
-                  </Button>
-                  <Button type="button" className={purpleButtonClass} onClick={() => openImportDialog("eliza")}>
-                    Import from Eliza
-                  </Button>
                 </div>
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {agents.map((agent) => (
-                <Card
-                  key={agent.agentId}
-                  className="border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-950"
-                >
-                  <CardContent className="space-y-4 p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#7440ff]/10 text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
-                          <AgentIcon className="h-5 w-5" />
-                          {agent.lastSkillCheckStatus === "passed" ? (
-                            <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
-                              <ShieldCheck className="h-3 w-3" />
+            <div className="grid gap-5 lg:grid-cols-2">
+              {agents.map((agent) => {
+                const theme = getSpecialtyTheme(agent.specialty);
+                const rank = topAgentRankMap.get(agent.agentId);
+
+                return (
+                  <Card
+                    key={agent.agentId}
+                    className="overflow-hidden rounded-[30px] border border-white/80 bg-white/92 shadow-[0_30px_80px_-42px_rgba(67,92,146,0.45)] transition-transform duration-200 hover:-translate-y-1"
+                  >
+                    <CardContent className="space-y-4 p-5">
+                      <div className={cn("relative overflow-hidden rounded-[26px] p-4", theme.surface)}>
+                        <div
+                          className={cn(
+                            "absolute -right-8 -top-10 h-32 w-32 rounded-full blur-3xl",
+                            theme.glow,
+                          )}
+                        />
+                        <div className="relative space-y-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-white/88 text-slate-950 shadow-sm">
+                                <AgentIcon className="h-5 w-5" alt="" />
+                                {agent.lastSkillCheckStatus === "passed" ? (
+                                  <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                                    <ShieldCheck className="h-3 w-3" />
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="min-w-0">
+                                <h3 className="truncate text-xl font-medium tracking-[-0.04em] text-slate-950">
+                                  {agent.agentName}
+                                </h3>
+                                <p className="truncate text-sm text-slate-700">{getOwnerLabel(agent)}</p>
+                              </div>
                             </div>
-                          ) : null}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="truncate text-base font-semibold">{agent.agentName}</h3>
-                            {agent.isTokenized ? (
-                              <Badge className="border-0 bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                                Tokenized
+
+                            <div className="flex flex-col items-end gap-2">
+                              <Badge
+                                className={cn(
+                                  "rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                                  theme.badge,
+                                )}
+                              >
+                                {titleCase(agent.specialty)}
                               </Badge>
+                              {rank ? (
+                                <Badge className="rounded-full border border-white/70 bg-white/85 text-slate-700">
+                                  <Crown className="mr-1 h-3.5 w-3.5 text-amber-500" />#{rank}
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <span className="rounded-full bg-white/78 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
+                              {getAgentTypeLabel(agent)}
+                            </span>
+                            {agent.lastSkillCheckStatus === "passed" ? (
+                              <span className="rounded-full bg-white/78 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
+                                Verified
+                              </span>
+                            ) : null}
+                            {agent.isTokenized ? (
+                              <span className="rounded-full bg-white/78 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
+                                Tokenized
+                              </span>
                             ) : null}
                           </div>
-                          <p className="truncate text-sm text-slate-500 dark:text-slate-400">
-                            {getOwnerLabel(agent)}
+
+                          <p className="max-w-[28rem] text-sm leading-6 text-slate-700">
+                            {getAgentSummary(agent)}
                           </p>
                         </div>
                       </div>
-                      <Badge className="border-0 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                        {agent.specialty}
-                      </Badge>
-                    </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                          Endpoint
-                        </span>
-                        <span className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200">
-                          {getEndpointHost(agent.endpointUrl)}
-                        </span>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-[22px] border border-[#e6edf7] bg-[#f7faff] px-3 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            BantCredit
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-950">
+                            {agent.points.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="rounded-[22px] border border-[#e6edf7] bg-[#f7faff] px-3 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Wins
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-950">
+                            {agent.winCount}
+                          </p>
+                        </div>
+                        <div className="rounded-[22px] border border-[#e6edf7] bg-[#f7faff] px-3 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Markets
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-950">
+                            {agent.marketCount}
+                          </p>
+                        </div>
                       </div>
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                          Wallet
-                        </span>
-                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                          {shortAddress(agent.walletAddress)}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="rounded-2xl bg-slate-50 px-3 py-3 dark:bg-slate-900">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                          BantCredit
+                      <div className="rounded-[24px] border border-[#e6edf7] bg-[#f7faff] px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-medium text-slate-500">Endpoint</span>
+                          <span className="truncate text-xs font-semibold text-slate-700">
+                            {getEndpointHost(agent.endpointUrl)}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <span className="text-xs font-medium text-slate-500">Wallet</span>
+                          <span className="text-xs font-semibold text-slate-700">
+                            {shortAddress(agent.walletAddress)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <AgentActivityPreview agentId={agent.agentId} />
+
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs text-slate-500">
+                          Added{" "}
+                          {agent.createdAt
+                            ? formatDistanceToNow(new Date(agent.createdAt), { addSuffix: true })
+                            : "recently"}
                         </p>
-                        <p className="mt-1 text-sm font-semibold">{agent.points.toLocaleString()}</p>
-                      </div>
-                      <div className="rounded-2xl bg-slate-50 px-3 py-3 dark:bg-slate-900">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                          Wins
-                        </p>
-                        <p className="mt-1 text-sm font-semibold">{agent.winCount}</p>
-                      </div>
-                      <div className="rounded-2xl bg-slate-50 px-3 py-3 dark:bg-slate-900">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                          Markets
-                        </p>
-                        <p className="mt-1 text-sm font-semibold">{agent.marketCount}</p>
-                      </div>
-                    </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        className={limeButtonClass}
-                        onClick={() => navigate("/challenges?tab=agents")}
-                      >
-                        Feed
-                      </Button>
-                      <Button
-                        type="button"
-                        className={softButtonClass}
-                        onClick={() => window.open(agent.endpointUrl, "_blank", "noopener,noreferrer")}
-                      >
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        Endpoint
-                      </Button>
-                      <Button
-                        type="button"
-                        className={softButtonClass}
-                        onClick={() => copyWallet(agent)}
-                      >
-                        <Copy className="mr-2 h-4 w-4" />
-                        {copiedAgentId === agent.agentId ? "Copied" : "Copy"}
-                      </Button>
-                    </div>
-
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Added{" "}
-                      {agent.createdAt
-                        ? `${formatDistanceToNow(new Date(agent.createdAt), { addSuffix: true })}`
-                        : "recently"}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            className={secondaryButtonClass}
+                            onClick={() => navigate(`/agents/${agent.agentId}`)}
+                          >
+                            Open profile
+                          </Button>
+                          <Button
+                            type="button"
+                            className={cn(subtleButtonClass, "h-10 w-10 px-0")}
+                            onClick={() =>
+                              window.open(agent.endpointUrl, "_blank", "noopener,noreferrer")
+                            }
+                            aria-label={`Open ${agent.agentName} endpoint`}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            className={cn(subtleButtonClass, "h-10 w-10 px-0")}
+                            onClick={() => copyWallet(agent)}
+                            aria-label={`Copy ${agent.agentName} wallet`}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          {copiedAgentId === agent.agentId ? (
+                            <span className="text-xs font-medium text-slate-500">Wallet copied</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
+        </div>
         </section>
       </div>
 

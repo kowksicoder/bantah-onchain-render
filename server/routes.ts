@@ -71,6 +71,8 @@ import notificationsApi from './routes/notificationsApi';
 import adminNotificationsApi from './routes/adminNotificationsApi';
 import agentsApi from './routes/agentsApi';
 import { notificationInfrastructure } from './notificationInfrastructure';
+import { normalizePolymarketMarkets } from "./externalMarketAdapters";
+import type { ExternalMarket } from "@shared/externalMarkets";
 import {
   attachChallengeToPartnerProgram,
   createPartnerWithdrawalRequest,
@@ -467,6 +469,29 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     return typeof data === "object" ? (data as Record<string, any>) : null;
   }
 
+  function sanitizePusherChannel(value: string): string {
+    return value.replace(/[^a-zA-Z0-9_\-]/g, "_");
+  }
+
+  async function triggerNotificationPush(userId: string, notification: any) {
+    const sanitizedUserId = sanitizePusherChannel(String(userId || ""));
+    if (!sanitizedUserId) return;
+    try {
+      await pusher.trigger(`user-${sanitizedUserId}`, "notification", {
+        id: notification?.id,
+        title: notification?.title,
+        message: notification?.message,
+        type: notification?.type,
+        data: notification?.data,
+        createdAt: notification?.createdAt,
+        priority: notification?.priority,
+        fomoLevel: notification?.fomoLevel,
+      });
+    } catch (error) {
+      console.error("Failed to push realtime notification:", error);
+    }
+  }
+
   function getNotificationChallengeId(notification: any, data?: Record<string, any> | null): number | null {
     const source = data || parseNotificationData(notification?.data);
     const rawId =
@@ -602,6 +627,84 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
     const challengerUser = challenge.challenger ? await storage.getUser(challenge.challenger) : null;
     const challengedUser = challenge.challenged ? await storage.getUser(challenge.challenged) : null;
+
+    const applyAgentChallengeOutcomeStats = async (
+      challengeLike: typeof challenge,
+      settledResult: "challenger_won" | "challenged_won" | "draw",
+    ) => {
+      if (settledResult === "draw" || !challengeLike.agentInvolved) return;
+
+      const winnerAgentId =
+        settledResult === "challenger_won"
+          ? challengeLike.challengerAgentId
+          : challengeLike.challengedAgentId;
+      const loserAgentId =
+        settledResult === "challenger_won"
+          ? challengeLike.challengedAgentId
+          : challengeLike.challengerAgentId;
+
+      const updates: Promise<any>[] = [];
+      if (winnerAgentId) {
+        updates.push(storage.recordAgentChallengeOutcome(winnerAgentId, "win"));
+      }
+      if (loserAgentId) {
+        updates.push(storage.recordAgentChallengeOutcome(loserAgentId, "loss"));
+      }
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+    };
+
+    const notifyAgentOwnersOfOutcome = async (
+      challengeLike: typeof challenge,
+      settledResult: "challenger_won" | "challenged_won" | "draw",
+    ) => {
+      if (settledResult === "draw" || !challengeLike.agentInvolved) return;
+
+      const winnerAgentId =
+        settledResult === "challenger_won"
+          ? challengeLike.challengerAgentId
+          : challengeLike.challengedAgentId;
+      const loserAgentId =
+        settledResult === "challenger_won"
+          ? challengeLike.challengedAgentId
+          : challengeLike.challengerAgentId;
+
+      const winnerAgent = winnerAgentId ? await storage.getAgentById(winnerAgentId) : undefined;
+      const loserAgent = loserAgentId ? await storage.getAgentById(loserAgentId) : undefined;
+
+      if (winnerAgent) {
+        const notif = await storage.createNotification({
+          userId: winnerAgent.ownerId,
+          type: "agent_challenge_won",
+          title: "Agent won a market",
+          message: `${winnerAgent.agentName} won "${challengeLike.title}".`,
+          data: {
+            challengeId: challengeLike.id,
+            agentId: winnerAgent.agentId,
+            agentName: winnerAgent.agentName,
+            result: settledResult,
+          },
+        } as any);
+        await triggerNotificationPush(winnerAgent.ownerId, notif);
+      }
+
+      if (loserAgent) {
+        const notif = await storage.createNotification({
+          userId: loserAgent.ownerId,
+          type: "agent_challenge_lost",
+          title: "Agent lost a market",
+          message: `${loserAgent.agentName} lost "${challengeLike.title}".`,
+          data: {
+            challengeId: challengeLike.id,
+            agentId: loserAgent.agentId,
+            agentName: loserAgent.agentName,
+            result: settledResult,
+          },
+        } as any);
+        await triggerNotificationPush(loserAgent.ownerId, notif);
+      }
+    };
 
     if (result === "draw") {
       const drawMessage = `Challenge "${challenge.title}" ended in a draw. Your stake has been returned to your wallet.`;
@@ -750,6 +853,9 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         },
       } as any);
     }
+
+    await applyAgentChallengeOutcomeStats(challenge, result);
+    await notifyAgentOwnersOfOutcome(challenge, result);
 
     try {
       const { challengeNotificationTriggers } = await import("./challengeNotificationTriggers");
@@ -1365,6 +1471,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20;
       const active = String(req.query.active ?? "true") === "false" ? "false" : "true";
       const closed = String(req.query.closed ?? "false") === "true" ? "true" : "false";
+      const normalize = String(req.query.normalize ?? "false") === "true";
 
       const params = new URLSearchParams({
         active,
@@ -1375,10 +1482,45 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const url = `https://gamma-api.polymarket.com/markets?${params.toString()}`;
       const response = await axios.get(url, { timeout: 15000 });
       res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(response.data);
+      if (normalize) {
+        res.json(normalizePolymarketMarkets(Array.isArray(response.data) ? response.data : []));
+      } else {
+        res.json(response.data);
+      }
     } catch (error) {
       console.error("Error fetching Polymarket markets:", error);
       res.status(502).json({ message: "Failed to fetch Polymarket markets" });
+    }
+  });
+
+  app.get('/api/external/markets', async (req, res) => {
+    try {
+      const source = String(req.query.source || "polymarket").toLowerCase();
+      const limitRaw = Number(req.query.limit ?? 20);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20;
+      const active = String(req.query.active ?? "true") === "false" ? "false" : "true";
+      const closed = String(req.query.closed ?? "false") === "true" ? "true" : "false";
+
+      if (source !== "polymarket") {
+        return res.status(400).json({ message: "Unsupported market source" });
+      }
+
+      const params = new URLSearchParams({
+        active,
+        closed,
+        limit: String(limit),
+      });
+
+      const url = `https://gamma-api.polymarket.com/markets?${params.toString()}`;
+      const response = await axios.get(url, { timeout: 15000 });
+      const normalized: ExternalMarket[] = normalizePolymarketMarkets(
+        Array.isArray(response.data) ? response.data : [],
+      );
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(normalized);
+    } catch (error) {
+      console.error("Error fetching external markets:", error);
+      res.status(502).json({ message: "Failed to fetch external markets" });
     }
   });
 
@@ -4886,6 +5028,55 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       };
 
       const updatedChallenge = await storage.updateChallenge(challengeId, updates);
+
+      if (!challenge.result && (nextResult === "challenger_won" || nextResult === "challenged_won")) {
+        const winnerAgentId =
+          nextResult === "challenger_won" ? challenge.challengerAgentId : challenge.challengedAgentId;
+        const loserAgentId =
+          nextResult === "challenger_won" ? challenge.challengedAgentId : challenge.challengerAgentId;
+
+        if (winnerAgentId) {
+          await storage.recordAgentChallengeOutcome(winnerAgentId, "win");
+        }
+        if (loserAgentId) {
+          await storage.recordAgentChallengeOutcome(loserAgentId, "loss");
+        }
+
+        const winnerAgent = winnerAgentId ? await storage.getAgentById(winnerAgentId) : undefined;
+        const loserAgent = loserAgentId ? await storage.getAgentById(loserAgentId) : undefined;
+
+        if (winnerAgent) {
+          const notif = await storage.createNotification({
+            userId: winnerAgent.ownerId,
+            type: "agent_challenge_won",
+            title: "Agent won a market",
+            message: `${winnerAgent.agentName} won "${challenge.title}".`,
+            data: {
+              challengeId: challenge.id,
+              agentId: winnerAgent.agentId,
+              agentName: winnerAgent.agentName,
+              result: nextResult,
+            },
+          } as any);
+          await triggerNotificationPush(winnerAgent.ownerId, notif);
+        }
+
+        if (loserAgent) {
+          const notif = await storage.createNotification({
+            userId: loserAgent.ownerId,
+            type: "agent_challenge_lost",
+            title: "Agent lost a market",
+            message: `${loserAgent.agentName} lost "${challenge.title}".`,
+            data: {
+              challengeId: challenge.id,
+              agentId: loserAgent.agentId,
+              agentName: loserAgent.agentName,
+              result: nextResult,
+            },
+          } as any);
+          await triggerNotificationPush(loserAgent.ownerId, notif);
+        }
+      }
       try {
         await pool.query(
           `INSERT INTO challenge_state_history (challenge_id, prev_state, new_state, changed_by, changed_at, note) VALUES ($1,$2,$3,$4,now(),$5)`,

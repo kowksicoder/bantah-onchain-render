@@ -196,7 +196,7 @@ export const PolymarketTab: React.FC<PolymarketTabProps> = ({ onQuickBet, search
       try {
         console.log('Fetching Polymarket data from Bantah API proxy...');
 
-        const response = await fetch('/api/polymarket/markets?active=true&closed=false&limit=20');
+        const response = await fetch('/api/external/markets?source=polymarket&active=true&closed=false&limit=20');
 
         if (!response.ok) {
           throw new Error(`API request failed: ${response.status} ${response.statusText}`);
@@ -214,7 +214,7 @@ export const PolymarketTab: React.FC<PolymarketTabProps> = ({ onQuickBet, search
         // Transform the data to match our interface
         const transformedMarkets = rawMarkets.map((market: any) => {
           const outcomes = parseStringArray(market.outcomes);
-          const prices = parseNumberArray(market.outcomePrices);
+          const prices = parseNumberArray(market.prices ?? market.outcomePrices);
           const normalizedPrices = outcomes.length
             ? outcomes.map((_, index) => Number(prices[index] || 0))
             : prices;
