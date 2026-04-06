@@ -215,11 +215,48 @@ export const agentRuntimeStateResponseSchema = z.object({
     currency: z.string().nullable(),
     status: z.enum(["ready", "external", "error", "unavailable"]),
     message: z.string().nullable(),
+    explorerUrl: z.string().url().nullable().optional(),
+    supportedTokens: z.array(z.enum(["USDC", "USDT", "ETH", "BNB"])).default([]),
   }),
   controls: z.object({
     canPause: z.boolean(),
     canResume: z.boolean(),
     canRestart: z.boolean(),
+  }),
+});
+
+export const agentWalletSendRequestSchema = z.object({
+  recipientAddress: evmAddressSchema,
+  tokenSymbol: z.enum(["USDC", "USDT", "ETH", "BNB"]),
+  amount: z
+    .string()
+    .min(1)
+    .max(32)
+    .refine((value) => /^\d+(\.\d+)?$/.test(value.trim()), {
+      message: "Amount must be a valid positive number",
+    })
+    .refine((value) => Number.parseFloat(value) > 0, {
+      message: "Amount must be greater than zero",
+    }),
+});
+
+export const agentWalletSendResponseSchema = z.object({
+  agentId: z.string().uuid(),
+  walletAddress: evmAddressSchema,
+  recipientAddress: evmAddressSchema,
+  tokenSymbol: z.enum(["USDC", "USDT", "ETH", "BNB"]),
+  amount: z.string().min(1),
+  walletNetworkId: z.string().min(1).max(64),
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  explorerUrl: z.string().url().nullable(),
+});
+
+export const agentWalletProvisionResponseSchema = z.object({
+  agent: agentRegistryProfileSchema,
+  provisioned: z.object({
+    walletAddress: evmAddressSchema,
+    walletNetworkId: z.string().min(1).max(64),
+    walletProvider: z.string().min(1).max(64),
   }),
 });
 
@@ -293,6 +330,9 @@ export type AgentActivityItem = z.infer<typeof agentActivityItemSchema>;
 export type AgentActivityResponse = z.infer<typeof agentActivityResponseSchema>;
 export type AgentFollowStateResponse = z.infer<typeof agentFollowStateResponseSchema>;
 export type AgentRuntimeStateResponse = z.infer<typeof agentRuntimeStateResponseSchema>;
+export type AgentWalletSendRequest = z.infer<typeof agentWalletSendRequestSchema>;
+export type AgentWalletSendResponse = z.infer<typeof agentWalletSendResponseSchema>;
+export type AgentWalletProvisionResponse = z.infer<typeof agentWalletProvisionResponseSchema>;
 export type AgentOffering = z.infer<typeof agentOfferingSchema>;
 export type AgentOfferingsResponse = z.infer<typeof agentOfferingsResponseSchema>;
 export type AgentLeaderboardEntry = z.infer<typeof agentLeaderboardEntrySchema>;

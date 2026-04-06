@@ -12,8 +12,12 @@ import {
   agentLeaderboardResponseSchema,
   agentRankResponseSchema,
   agentRuntimeStateResponseSchema,
+  agentWalletSendRequestSchema,
+  agentWalletSendResponseSchema,
+  agentWalletProvisionResponseSchema,
   bantahAgentKitSupportedChainIds,
   getBantahAgentKitNetworkIdForChainId,
+  getBantahAgentKitChainIdForNetworkId,
   type AgentRegistryProfile,
 } from "@shared/agentApi";
 import {
@@ -28,6 +32,7 @@ import { agents, challenges, pairQueue, users } from "@shared/schema";
 import {
   normalizeOnchainTokenSymbol,
   toAtomicUnits,
+  type OnchainChainConfig,
   type OnchainTokenSymbol,
 } from "@shared/onchainConfig";
 import { storage } from "../storage";
@@ -55,6 +60,7 @@ import {
   buildBantahAgentEndpointUrl,
   executeBantahAgentEscrowStakeTx,
   getBantahAgentWalletBalance,
+  sendBantahAgentWalletTransfer,
   buildSkillErrorEnvelope,
   buildSkillSuccessEnvelope,
   DEFAULT_BANTAH_AGENT_SKILLS,
@@ -62,6 +68,7 @@ import {
 } from "../agentProvisioning";
 import { assertAllowedStakeToken } from "../onchainEscrowService";
 import { serializeBantahSkillError } from "../bantahAgentSkillExecutor";
+import { createAndPushAgentOwnerNotification } from "../agentNotificationService";
 
 const router = Router();
 const MAX_AGENT_IMPORTS_PER_DAY = 5;
@@ -497,11 +504,56 @@ function resolveRuntimeWalletToken(chainId: number) {
   };
 }
 
+function resolveAgentWalletChainConfig(params: {
+  chainId?: number | null;
+  walletNetworkId?: string | null;
+}) {
+  const directChainId =
+    typeof params.chainId === "number" && Number.isInteger(params.chainId) && params.chainId > 0
+      ? params.chainId
+      : null;
+  const derivedChainId =
+    !directChainId && params.walletNetworkId
+      ? getBantahAgentKitChainIdForNetworkId(params.walletNetworkId)
+      : null;
+  const resolvedChainId = directChainId || derivedChainId;
+
+  if (!resolvedChainId) return null;
+  return ONCHAIN_CONFIG.chains[String(resolvedChainId)] || null;
+}
+
+function buildAddressExplorerUrl(address: string, chainConfig?: OnchainChainConfig | null) {
+  if (!chainConfig?.blockExplorerUrl) return null;
+  return `${chainConfig.blockExplorerUrl.replace(/\/$/, "")}/address/${address}`;
+}
+
+function buildTxExplorerUrl(txHash: string, chainConfig?: OnchainChainConfig | null) {
+  if (!chainConfig?.blockExplorerUrl) return null;
+  return `${chainConfig.blockExplorerUrl.replace(/\/$/, "")}/tx/${txHash}`;
+}
+
 function handleError(res: Response, error: unknown) {
   if (error instanceof ZodError) {
     return res.status(400).json({
       message: "Validation failed",
       details: error.issues,
+    });
+  }
+
+  if (error instanceof BantahAgentWalletError) {
+    const status =
+      error.code === "insufficient_balance"
+        ? 422
+        : error.code === "unsupported_chain" || error.code === "wallet_not_provisioned"
+          ? 409
+          : error.code === "wallet_provision_failed" || error.code === "wallet_restore_failed"
+            ? 502
+            : 400;
+    return res.status(status).json({
+      message: error.message,
+      details: {
+        code: error.code,
+      },
     });
   }
 
@@ -804,6 +856,25 @@ router.post("/create", PrivyAuthMiddleware, async (req, res) => {
     });
 
     const agent = await serializeAgent(agentId);
+    await createAndPushAgentOwnerNotification(
+      {
+        agentId,
+        agentName: agent.agentName,
+        ownerId,
+      },
+      {
+        type: "agent_wallet_ready",
+        title: "Agent wallet ready",
+        message: `${agent.agentName} now has a live AgentKit wallet on ${requestedChainConfig?.name || "the selected chain"}.`,
+        data: {
+          walletAddress: provisionedWallet.walletAddress,
+          walletNetworkId: provisionedWallet.walletNetworkId,
+          chainId: requestedChainId,
+        },
+        priority: 2,
+        fomoLevel: "medium",
+      },
+    );
     res.status(201).json({
       agent,
       provisioned: {
@@ -1040,6 +1111,11 @@ router.get("/:agentId/runtime-state", async (req, res) => {
       runtimeConfig?.walletNetworkId ||
       null;
 
+    const walletChainConfig = resolveAgentWalletChainConfig({
+      chainId,
+      walletNetworkId,
+    });
+
     let wallet: {
       address: string;
       provider: string | null;
@@ -1048,6 +1124,8 @@ router.get("/:agentId/runtime-state", async (req, res) => {
       currency: string | null;
       status: "ready" | "external" | "error" | "unavailable";
       message: string | null;
+      explorerUrl: string | null;
+      supportedTokens: OnchainTokenSymbol[];
     } = {
       address: storedAgent.walletAddress,
       provider: walletProvider,
@@ -1055,6 +1133,8 @@ router.get("/:agentId/runtime-state", async (req, res) => {
       balance: null,
       currency: null,
       status: storedAgent.agentType === "bantah_created" ? "unavailable" : "external",
+      explorerUrl: buildAddressExplorerUrl(storedAgent.walletAddress, walletChainConfig),
+      supportedTokens: walletChainConfig?.supportedTokens || [],
       message:
         storedAgent.agentType === "bantah_created"
           ? "Wallet balance not fetched yet."
@@ -1073,6 +1153,8 @@ router.get("/:agentId/runtime-state", async (req, res) => {
         balance: null,
         currency: null,
         status: "unavailable",
+        explorerUrl: buildAddressExplorerUrl(storedAgent.walletAddress, walletChainConfig),
+        supportedTokens: walletChainConfig?.supportedTokens || [],
         message:
           storedAgent.walletProvider === "local_demo_wallet"
             ? "This agent is using a local demo wallet while AgentKit provisioning is unavailable."
@@ -1103,6 +1185,8 @@ router.get("/:agentId/runtime-state", async (req, res) => {
             balance: balance.amountFormatted,
             currency: walletToken.tokenSymbol,
             status: "ready",
+            explorerUrl: buildAddressExplorerUrl(storedAgent.walletAddress, walletChainConfig),
+            supportedTokens: walletChainConfig?.supportedTokens || [],
             message: null,
           };
         } catch (error: any) {
@@ -1113,6 +1197,8 @@ router.get("/:agentId/runtime-state", async (req, res) => {
             balance: null,
             currency: walletToken.tokenSymbol,
             status: "error",
+            explorerUrl: buildAddressExplorerUrl(storedAgent.walletAddress, walletChainConfig),
+            supportedTokens: walletChainConfig?.supportedTokens || [],
             message: error?.message || "Failed to load wallet status.",
           };
         }
@@ -1218,6 +1304,154 @@ router.post("/:agentId/runtime/restart", PrivyAuthMiddleware, async (req, res) =
       agent,
       runtime,
     });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/:agentId/wallet/reprovision", PrivyAuthMiddleware, async (req, res) => {
+  try {
+    const storedAgent = await assertAgentOwner(req, req.params.agentId);
+    if (storedAgent.agentType !== "bantah_created") {
+      throw new HttpError(422, "Only Bantah-created agents support AgentKit wallet provisioning");
+    }
+
+    const requestedChainId =
+      Number((storedAgent.runtimeConfig as any)?.chainId || 0) ||
+      getBantahAgentKitChainIdForNetworkId(String(storedAgent.walletNetworkId || "").trim()) ||
+      ONCHAIN_CONFIG.defaultChainId ||
+      8453;
+    const requestedChainConfig = ONCHAIN_CONFIG.chains[String(requestedChainId)];
+    const requestedNetworkId = getBantahAgentKitNetworkIdForChainId(requestedChainId);
+
+    if (!requestedNetworkId) {
+      throw new HttpError(
+        422,
+        `Coinbase AgentKit smart-wallet provisioning is not available on ${
+          requestedChainConfig?.name || `chain ${requestedChainId}`
+        } yet.`,
+      );
+    }
+
+    const provisionedWallet = await provisionBantahAgentWallet(
+      storedAgent.agentId,
+      requestedNetworkId,
+    );
+
+    const existingByWallet = await storage.getAgentByWalletAddress(provisionedWallet.walletAddress);
+    if (existingByWallet && existingByWallet.agentId !== storedAgent.agentId) {
+      throw new HttpError(409, "A Bantah agent wallet collision occurred. Please try again.");
+    }
+
+    const updatedRuntimeConfig =
+      storedAgent.runtimeConfig && typeof storedAgent.runtimeConfig === "object"
+        ? {
+            ...(storedAgent.runtimeConfig as Record<string, unknown>),
+            walletAddress: provisionedWallet.walletAddress,
+            walletNetworkId: provisionedWallet.walletNetworkId,
+            walletProvider: provisionedWallet.walletProvider,
+            updatedAt: new Date().toISOString(),
+          }
+        : storedAgent.runtimeConfig;
+
+    await db
+      .update(agents)
+      .set({
+        walletAddress: provisionedWallet.walletAddress,
+        walletProvider: provisionedWallet.walletProvider,
+        walletNetworkId: provisionedWallet.walletNetworkId,
+        ownerWalletAddress: provisionedWallet.ownerWalletAddress,
+        walletData: provisionedWallet.walletData,
+        runtimeConfig: updatedRuntimeConfig as any,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.agentId, storedAgent.agentId));
+
+    if (getManagedBantahAgentRuntime(storedAgent.agentId)) {
+      await restartManagedBantahAgentRuntime(storedAgent.agentId);
+    }
+
+    const agent = await serializeAgent(storedAgent.agentId);
+    await createAndPushAgentOwnerNotification(
+      {
+        agentId: storedAgent.agentId,
+        agentName: agent.agentName,
+        ownerId: storedAgent.ownerId,
+      },
+      {
+        type: "agent_wallet_ready",
+        title: "Agent wallet ready",
+        message: `${agent.agentName} now has a live AgentKit wallet on ${requestedChainConfig?.name || "the selected chain"}.`,
+        data: {
+          walletAddress: provisionedWallet.walletAddress,
+          walletNetworkId: provisionedWallet.walletNetworkId,
+          chainId: requestedChainId,
+        },
+        priority: 2,
+        fomoLevel: "medium",
+      },
+    );
+
+    const payload = agentWalletProvisionResponseSchema.parse({
+      agent,
+      provisioned: {
+        walletAddress: provisionedWallet.walletAddress,
+        walletNetworkId: provisionedWallet.walletNetworkId,
+        walletProvider: provisionedWallet.walletProvider,
+      },
+    });
+
+    res.json(payload);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/:agentId/wallet/send", PrivyAuthMiddleware, async (req, res) => {
+  try {
+    const storedAgent = await assertAgentOwner(req, req.params.agentId);
+    if (storedAgent.agentType !== "bantah_created") {
+      throw new HttpError(422, "Only Bantah-created agents support managed wallet transfers");
+    }
+
+    const parsedBody = agentWalletSendRequestSchema.parse(req.body ?? {});
+    const chainConfig = resolveAgentWalletChainConfig({
+      chainId: Number((storedAgent.runtimeConfig as any)?.chainId || 0) || null,
+      walletNetworkId: storedAgent.walletNetworkId,
+    });
+
+    if (!chainConfig) {
+      throw new HttpError(422, "Could not resolve the agent wallet network.");
+    }
+
+    const transfer = await sendBantahAgentWalletTransfer({
+      snapshot: {
+        agentId: storedAgent.agentId,
+        walletAddress: storedAgent.walletAddress,
+        walletProvider: storedAgent.walletProvider ?? undefined,
+        walletNetworkId: storedAgent.walletNetworkId ?? undefined,
+        ownerWalletAddress: storedAgent.ownerWalletAddress ?? undefined,
+        walletData: storedAgent.walletData ?? undefined,
+      },
+      chainId: chainConfig.chainId,
+      chainConfig,
+      tokenSymbol: parsedBody.tokenSymbol,
+      recipientAddress: parsedBody.recipientAddress,
+      amount: parsedBody.amount,
+    });
+
+    const payload = agentWalletSendResponseSchema.parse({
+      agentId: storedAgent.agentId,
+      walletAddress: transfer.walletAddress,
+      recipientAddress: transfer.recipientAddress,
+      tokenSymbol: parsedBody.tokenSymbol,
+      amount: parsedBody.amount,
+      walletNetworkId: transfer.walletNetworkId,
+      txHash: transfer.txHash,
+      explorerUrl: buildTxExplorerUrl(transfer.txHash, chainConfig),
+    });
+
+    res.json(payload);
   } catch (error) {
     handleError(res, error);
   }

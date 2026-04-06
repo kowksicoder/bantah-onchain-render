@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import {
   Activity,
+  ArrowDownLeft,
   ArrowLeft,
+  ArrowUpRight,
   Crown,
   Cpu,
-  Copy,
   ExternalLink,
   PauseCircle,
   PlayCircle,
@@ -27,13 +28,23 @@ import { apiRequest } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import type {
   AgentActivityResponse,
   AgentFollowStateResponse,
   AgentOfferingsResponse,
+  AgentWalletProvisionResponse,
   AgentRankResponse,
   AgentRegistryProfile,
   AgentRuntimeStateResponse,
+  AgentWalletSendResponse,
 } from "@shared/agentApi";
 
 const limeButtonClass =
@@ -59,6 +70,10 @@ export default function AgentDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
+  const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
+  const [sendRecipient, setSendRecipient] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendToken, setSendToken] = useState<"USDC" | "USDT" | "ETH" | "BNB">("USDC");
 
   const { data: agent, isLoading: loadingAgent } = useQuery<AgentRegistryProfile>({
     queryKey: [`/api/agents/${agentId}`],
@@ -163,6 +178,65 @@ export default function AgentDetail() {
     },
   });
 
+  const reprovisionWalletMutation = useMutation({
+    mutationFn: async () => {
+      if (!agentId) throw new Error("Agent not found");
+      return apiRequest("POST", `/api/agents/${agentId}/wallet/reprovision`) as Promise<AgentWalletProvisionResponse>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/agents/${agentId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/agents/${agentId}/runtime-state`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
+      toast({
+        title: "Agent wallet ready",
+        description: `${result.agent.agentName} now has a live AgentKit wallet.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Wallet provisioning failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendWalletMutation = useMutation({
+    mutationFn: async () => {
+      if (!agentId) throw new Error("Agent not found");
+      return apiRequest("POST", `/api/agents/${agentId}/wallet/send`, {
+        recipientAddress: sendRecipient,
+        amount: sendAmount,
+        tokenSymbol: sendToken,
+      }) as Promise<AgentWalletSendResponse>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/agents/${agentId}/runtime-state`] });
+      setIsSendDialogOpen(false);
+      setSendRecipient("");
+      setSendAmount("");
+      toast({
+        title: "Transfer sent",
+        description: `${result.amount} ${result.tokenSymbol} sent. Tx ${shortAddress(result.txHash)}.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Send failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  useEffect(() => {
+    const supported = runtimeState?.wallet.supportedTokens || [];
+    if (supported.length === 0) return;
+    if (!supported.includes(sendToken)) {
+      setSendToken(supported[0]);
+    }
+  }, [runtimeState?.wallet.supportedTokens, sendToken]);
+
   const handleFollow = () => {
     if (!user) {
       login();
@@ -250,6 +324,8 @@ export default function AgentDetail() {
   const isOwner = user?.id === agent.ownerId;
   const canManageRuntime = isOwner && agent.agentType === "bantah_created";
   const isViewOnlyManagedAgent = !isOwner && agent.agentType === "bantah_created";
+  const canSendFromWallet = Boolean(canManageRuntime && runtimeState?.wallet.status === "ready");
+  const canReprovisionWallet = Boolean(canManageRuntime && runtimeState?.wallet.status === "unavailable");
   const runtimeBadgeClass =
     runtimeState?.health === "healthy"
       ? "border-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
@@ -468,10 +544,45 @@ export default function AgentDetail() {
                       {shortAddress(agent.walletAddress)}
                     </span>
                     <Button type="button" className={`${softButtonClass} h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm`} onClick={handleCopyWallet}>
-                      <Copy className="h-4 w-4 sm:mr-2" />
-                      <span className="sm:hidden">{copied ? "Done" : ""}</span>
-                      <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+                      <ArrowDownLeft className="h-4 w-4 sm:mr-2" />
+                      <span className="sm:hidden">{copied ? "Done" : "Get"}</span>
+                      <span className="hidden sm:inline">{copied ? "Copied" : "Receive"}</span>
                     </Button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {runtimeState?.wallet.explorerUrl ? (
+                      <Button
+                        type="button"
+                        className={`${softButtonClass} h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-xs`}
+                        onClick={() =>
+                          window.open(runtimeState.wallet.explorerUrl || "", "_blank", "noopener,noreferrer")
+                        }
+                      >
+                        <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                        Explorer
+                      </Button>
+                    ) : null}
+                    {canSendFromWallet ? (
+                      <Button
+                        type="button"
+                        className={`${limeButtonClass} h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-xs`}
+                        onClick={() => setIsSendDialogOpen(true)}
+                      >
+                        <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
+                        Send
+                      </Button>
+                    ) : null}
+                    {canReprovisionWallet ? (
+                      <Button
+                        type="button"
+                        className={`${softButtonClass} h-8 rounded-full px-3 text-[11px] sm:h-9 sm:text-xs`}
+                        onClick={() => reprovisionWalletMutation.mutate()}
+                        disabled={reprovisionWalletMutation.isPending}
+                      >
+                        <RotateCw className="mr-1.5 h-3.5 w-3.5" />
+                        {reprovisionWalletMutation.isPending ? "Fixing" : "Fix wallet"}
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -743,6 +854,83 @@ export default function AgentDetail() {
           </div>
         </section>
       </div>
+
+      <Dialog open={isSendDialogOpen} onOpenChange={setIsSendDialogOpen}>
+        <DialogContent className="max-w-sm rounded-2xl border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+          <DialogHeader>
+            <DialogTitle>Send from agent wallet</DialogTitle>
+            <DialogDescription>
+              Owner-only transfer from {agent.agentName}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                Recipient
+              </label>
+              <Input
+                value={sendRecipient}
+                onChange={(event) => setSendRecipient(event.target.value)}
+                placeholder="0x..."
+                className="h-10 rounded-xl"
+              />
+            </div>
+            <div className="grid grid-cols-[1fr_108px] gap-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Amount
+                </label>
+                <Input
+                  value={sendAmount}
+                  onChange={(event) => setSendAmount(event.target.value)}
+                  placeholder="0.00"
+                  className="h-10 rounded-xl"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Token
+                </label>
+                <select
+                  value={sendToken}
+                  onChange={(event) =>
+                    setSendToken(event.target.value as "USDC" | "USDT" | "ETH" | "BNB")
+                  }
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  {(runtimeState?.wallet.supportedTokens || [sendToken]).map((token) => (
+                    <option key={token} value={token}>
+                      {token}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                type="button"
+                className={`${softButtonClass} flex-1`}
+                onClick={() => setIsSendDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className={`${limeButtonClass} flex-1`}
+                disabled={
+                  sendWalletMutation.isPending ||
+                  !sendRecipient.trim() ||
+                  !sendAmount.trim()
+                }
+                onClick={() => sendWalletMutation.mutate()}
+              >
+                <ArrowUpRight className="mr-2 h-4 w-4" />
+                {sendWalletMutation.isPending ? "Sending..." : "Send"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <MobileNavigation />
     </div>

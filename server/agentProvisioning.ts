@@ -26,6 +26,9 @@ const erc20BalanceAbi = parseAbi([
 const erc20ApproveAbi = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
+const erc20TransferAbi = parseAbi([
+  "function transfer(address to, uint256 amount) returns (bool)",
+]);
 const escrowNativeAbi = parseAbi([
   "function lockStakeNative() payable returns (bool)",
 ]);
@@ -595,6 +598,122 @@ export async function executeBantahAgentEscrowStakeTx(params: {
     walletNetworkId: restoredWallet.walletNetworkId,
     approveTxHash,
     escrowTxHash,
+  };
+}
+
+export async function sendBantahAgentWalletTransfer(params: {
+  snapshot: StoredBantahAgentWalletSnapshot;
+  chainId: number;
+  chainConfig: OnchainChainConfig;
+  tokenSymbol: OnchainTokenSymbol;
+  recipientAddress: string;
+  amount: string | number;
+}): Promise<{
+  walletAddress: `0x${string}`;
+  walletNetworkId: string;
+  recipientAddress: `0x${string}`;
+  txHash: `0x${string}`;
+}> {
+  const restoredWallet = await restoreBantahAgentWallet(params.snapshot, {
+    targetChainId: params.chainId,
+  });
+  const tokenConfig = params.chainConfig.tokens[params.tokenSymbol];
+  const recipientAddress = normalizeAddress(params.recipientAddress);
+
+  if (!recipientAddress) {
+    throw new BantahAgentWalletError(
+      "transaction_incomplete",
+      "Recipient wallet address is invalid.",
+    );
+  }
+
+  if (!tokenConfig) {
+    throw new BantahAgentWalletError(
+      "unsupported_chain",
+      `Token ${params.tokenSymbol} is not configured on ${params.chainConfig.name}.`,
+    );
+  }
+
+  const amountAtomic = parseStakeAtomicAmount(params.amount, tokenConfig.decimals);
+  if (amountAtomic <= 0n) {
+    throw new BantahAgentWalletError(
+      "transaction_incomplete",
+      "Transfer amount must be greater than zero.",
+    );
+  }
+
+  let availableAmountAtomic: bigint;
+  if (tokenConfig.isNative) {
+    availableAmountAtomic = await restoredWallet.walletProvider.getBalance();
+  } else {
+    const tokenAddress = normalizeAddress(tokenConfig.address);
+    if (!tokenAddress) {
+      throw new BantahAgentWalletError(
+        "unsupported_chain",
+        `Token ${params.tokenSymbol} does not have a configured contract address on ${params.chainConfig.name}.`,
+      );
+    }
+    const balanceResult = await restoredWallet.walletProvider.readContract({
+      address: tokenAddress,
+      abi: erc20BalanceAbi,
+      functionName: "balanceOf",
+      args: [restoredWallet.walletAddress],
+    });
+    availableAmountAtomic = BigInt(String(balanceResult || "0"));
+  }
+
+  if (availableAmountAtomic < amountAtomic) {
+    const availableFormatted = formatAtomicAmount(availableAmountAtomic, tokenConfig.decimals);
+    const requiredFormatted = formatAtomicAmount(amountAtomic, tokenConfig.decimals);
+    throw new BantahAgentWalletError(
+      "insufficient_balance",
+      `Agent wallet balance is too low for this ${params.tokenSymbol} transfer. Available ${availableFormatted}, required ${requiredFormatted}.`,
+    );
+  }
+
+  let userOpHash: Hex;
+  if (tokenConfig.isNative) {
+    userOpHash = await restoredWallet.walletProvider.sendTransaction({
+      to: recipientAddress,
+      value: amountAtomic,
+      data: "0x",
+    });
+  } else {
+    const tokenAddress = normalizeAddress(tokenConfig.address);
+    if (!tokenAddress) {
+      throw new BantahAgentWalletError(
+        "unsupported_chain",
+        `Token ${params.tokenSymbol} does not have a configured contract address on ${params.chainConfig.name}.`,
+      );
+    }
+
+    const transferData = encodeFunctionData({
+      abi: erc20TransferAbi,
+      functionName: "transfer",
+      args: [recipientAddress as Address, amountAtomic],
+    });
+
+    userOpHash = await restoredWallet.walletProvider.sendTransaction({
+      to: tokenAddress,
+      data: transferData,
+      value: 0n,
+    });
+  }
+
+  const receipt = await restoredWallet.walletProvider.waitForTransactionReceipt(userOpHash);
+  const txHash = extractTransactionHash(receipt);
+  if (!txHash) {
+    throw new BantahAgentWalletError(
+      "transaction_incomplete",
+      "Wallet transfer completed without an onchain transaction hash.",
+    );
+  }
+
+  return {
+    walletAddress: restoredWallet.walletAddress,
+    walletNetworkId: restoredWallet.walletNetworkId,
+    recipientAddress,
+    txHash,
   };
 }
 

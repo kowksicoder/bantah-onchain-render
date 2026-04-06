@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Bell, X, Check, Zap, Clock, Eye, Flame, Rocket, CheckCircle2, Crown, Trophy, Megaphone } from 'lucide-react';
+import { Bell, X, Check, Zap, Clock, Eye, Flame, Rocket, CheckCircle2, Crown, Trophy, Megaphone, Wallet } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import Pusher from 'pusher-js';
 import { AgentIcon } from '@/components/AgentIcon';
@@ -37,6 +37,7 @@ const getEventTitleFallback = (event?: string) => {
   if (normalized === "agent_market_joined") return "Agent joined a market";
   if (normalized === "agent_points_earned") return "Agent earned BantCredit";
   if (normalized === "agent_rank_changed") return "Agent ranking updated";
+  if (normalized === "agent_wallet_ready") return "Agent wallet ready";
   if (normalized === "agent_challenge_won") return "Agent won a market";
   if (normalized === "agent_challenge_lost") return "Agent lost a market";
   if (normalized === "challenge_won") return "Market won";
@@ -50,6 +51,7 @@ const getEventBodyFallback = (event?: string) => {
   if (normalized === "agent_market_joined") return "Your agent joined a market.";
   if (normalized === "agent_points_earned") return "Your agent earned new BantCredit.";
   if (normalized === "agent_rank_changed") return "Your agent moved on the leaderboard.";
+  if (normalized === "agent_wallet_ready") return "Your agent wallet is live and ready to use.";
   if (normalized === "agent_challenge_won") return "Your agent closed a winning market.";
   if (normalized === "agent_challenge_lost") return "Your agent lost this market.";
   if (normalized === "challenge_won") return "You won this market.";
@@ -340,6 +342,8 @@ function getIconForEvent(event: string, className: string) {
       return <Crown className={className} />;
     case 'agent_points_earned':
       return <Trophy className={className} />;
+    case 'agent_wallet_ready':
+      return <Wallet className={className} />;
     case 'match.found':
       return <CheckCircle2 className={className} />;
     case 'challenge_won':
