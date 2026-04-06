@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import fs from "fs";
 import path from "path";
 import Pusher from "pusher";
-import { storage } from "./storage";
+import { AGENT_WIN_BANTCREDIT_REWARD, storage } from "./storage";
 import { setupAuth, isAdmin, hashPassword } from "./auth";
 import { PrivyAuthMiddleware } from "./privyAuth";
 import { verifyPrivyToken } from "./privyAuth";
@@ -65,6 +65,11 @@ import {
 } from "./og-meta";
 import ogMetadataRouter from './routes/og-metadata';
 import { challengeNotifications } from './challengeNotifications';
+import {
+  createAndPushAgentOwnerNotification,
+  getAgentRankSnapshot,
+  notifyAgentRankChangeIfNeeded,
+} from "./agentNotificationService";
 
 // Import notification routes
 import notificationsApi from './routes/notificationsApi';
@@ -632,7 +637,14 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       challengeLike: typeof challenge,
       settledResult: "challenger_won" | "challenged_won" | "draw",
     ) => {
-      if (settledResult === "draw" || !challengeLike.agentInvolved) return;
+      if (settledResult === "draw" || !challengeLike.agentInvolved) {
+        return {
+          winnerAgentId: null as string | null,
+          loserAgentId: null as string | null,
+          winnerPreviousRank: null as number | null,
+          loserPreviousRank: null as number | null,
+        };
+      }
 
       const winnerAgentId =
         settledResult === "challenger_won"
@@ -642,6 +654,11 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         settledResult === "challenger_won"
           ? challengeLike.challengedAgentId
           : challengeLike.challengerAgentId;
+
+      const [winnerRankSnapshot, loserRankSnapshot] = await Promise.all([
+        winnerAgentId ? getAgentRankSnapshot(winnerAgentId) : Promise.resolve(null),
+        loserAgentId ? getAgentRankSnapshot(loserAgentId) : Promise.resolve(null),
+      ]);
 
       const updates: Promise<any>[] = [];
       if (winnerAgentId) {
@@ -653,56 +670,91 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       if (updates.length > 0) {
         await Promise.all(updates);
       }
+
+      return {
+        winnerAgentId: winnerAgentId ?? null,
+        loserAgentId: loserAgentId ?? null,
+        winnerPreviousRank: winnerRankSnapshot?.rank ?? null,
+        loserPreviousRank: loserRankSnapshot?.rank ?? null,
+      };
     };
 
     const notifyAgentOwnersOfOutcome = async (
       challengeLike: typeof challenge,
       settledResult: "challenger_won" | "challenged_won" | "draw",
+      rankContext?: {
+        winnerAgentId: string | null;
+        loserAgentId: string | null;
+        winnerPreviousRank: number | null;
+        loserPreviousRank: number | null;
+      },
     ) => {
       if (settledResult === "draw" || !challengeLike.agentInvolved) return;
 
       const winnerAgentId =
-        settledResult === "challenger_won"
+        rankContext?.winnerAgentId ??
+        (settledResult === "challenger_won"
           ? challengeLike.challengerAgentId
-          : challengeLike.challengedAgentId;
+          : challengeLike.challengedAgentId);
       const loserAgentId =
-        settledResult === "challenger_won"
+        rankContext?.loserAgentId ??
+        (settledResult === "challenger_won"
           ? challengeLike.challengedAgentId
-          : challengeLike.challengerAgentId;
+          : challengeLike.challengerAgentId);
 
       const winnerAgent = winnerAgentId ? await storage.getAgentById(winnerAgentId) : undefined;
       const loserAgent = loserAgentId ? await storage.getAgentById(loserAgentId) : undefined;
 
       if (winnerAgent) {
-        const notif = await storage.createNotification({
-          userId: winnerAgent.ownerId,
+        await createAndPushAgentOwnerNotification(winnerAgent, {
           type: "agent_challenge_won",
           title: "Agent won a market",
           message: `${winnerAgent.agentName} won "${challengeLike.title}".`,
           data: {
             challengeId: challengeLike.id,
-            agentId: winnerAgent.agentId,
-            agentName: winnerAgent.agentName,
             result: settledResult,
           },
-        } as any);
-        await triggerNotificationPush(winnerAgent.ownerId, notif);
+          priority: 3,
+          fomoLevel: "high",
+        });
+        await createAndPushAgentOwnerNotification(winnerAgent, {
+          type: "agent_points_earned",
+          title: "Agent earned BantCredit",
+          message: `${winnerAgent.agentName} earned +${AGENT_WIN_BANTCREDIT_REWARD} BantCredit from "${challengeLike.title}".`,
+          data: {
+            challengeId: challengeLike.id,
+            pointsAwarded: AGENT_WIN_BANTCREDIT_REWARD,
+            result: settledResult,
+          },
+          priority: 2,
+          fomoLevel: "medium",
+        });
+        await notifyAgentRankChangeIfNeeded(
+          winnerAgent.agentId,
+          rankContext?.winnerPreviousRank ?? null,
+          "market_won",
+          { challengeId: challengeLike.id, result: settledResult },
+        );
       }
 
       if (loserAgent) {
-        const notif = await storage.createNotification({
-          userId: loserAgent.ownerId,
+        await createAndPushAgentOwnerNotification(loserAgent, {
           type: "agent_challenge_lost",
           title: "Agent lost a market",
           message: `${loserAgent.agentName} lost "${challengeLike.title}".`,
           data: {
             challengeId: challengeLike.id,
-            agentId: loserAgent.agentId,
-            agentName: loserAgent.agentName,
             result: settledResult,
           },
-        } as any);
-        await triggerNotificationPush(loserAgent.ownerId, notif);
+          priority: 2,
+          fomoLevel: "medium",
+        });
+        await notifyAgentRankChangeIfNeeded(
+          loserAgent.agentId,
+          rankContext?.loserPreviousRank ?? null,
+          "market_lost",
+          { challengeId: challengeLike.id, result: settledResult },
+        );
       }
     };
 
@@ -854,8 +906,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       } as any);
     }
 
-    await applyAgentChallengeOutcomeStats(challenge, result);
-    await notifyAgentOwnersOfOutcome(challenge, result);
+    const agentOutcomeContext = await applyAgentChallengeOutcomeStats(challenge, result);
+    await notifyAgentOwnersOfOutcome(challenge, result, agentOutcomeContext);
 
     try {
       const { challengeNotificationTriggers } = await import("./challengeNotificationTriggers");
@@ -5035,6 +5087,11 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         const loserAgentId =
           nextResult === "challenger_won" ? challenge.challengedAgentId : challenge.challengerAgentId;
 
+        const [winnerRankSnapshot, loserRankSnapshot] = await Promise.all([
+          winnerAgentId ? getAgentRankSnapshot(winnerAgentId) : Promise.resolve(null),
+          loserAgentId ? getAgentRankSnapshot(loserAgentId) : Promise.resolve(null),
+        ]);
+
         if (winnerAgentId) {
           await storage.recordAgentChallengeOutcome(winnerAgentId, "win");
         }
@@ -5046,35 +5103,55 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         const loserAgent = loserAgentId ? await storage.getAgentById(loserAgentId) : undefined;
 
         if (winnerAgent) {
-          const notif = await storage.createNotification({
-            userId: winnerAgent.ownerId,
+          await createAndPushAgentOwnerNotification(winnerAgent, {
             type: "agent_challenge_won",
             title: "Agent won a market",
             message: `${winnerAgent.agentName} won "${challenge.title}".`,
             data: {
               challengeId: challenge.id,
-              agentId: winnerAgent.agentId,
-              agentName: winnerAgent.agentName,
               result: nextResult,
             },
-          } as any);
-          await triggerNotificationPush(winnerAgent.ownerId, notif);
+            priority: 3,
+            fomoLevel: "high",
+          });
+          await createAndPushAgentOwnerNotification(winnerAgent, {
+            type: "agent_points_earned",
+            title: "Agent earned BantCredit",
+            message: `${winnerAgent.agentName} earned +${AGENT_WIN_BANTCREDIT_REWARD} BantCredit from "${challenge.title}".`,
+            data: {
+              challengeId: challenge.id,
+              pointsAwarded: AGENT_WIN_BANTCREDIT_REWARD,
+              result: nextResult,
+            },
+            priority: 2,
+            fomoLevel: "medium",
+          });
+          await notifyAgentRankChangeIfNeeded(
+            winnerAgent.agentId,
+            winnerRankSnapshot?.rank ?? null,
+            "market_won",
+            { challengeId: challenge.id, result: nextResult },
+          );
         }
 
         if (loserAgent) {
-          const notif = await storage.createNotification({
-            userId: loserAgent.ownerId,
+          await createAndPushAgentOwnerNotification(loserAgent, {
             type: "agent_challenge_lost",
             title: "Agent lost a market",
             message: `${loserAgent.agentName} lost "${challenge.title}".`,
             data: {
               challengeId: challenge.id,
-              agentId: loserAgent.agentId,
-              agentName: loserAgent.agentName,
               result: nextResult,
             },
-          } as any);
-          await triggerNotificationPush(loserAgent.ownerId, notif);
+            priority: 2,
+            fomoLevel: "medium",
+          });
+          await notifyAgentRankChangeIfNeeded(
+            loserAgent.agentId,
+            loserRankSnapshot?.rank ?? null,
+            "market_lost",
+            { challengeId: challenge.id, result: nextResult },
+          );
         }
       }
       try {

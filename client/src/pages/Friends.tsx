@@ -25,6 +25,7 @@ import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "
 import { toast } from "@/hooks/use-toast";
 import { MobileNavigation } from "@/components/MobileNavigation";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { getAgentSpecialtyLabel, getAgentSpecialtyMeta } from "@/lib/agentSpecialty";
 import { apiRequest } from "@/lib/queryClient";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -50,10 +51,6 @@ function getAgentOwnerLabel(owner: AgentRegistryProfile["owner"]) {
   if (fullName) return fullName;
   if (owner.username) return `@${owner.username}`;
   return "Bantah user";
-}
-
-function getAgentSpecialtyLabel(value: AgentRegistryProfile["specialty"]) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function FriendRowSkeleton() {
@@ -479,12 +476,9 @@ function RequestRowSkeleton() {
     );
   });
 
-  const getAgentActionLabel = (agent: AgentRegistryProfile) =>
-    agent.ownerId === user?.id ? "Manage" : "View";
-
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[80px] md:pb-0">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         {/* Header - spacing reduced after removing intro text */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
           <div className="hidden md:block"></div>
@@ -551,15 +545,39 @@ function RequestRowSkeleton() {
         {/* Friends Tabs */}
         <Tabs defaultValue="friends" className="space-y-6">
             <TabsList className="grid w-full grid-cols-4 gap-1 rounded-full bg-transparent p-0">
-            <TabsTrigger value="friends" className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition-all data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">Friends ({acceptedFriends.length})</TabsTrigger>
-            <TabsTrigger value="users" className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition-all data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">Users ({filteredUsers.length})</TabsTrigger>
-            <TabsTrigger value="agents" className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition-all data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">Agents ({filteredAgents.length})</TabsTrigger>
-            <TabsTrigger value="requests" className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition-all data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">
-              <div className="flex flex-col leading-tight">
-                <span className="text-xs">Requests ({pendingRequests.length})</span>
-              </div>
-            </TabsTrigger>
-          </TabsList>
+              <TabsTrigger value="friends" className="relative rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm transition-all sm:px-3 sm:py-2 sm:text-xs data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">
+                <span>Friends</span>
+                {acceptedFriends.length > 0 ? (
+                  <span className="absolute right-0 top-0 inline-flex h-4.5 min-w-[1.1rem] translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-slate-100 px-1 text-[9px] font-semibold text-slate-700 shadow-sm sm:h-5 sm:min-w-[1.25rem] sm:px-1.5 sm:text-[10px] dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
+                    {acceptedFriends.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="users" className="relative rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm transition-all sm:px-3 sm:py-2 sm:text-xs data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">
+                <span>Users</span>
+                {filteredUsers.length > 0 ? (
+                  <span className="absolute right-0 top-0 inline-flex h-4.5 min-w-[1.1rem] translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-slate-100 px-1 text-[9px] font-semibold text-slate-700 shadow-sm sm:h-5 sm:min-w-[1.25rem] sm:px-1.5 sm:text-[10px] dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
+                    {filteredUsers.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="agents" className="relative rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm transition-all sm:px-3 sm:py-2 sm:text-xs data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">
+                <span>Agents</span>
+                {filteredAgents.length > 0 ? (
+                  <span className="absolute right-0 top-0 inline-flex h-4.5 min-w-[1.1rem] translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-slate-100 px-1 text-[9px] font-semibold text-slate-700 shadow-sm sm:h-5 sm:min-w-[1.25rem] sm:px-1.5 sm:text-[10px] dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
+                    {filteredAgents.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="requests" className="relative rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm transition-all sm:px-3 sm:py-2 sm:text-xs data-[state=active]:border-[#ccff00] data-[state=active]:bg-[#ccff00] data-[state=active]:text-black dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:data-[state=active]:border-[#ccff00] dark:data-[state=active]:bg-[#ccff00] dark:data-[state=active]:text-black">
+                <span>Requests</span>
+                {pendingRequests.length > 0 ? (
+                  <span className="absolute right-0 top-0 inline-flex h-4.5 min-w-[1.1rem] translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-slate-100 px-1 text-[9px] font-semibold text-slate-700 shadow-sm sm:h-5 sm:min-w-[1.25rem] sm:px-1.5 sm:text-[10px] dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
+                    {pendingRequests.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            </TabsList>
 
           <TabsContent value="friends" className="space-y-4">
             {isFriendsLoading ? (
@@ -721,10 +739,19 @@ function RequestRowSkeleton() {
               filteredAgents.map((agent) => (
                 <Card
                   key={agent.agentId}
-                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  className="cursor-pointer bg-white transition-colors hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700/80 border-slate-200 dark:border-slate-700"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/agents/${agent.agentId}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigate(`/agents/${agent.agentId}`);
+                    }
+                  }}
                 >
                   <CardContent className="p-2 md:p-3">
-                    <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2 min-w-0">
                         <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100">
                           <AgentAvatar
@@ -739,54 +766,46 @@ function RequestRowSkeleton() {
                               <ShieldCheck className="h-2.5 w-2.5" />
                             </div>
                           )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <h3 className="truncate font-bold text-xs text-slate-900 dark:text-slate-100 leading-tight">
-                              {agent.agentName}
-                            </h3>
-                            <Badge className="h-5 border-0 bg-slate-100 px-1.5 text-[10px] text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                              {getAgentSpecialtyLabel(agent.specialty)}
-                            </Badge>
                           </div>
-                          <p className="text-[10px] text-slate-500 font-medium truncate">
-                            Owned by {getAgentOwnerLabel(agent.owner)}
-                          </p>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
-                            <span>{agent.points.toLocaleString()} BantCredit</span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <h3 className="truncate font-bold text-xs text-slate-900 dark:text-slate-100 leading-tight">
+                                {agent.agentName}
+                              </h3>
+                              <span aria-hidden="true" className="text-xs leading-none">
+                                {getAgentSpecialtyMeta(agent.specialty).emoji}
+                              </span>
+                              <UserAvatar
+                                userId={agent.owner.id}
+                                username={agent.owner.username || undefined}
+                                firstName={agent.owner.firstName || undefined}
+                                profileImageUrl={agent.owner.profileImageUrl || undefined}
+                                size={16}
+                                className="h-4 w-4 border border-slate-100 dark:border-slate-800"
+                              />
+                            </div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                              <span>{agent.points.toLocaleString()} BantCredit</span>
                             <span>•</span>
                             <span>{agent.winCount || 0} wins</span>
                             <span>•</span>
                             <span>{agent.marketCount || 0} markets</span>
                           </div>
                         </div>
-                      </div>
+                        </div>
 
-                      <div className="flex items-center space-x-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-[11px] px-2.5 rounded-lg border-slate-200 dark:border-slate-700 font-medium hover:bg-slate-50"
-                          onClick={() => navigate(`/agents/${agent.agentId}`)}
-                        >
-                          {getAgentActionLabel(agent)}
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="h-8 text-[11px] px-2.5 rounded-lg font-bold text-black"
-                          style={{ backgroundColor: "#ccff00" }}
-                          onClick={() => navigate("/challenges?tab=agents")}
-                        >
-                          Feed
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-[11px] px-2.5 rounded-lg border-slate-200 dark:border-slate-700 font-medium hover:bg-slate-50"
-                          onClick={() => window.open(agent.endpointUrl, "_blank", "noopener,noreferrer")}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center space-x-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-[11px] px-2.5 rounded-lg border-slate-200 dark:border-slate-700 font-medium hover:bg-slate-50"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              window.open(agent.endpointUrl, "_blank", "noopener,noreferrer");
+                            }}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Button>
                       </div>
                     </div>
                   </CardContent>

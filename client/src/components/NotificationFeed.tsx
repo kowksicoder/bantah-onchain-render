@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Bell, X, Check, Zap, Clock, Eye, Flame, Rocket, CheckCircle2, Megaphone } from 'lucide-react';
+import { Bell, X, Check, Zap, Clock, Eye, Flame, Rocket, CheckCircle2, Crown, Trophy, Megaphone } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import Pusher from 'pusher-js';
 import { AgentIcon } from '@/components/AgentIcon';
@@ -33,6 +33,10 @@ const isAgentEvent = (event?: string) => {
 
 const getEventTitleFallback = (event?: string) => {
   const normalized = String(event || "").toLowerCase();
+  if (normalized === "agent_market_created") return "Agent created a market";
+  if (normalized === "agent_market_joined") return "Agent joined a market";
+  if (normalized === "agent_points_earned") return "Agent earned BantCredit";
+  if (normalized === "agent_rank_changed") return "Agent ranking updated";
   if (normalized === "agent_challenge_won") return "Agent won a market";
   if (normalized === "agent_challenge_lost") return "Agent lost a market";
   if (normalized === "challenge_won") return "Market won";
@@ -42,6 +46,10 @@ const getEventTitleFallback = (event?: string) => {
 
 const getEventBodyFallback = (event?: string) => {
   const normalized = String(event || "").toLowerCase();
+  if (normalized === "agent_market_created") return "Your agent opened a new market.";
+  if (normalized === "agent_market_joined") return "Your agent joined a market.";
+  if (normalized === "agent_points_earned") return "Your agent earned new BantCredit.";
+  if (normalized === "agent_rank_changed") return "Your agent moved on the leaderboard.";
   if (normalized === "agent_challenge_won") return "Your agent closed a winning market.";
   if (normalized === "agent_challenge_lost") return "Your agent lost this market.";
   if (normalized === "challenge_won") return "You won this market.";
@@ -315,17 +323,23 @@ export const NotificationToast: React.FC<{ notification: Notification }> = ({ no
 function getIconForEvent(event: string, className: string) {
   switch (event) {
     case 'challenge.created':
+    case 'agent_market_created':
       return <Zap className={className} />;
     case 'challenge.starting_soon':
     case 'challenge.ending_soon':
     case 'bonus.expiring':
       return <Clock className={className} />;
     case 'challenge.joined.friend':
+    case 'agent_market_joined':
       return <Eye className={className} />;
     case 'imbalance.detected':
       return <Flame className={className} />;
     case 'bonus.activated':
       return <Rocket className={className} />;
+    case 'agent_rank_changed':
+      return <Crown className={className} />;
+    case 'agent_points_earned':
+      return <Trophy className={className} />;
     case 'match.found':
       return <CheckCircle2 className={className} />;
     case 'challenge_won':

@@ -46,6 +46,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, setAuthToken } from "@/lib/queryClient";
+import {
+  agentSpecialtyOptions,
+  getAgentSpecialtyMeta,
+  type BantahAgentSpecialty,
+} from "@/lib/agentSpecialty";
 import { uploadImage } from "@/lib/uploadImage";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
@@ -152,13 +157,6 @@ const tokenVisuals: Record<OnchainTokenSymbol, { src: string; alt: string }> = {
   BNB: { src: "/assets/token-bnb.svg", alt: "BNB logo" },
 };
 
-const agentSpecialtyOptions = [
-  { value: "general", label: "General" },
-  { value: "crypto", label: "Crypto" },
-  { value: "sports", label: "Sports" },
-  { value: "politics", label: "Politics" },
-] as const;
-
 function TokenMark({ token }: { token: OnchainTokenSymbol }) {
   const visual = tokenVisuals[token];
 
@@ -184,7 +182,7 @@ export default function Challenges() {
   const [agentFlowMode, setAgentFlowMode] = useState<"bantah" | AgentImportMode>("bantah");
   const [agentImportMode, setAgentImportMode] = useState<AgentImportMode>("eliza");
   const [agentDisplayName, setAgentDisplayName] = useState("");
-  const [agentSpecialty, setAgentSpecialty] = useState<"general" | "crypto" | "sports" | "politics">("general");
+  const [agentSpecialty, setAgentSpecialty] = useState<BantahAgentSpecialty>("general");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
   const [showChat, setShowChat] = useState(false);
@@ -1944,24 +1942,65 @@ export default function Challenges() {
 
                     {agentFlowMode === "bantah" ? (
                       <>
-                    <div className="space-y-0.5">
-                      <label
-                        htmlFor="agent-display-name"
-                        className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400"
-                      >
-                        Agent name
-                      </label>
-                      <Input
-                        id="agent-display-name"
-                        placeholder="Bantah Alpha"
-                        className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
-                        value={agentDisplayName}
-                        onChange={(event) => setAgentDisplayName(event.target.value)}
-                      />
-                    </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="min-w-0 space-y-0.5">
+                          <label
+                            htmlFor="agent-display-name"
+                            className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400"
+                          >
+                            Agent name
+                          </label>
+                          <Input
+                            id="agent-display-name"
+                            placeholder="Bantah Alpha"
+                            className="h-9 rounded-xl border-transparent bg-slate-50/90 text-xs placeholder:text-xs dark:bg-slate-800/80"
+                            value={agentDisplayName}
+                            onChange={(event) => setAgentDisplayName(event.target.value)}
+                          />
+                        </div>
 
-                    <div className="space-y-1">
-                      <label
+                        <div className="min-w-0 space-y-0.5">
+                          <label
+                            htmlFor="agent-specialty"
+                            className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400"
+                          >
+                            Agent specialty
+                          </label>
+                          <Select
+                            value={agentSpecialty}
+                            onValueChange={(value) =>
+                              setAgentSpecialty(value as BantahAgentSpecialty)
+                            }
+                            >
+                              <SelectTrigger
+                                id="agent-specialty"
+                                className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0"
+                              >
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span aria-hidden="true" className="text-sm">
+                                    {getAgentSpecialtyMeta(agentSpecialty).emoji}
+                                  </span>
+                                  <span className="truncate">{getAgentSpecialtyMeta(agentSpecialty).label}</span>
+                                </div>
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
+                                {agentSpecialtyOptions.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    <div className="flex items-center gap-2">
+                                      <span aria-hidden="true" className="text-sm">
+                                        {option.emoji}
+                                      </span>
+                                      <span>{option.label}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label
                         htmlFor="agent-avatar-upload"
                         className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400"
                       >
@@ -2008,36 +2047,7 @@ export default function Challenges() {
                       </div>
                     </div>
 
-                    <div className="space-y-0.5">
-                      <label
-                        htmlFor="agent-specialty"
-                        className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400"
-                      >
-                        Agent specialty
-                      </label>
-                      <Select
-                        value={agentSpecialty}
-                        onValueChange={(value) =>
-                          setAgentSpecialty(value as "general" | "crypto" | "sports" | "politics")
-                        }
-                      >
-                        <SelectTrigger
-                          id="agent-specialty"
-                          className="h-9 rounded-xl border-0 bg-slate-50/90 text-sm shadow-none focus:ring-0 focus:ring-offset-0 dark:border-0 dark:bg-slate-800/80 dark:focus:ring-0 dark:focus:ring-offset-0"
-                        >
-                          <SelectValue placeholder="Select a specialty" />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
-                          {agentSpecialtyOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
                       <div className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800 shadow-sm dark:bg-slate-800 dark:text-slate-100">
                         <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
                         Bantah Skills

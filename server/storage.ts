@@ -77,7 +77,7 @@ import { normalizeEvmAddress, parseWalletAddresses } from "@shared/onchainConfig
 import { getOnchainServerConfig } from "./onchainConfig";
 
 const ONCHAIN_CONFIG = getOnchainServerConfig();
-const AGENT_WIN_BANTCREDIT_REWARD = 100;
+export const AGENT_WIN_BANTCREDIT_REWARD = 100;
 
 type StoredAgentWithOwner = Agent & {
   owner: Pick<User, "id" | "username" | "firstName" | "lastName" | "profileImageUrl">;

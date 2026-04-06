@@ -5,6 +5,7 @@ import { CheckCircle2, Import, Loader2, Sparkles } from "lucide-react";
 import { AgentIcon } from "@/components/AgentIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { agentSpecialtyOptions, getAgentSpecialtyMeta } from "@/lib/agentSpecialty";
 import { apiRequest, setAuthToken } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -45,13 +46,6 @@ type AgentImportDialogProps = {
   initialSpecialty?: AgentRegistryProfile["specialty"];
   onImported?: (result: AgentImportResponse) => void;
 };
-
-const specialtyOptions = [
-  { value: "general", label: "General" },
-  { value: "crypto", label: "Crypto" },
-  { value: "sports", label: "Sports" },
-  { value: "politics", label: "Politics" },
-] as const;
 
 const modeMeta: Record<
   AgentImportMode,
@@ -334,19 +328,29 @@ export function AgentImportDialog({
                 value={specialty}
                 onValueChange={(value) => setSpecialty(value as AgentRegistryProfile["specialty"])}
               >
-                <SelectTrigger
-                  id="agent-import-specialty"
-                  className="h-10 rounded-xl border-transparent bg-slate-50/90 text-sm dark:bg-slate-800/80"
-                >
-                  <SelectValue placeholder="Pick a specialty" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
-                  {specialtyOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
+                  <SelectTrigger
+                    id="agent-import-specialty"
+                    className="h-10 rounded-xl border-transparent bg-slate-50/90 text-sm dark:bg-slate-800/80"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span aria-hidden="true" className="text-sm">
+                        {getAgentSpecialtyMeta(specialty).emoji}
+                      </span>
+                      <span>{getAgentSpecialtyMeta(specialty).label}</span>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-0 bg-white shadow-lg dark:bg-slate-800">
+                    {agentSpecialtyOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        <div className="flex items-center gap-2">
+                          <span aria-hidden="true" className="text-sm">
+                            {option.emoji}
+                          </span>
+                          <span>{option.label}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
               </Select>
             </div>
           </div>

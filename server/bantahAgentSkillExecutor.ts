@@ -1,5 +1,4 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
-import Pusher from "pusher";
 import { ZodError } from "zod";
 import {
   type AgentActionEnvelope,
@@ -22,6 +21,12 @@ import { db } from "./db";
 import { createPairingEngine } from "./pairingEngine";
 import { getOnchainServerConfig } from "./onchainConfig";
 import {
+  createAndPushAgentOwnerNotification,
+  getAgentRankSnapshot,
+  pushRealtimeNotification,
+  notifyAgentRankChangeIfNeeded,
+} from "./agentNotificationService";
+import {
   BantahAgentWalletError,
   buildSkillErrorEnvelope,
   buildSkillSuccessEnvelope,
@@ -32,13 +37,6 @@ import { assertAllowedStakeToken } from "./onchainEscrowService";
 
 const ONCHAIN_CONFIG = getOnchainServerConfig();
 const pairingEngine = createPairingEngine(db);
-const pusher = new Pusher({
-  appId: "1553294",
-  key: "decd2cca5e39cf0cbcd4",
-  secret: "1dd966e56c465ea285d9",
-  cluster: "mt1",
-  useTLS: true,
-});
 
 export class BantahSkillHttpError extends Error {
   status: number;
@@ -63,21 +61,6 @@ function toIsoString(value: Date | string | null | undefined): string | null {
   if (value instanceof Date) return value.toISOString();
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
-
-function sanitizePusherChannel(value: string): string {
-  return String(value || "").replace(/[^a-zA-Z0-9_\-=@,.;]/g, "_");
-}
-
-async function triggerNotificationPush(userId: string, payload: Record<string, unknown>) {
-  const sanitizedUserId = sanitizePusherChannel(userId);
-  if (!sanitizedUserId) return;
-
-  try {
-    await pusher.trigger(`user-${sanitizedUserId}`, "notification", payload);
-  } catch (error) {
-    console.error("Error sending agent follower notification:", error);
-  }
 }
 
 async function notifyAgentFollowers(params: {
@@ -110,7 +93,7 @@ async function notifyAgentFollowers(params: {
         },
       } as any);
 
-      await triggerNotificationPush(followerId, {
+      await pushRealtimeNotification(followerId, {
         ...notification,
         event: params.type,
         challengeId: String(params.challengeId),
@@ -315,6 +298,7 @@ export async function executeBantahSkillEnvelope(
         throw new BantahSkillHttpError(400, "Deadline must be a future ISO datetime.");
       }
 
+      const previousRank = await getAgentRankSnapshot(storedAgent.agentId);
       const { tokenConfig, tokenSymbol, chainConfig } = resolveOnchainRuntimeToken(
         parsed.data.chainId,
         parsed.data.currency,
@@ -345,6 +329,18 @@ export async function executeBantahSkillEnvelope(
       } as any);
 
       await storage.incrementAgentMarketCount(storedAgent.agentId);
+      await createAndPushAgentOwnerNotification(storedAgent, {
+        type: "agent_market_created",
+        title: "Agent created a market",
+        message: `${storedAgent.agentName} created "${createdChallenge.title}".`,
+        data: {
+          challengeId: createdChallenge.id,
+          action: "create_market",
+          side: null,
+        },
+        priority: 2,
+        fomoLevel: "medium",
+      });
       await notifyAgentFollowers({
         agentId: storedAgent.agentId,
         agentName: storedAgent.agentName,
@@ -355,8 +351,14 @@ export async function executeBantahSkillEnvelope(
         data: {
           action: "create_market",
           side: null,
-        },
-      });
+          },
+        });
+      await notifyAgentRankChangeIfNeeded(
+        storedAgent.agentId,
+        previousRank?.rank ?? null,
+        "market_created",
+        { challengeId: createdChallenge.id },
+      );
 
       return buildSkillSuccessEnvelope(requestId, {
         marketId: String(createdChallenge.id),
@@ -381,12 +383,13 @@ export async function executeBantahSkillEnvelope(
         throw new BantahSkillHttpError(400, "Join payload is invalid.");
       }
 
-      const numericMarketId = parseRuntimeMarketId(parsed.data.marketId);
-      const { challenge, dueDateIso } = await getRuntimeMarketSnapshot(numericMarketId);
-      const side = envelope.action === "join_yes" ? "yes" : "no";
-      const { roundedAmount } = parseStakeAmount(parsed.data.stakeAmount);
-      const tokenSymbol = normalizeOnchainTokenSymbol(
-        challenge.tokenSymbol || ONCHAIN_CONFIG.defaultToken || "USDC",
+        const numericMarketId = parseRuntimeMarketId(parsed.data.marketId);
+        const { challenge, dueDateIso } = await getRuntimeMarketSnapshot(numericMarketId);
+        const side = envelope.action === "join_yes" ? "yes" : "no";
+        const previousRank = await getAgentRankSnapshot(storedAgent.agentId);
+        const { roundedAmount } = parseStakeAmount(parsed.data.stakeAmount);
+        const tokenSymbol = normalizeOnchainTokenSymbol(
+          challenge.tokenSymbol || ONCHAIN_CONFIG.defaultToken || "USDC",
       ) as OnchainTokenSymbol;
       const chainId = Number(
         challenge.chainId || ONCHAIN_CONFIG.defaultChainId || ONCHAIN_CONFIG.chainId,
@@ -591,23 +594,41 @@ export async function executeBantahSkillEnvelope(
           relatedId: numericMarketId,
           status: "completed",
         });
-      }
+        }
 
-      await storage.incrementAgentMarketCount(storedAgent.agentId);
-      await notifyAgentFollowers({
-        agentId: storedAgent.agentId,
-        agentName: storedAgent.agentName,
+        await storage.incrementAgentMarketCount(storedAgent.agentId);
+        await createAndPushAgentOwnerNotification(storedAgent, {
+          type: "agent_market_joined",
+          title: "Agent joined a market",
+          message: `${storedAgent.agentName} joined ${side.toUpperCase()} on "${challenge.title}".`,
+          data: {
+            challengeId: numericMarketId,
+            action: envelope.action,
+            side,
+          },
+          priority: 2,
+          fomoLevel: "medium",
+        });
+        await notifyAgentFollowers({
+          agentId: storedAgent.agentId,
+          agentName: storedAgent.agentName,
         type: "followed_agent_joined_market",
         title: "Followed agent joined a market",
         message: `${storedAgent.agentName} joined ${side.toUpperCase()} on "${challenge.title}".`,
         challengeId: numericMarketId,
         data: {
           action: envelope.action,
-          side,
-        },
-      });
+            side,
+          },
+        });
+        await notifyAgentRankChangeIfNeeded(
+          storedAgent.agentId,
+          previousRank?.rank ?? null,
+          "market_joined",
+          { challengeId: numericMarketId, side },
+        );
 
-      if (joinEscrowTxHash) {
+        if (joinEscrowTxHash) {
         const refreshedChallenge = await storage.getChallengeById(numericMarketId);
         if (refreshedChallenge) {
           const mergedEscrowHashes = mergeEscrowTxHashes(

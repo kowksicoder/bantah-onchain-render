@@ -45,16 +45,6 @@ function shortAddress(value: string) {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
-function getOwnerLabel(agent: AgentRegistryProfile) {
-  const fullName = [agent.owner.firstName, agent.owner.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  if (fullName) return fullName;
-  if (agent.owner.username) return `@${agent.owner.username}`;
-  return "Bantah user";
-}
-
 function activityLabel(item: AgentActivityResponse["items"][number]) {
   if (item.type === "created_market") return "Created market";
   if (item.type === "joined_market") return item.side === "no" ? "Joined NO" : "Joined YES";
@@ -259,6 +249,7 @@ export default function AgentDetail() {
   const followerCount = Number(followState?.followerCount ?? 0);
   const isOwner = user?.id === agent.ownerId;
   const canManageRuntime = isOwner && agent.agentType === "bantah_created";
+  const isViewOnlyManagedAgent = !isOwner && agent.agentType === "bantah_created";
   const runtimeBadgeClass =
     runtimeState?.health === "healthy"
       ? "border-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
@@ -272,7 +263,7 @@ export default function AgentDetail() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24 text-slate-950 dark:bg-slate-950 dark:text-slate-50">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:gap-5 sm:px-6 sm:py-5 lg:px-8">
         <div className="flex items-center justify-between gap-3">
           <Button type="button" className={softButtonClass} onClick={() => navigate("/agents")}>
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -283,42 +274,42 @@ export default function AgentDetail() {
           </Badge>
         </div>
 
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-          <div className="flex flex-col gap-5 p-5 sm:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex min-w-0 items-start gap-4">
-                <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] bg-[#7440ff]/10 text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
+        <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:rounded-[28px]">
+          <div className="flex flex-col gap-3 p-3.5 sm:gap-5 sm:p-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+                <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-[#7440ff]/10 text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff] sm:h-16 sm:w-16 sm:rounded-[22px]">
                   <AgentAvatar
                     avatarUrl={agent.avatarUrl}
                     agentName={agent.agentName}
-                    className="h-16 w-16 rounded-[22px]"
+                    className="h-14 w-14 rounded-[20px] sm:h-16 sm:w-16 sm:rounded-[22px]"
                     fallbackClassName="bg-[#7440ff]/10 text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]"
-                    iconClassName="h-7 w-7"
+                    iconClassName="h-6 w-6 sm:h-7 sm:w-7"
                   />
                   {agent.lastSkillCheckStatus === "passed" ? (
-                    <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white">
+                    <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white sm:h-6 sm:w-6">
                       <ShieldCheck className="h-3.5 w-3.5" />
                     </div>
                   ) : null}
                 </div>
-                <div className="min-w-0 space-y-2">
+                <div className="min-w-0 space-y-1 sm:space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+                    <h1 className="truncate text-lg font-semibold tracking-tight sm:text-3xl">
                       {agent.agentName}
                     </h1>
-                    <Badge className="border-0 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <Badge className="border-0 bg-slate-100 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:text-xs">
                       {agent.specialty}
                     </Badge>
                     {agent.isTokenized ? (
-                      <Badge className="border-0 bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                      <Badge className="border-0 bg-amber-100 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 sm:text-xs">
                         Tokenized
                       </Badge>
                     ) : null}
                   </div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Owned by {getOwnerLabel(agent)}
+                  <p className="text-sm text-slate-600 dark:text-slate-400 sm:hidden">
+                    Bantah-managed market agent.
                   </p>
-                  <p className="max-w-2xl text-sm text-slate-600 dark:text-slate-400">
+                  <p className="hidden max-w-2xl text-sm text-slate-600 dark:text-slate-400 sm:block">
                     This agent uses Bantah skills for market creation, joins, and read-side activity. Agent wins now earn BantCredit automatically.
                   </p>
                   {runtimeState ? (
@@ -335,7 +326,8 @@ export default function AgentDetail() {
                       </Badge>
                       {runtimeState.isManagedRuntimeLive ? (
                         <Badge className="border-0 bg-[#7440ff]/12 text-[#7440ff] dark:bg-[#7440ff]/20 dark:text-[#b9a2ff]">
-                          live runtime
+                          <span className="sm:hidden">live</span>
+                          <span className="hidden sm:inline">live runtime</span>
                         </Badge>
                       ) : null}
                     </div>
@@ -343,72 +335,41 @@ export default function AgentDetail() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                 <Button
                   type="button"
-                  className={isFollowing ? softButtonClass : limeButtonClass}
+                  className={`${isFollowing ? softButtonClass : limeButtonClass} h-8 rounded-full px-2.5 text-[11px] sm:h-10 sm:px-4 sm:text-sm`}
                   onClick={handleFollow}
                   disabled={followMutation.isPending}
                 >
                   {isFollowing ? (
-                    <UserCheck className="mr-2 h-4 w-4" />
+                    <UserCheck className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                   ) : (
-                    <UserPlus className="mr-2 h-4 w-4" />
+                    <UserPlus className="mr-1.5 h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
                   )}
-                  {isFollowing ? "Following" : "Follow agent"}
+                  <span className="sm:hidden">{isFollowing ? "Following" : "Follow"}</span>
+                  <span className="hidden sm:inline">{isFollowing ? "Following" : "Follow agent"}</span>
                 </Button>
                 <Button
                   type="button"
-                  className={softButtonClass}
+                  className={`${softButtonClass} hidden sm:inline-flex`}
                   onClick={() => navigate("/challenges?tab=agents")}
                 >
                   Agent feed
                 </Button>
                 <Button
                   type="button"
-                  className={softButtonClass}
+                  className={`${softButtonClass} h-8 w-8 rounded-full p-0 text-[11px] sm:h-10 sm:w-auto sm:px-4 sm:text-sm`}
                   onClick={() => window.open(agent.endpointUrl, "_blank", "noopener,noreferrer")}
+                  aria-label="Open endpoint"
                 >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Endpoint
+                  <ExternalLink className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Endpoint</span>
                 </Button>
-                {canManageRuntime && runtimeState?.controls.canPause ? (
-                  <Button
-                    type="button"
-                    className={softButtonClass}
-                    disabled={runtimeControlMutation.isPending}
-                    onClick={() => runtimeControlMutation.mutate("pause")}
-                  >
-                    <PauseCircle className="mr-2 h-4 w-4" />
-                    Pause runtime
-                  </Button>
-                ) : null}
-                {canManageRuntime && runtimeState?.controls.canResume ? (
-                  <Button
-                    type="button"
-                    className={limeButtonClass}
-                    disabled={runtimeControlMutation.isPending}
-                    onClick={() => runtimeControlMutation.mutate("resume")}
-                  >
-                    <PlayCircle className="mr-2 h-4 w-4" />
-                    Resume runtime
-                  </Button>
-                ) : null}
-                {canManageRuntime && runtimeState?.controls.canRestart ? (
-                  <Button
-                    type="button"
-                    className={softButtonClass}
-                    disabled={runtimeControlMutation.isPending}
-                    onClick={() => runtimeControlMutation.mutate("restart")}
-                  >
-                    <RotateCw className="mr-2 h-4 w-4" />
-                    Restart runtime
-                  </Button>
-                ) : null}
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-3 sm:gap-3 xl:grid-cols-6">
               {[
                 { label: "Rank", value: rankState?.rank ? `#${rankState.rank}` : "-" },
                 { label: "BantCredit", value: agent.points.toLocaleString() },
@@ -419,12 +380,12 @@ export default function AgentDetail() {
               ].map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900"
+                  className="rounded-[18px] border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-slate-800 dark:bg-slate-900 sm:rounded-2xl sm:px-3 sm:py-2.5"
                 >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  <p className="text-[8px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400 sm:text-[10px] sm:tracking-[0.14em]">
                     {item.label}
                   </p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">
+                  <p className="mt-0.5 text-sm font-semibold leading-tight text-slate-950 dark:text-white sm:mt-1.5 sm:text-2xl">
                     {item.value}
                   </p>
                 </div>
@@ -434,41 +395,45 @@ export default function AgentDetail() {
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-          <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-            <CardContent className="space-y-4 p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold">Full activity</h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Recent markets this agent created, joined, and settled.
-                  </p>
-                </div>
-                <Badge className="border-0 bg-slate-100 px-3 py-1 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                  <Activity className="mr-1 h-3.5 w-3.5" />
-                  {items.length}
-                </Badge>
+            <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+              <CardContent className="space-y-3 p-3.5 sm:space-y-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold">
+                      <span className="sm:hidden">Activity</span>
+                      <span className="hidden sm:inline">Full activity</span>
+                    </h2>
+                    <p className="hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
+                      Recent markets this agent created, joined, and settled.
+                    </p>
+                  </div>
+                  <Badge className="border-0 bg-slate-100 px-2.5 py-1 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:px-3 sm:text-xs">
+                    <Activity className="mr-1 h-3.5 w-3.5" />
+                    {items.length}
+                  </Badge>
               </div>
 
               {loadingActivity ? (
                 <p className="text-sm text-slate-500 dark:text-slate-400">Loading activity...</p>
               ) : items.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                  No activity yet. Once this agent creates or joins markets, the full history will show here.
-                </div>
-              ) : (
-                <div className="space-y-3">
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                    <span className="sm:hidden">No activity yet.</span>
+                    <span className="hidden sm:inline">No activity yet. Once this agent creates or joins markets, the full history will show here.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 sm:space-y-3">
                   {items.map((item) => (
                     <button
                       key={item.activityId}
                       type="button"
                       onClick={() => navigate(`/challenges/${item.challengeId}/activity`)}
-                      className="flex w-full items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
+                      className="flex w-full items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 sm:gap-4 sm:px-4 sm:py-3"
                     >
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        <p className="text-[13px] font-semibold text-slate-900 dark:text-white sm:text-sm">
                           {activityLabel(item)}
                         </p>
-                        <p className="truncate text-sm text-slate-600 dark:text-slate-300">
+                        <p className="truncate text-[13px] text-slate-600 dark:text-slate-300 sm:text-sm">
                           {item.title}
                         </p>
                         <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
@@ -489,9 +454,12 @@ export default function AgentDetail() {
 
           <div className="space-y-4">
             <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <CardContent className="space-y-4 p-5">
-                <h2 className="text-lg font-semibold">Agent details</h2>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+              <CardContent className="space-y-3 p-3.5 sm:space-y-4 sm:p-5">
+                <h2 className="text-lg font-semibold">
+                  <span className="sm:hidden">Details</span>
+                  <span className="hidden sm:inline">Agent details</span>
+                </h2>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900 sm:px-4 sm:py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     Wallet
                   </p>
@@ -499,14 +467,15 @@ export default function AgentDetail() {
                     <span className="text-sm font-semibold text-slate-900 dark:text-white">
                       {shortAddress(agent.walletAddress)}
                     </span>
-                    <Button type="button" className={softButtonClass} onClick={handleCopyWallet}>
-                      <Copy className="mr-2 h-4 w-4" />
-                      {copied ? "Copied" : "Copy"}
+                    <Button type="button" className={`${softButtonClass} h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm`} onClick={handleCopyWallet}>
+                      <Copy className="h-4 w-4 sm:mr-2" />
+                      <span className="sm:hidden">{copied ? "Done" : ""}</span>
+                      <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
                     </Button>
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900 sm:px-4 sm:py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     Runtime
                   </p>
@@ -541,7 +510,7 @@ export default function AgentDetail() {
                 </div>
 
                 {runtimeState ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900 sm:px-4 sm:py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                       Wallet status
                     </p>
@@ -564,13 +533,16 @@ export default function AgentDetail() {
                     </p>
                     {runtimeState.wallet.message ? (
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {runtimeState.wallet.message}
+                        <span className="sm:hidden">
+                          {runtimeState.wallet.status === "unavailable" ? "Wallet unavailable right now." : runtimeState.wallet.message}
+                        </span>
+                        <span className="hidden sm:inline">{runtimeState.wallet.message}</span>
                       </p>
                     ) : null}
                   </div>
                 ) : null}
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900 sm:px-4 sm:py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     Added
                   </p>
@@ -585,11 +557,11 @@ export default function AgentDetail() {
 
             {offeringsState ? (
               <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <CardContent className="space-y-4 p-5">
+                <CardContent className="space-y-3 p-3.5 sm:space-y-4 sm:p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h2 className="text-lg font-semibold">x402 offerings</h2>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                      <p className="hidden text-sm text-slate-600 dark:text-slate-400 sm:block">
                         We are starting with Bantah-managed agents first. These are the first paid outputs we can sell from this agent.
                       </p>
                     </div>
@@ -599,7 +571,7 @@ export default function AgentDetail() {
                   </div>
 
                   <div
-                    className={`rounded-2xl border px-4 py-3 ${
+                    className={`rounded-2xl border px-3 py-2.5 sm:px-4 sm:py-3 ${
                       offeringsState.canSellWithX402
                         ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/20"
                         : "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900"
@@ -619,9 +591,14 @@ export default function AgentDetail() {
                         {offeringsState.sellerMode === "managed" ? "Bantah-managed" : "External"}
                       </Badge>
                     </div>
-                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                      {offeringsState.items[0]?.availabilityReason ||
-                        "x402 charge execution is the next layer after this catalog."}
+                    <p className="mt-2 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+                      <span className="sm:hidden">
+                        {offeringsState.canSellWithX402 ? "Seller is eligible." : "Catalog not ready yet."}
+                      </span>
+                      <span className="hidden sm:inline">
+                        {offeringsState.items[0]?.availabilityReason ||
+                          "x402 charge execution is the next layer after this catalog."}
+                      </span>
                     </p>
                   </div>
 
@@ -629,7 +606,7 @@ export default function AgentDetail() {
                     {offeringsState.items.map((item) => (
                       <div
                         key={item.productId}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900 sm:px-4 sm:py-3"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -650,11 +627,11 @@ export default function AgentDetail() {
                                 {item.status}
                               </Badge>
                             </div>
-                            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                            <p className="mt-2 hidden text-sm text-slate-600 dark:text-slate-400 sm:block">
                               {item.description}
                             </p>
                           </div>
-                          <div className="shrink-0 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-right dark:border-slate-700 dark:bg-slate-950">
+                           <div className="shrink-0 rounded-2xl border border-slate-200 bg-white px-2.5 py-2 text-right dark:border-slate-700 dark:bg-slate-950 sm:px-3">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                               Price
                             </p>
@@ -664,7 +641,7 @@ export default function AgentDetail() {
                           </div>
                         </div>
 
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
                           <Badge className="border-0 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                             <Wallet className="mr-1 h-3.5 w-3.5" />
                             {item.paymentRail}
@@ -686,57 +663,76 @@ export default function AgentDetail() {
 
             {canManageRuntime ? (
               <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <CardContent className="space-y-4 p-5">
+                <CardContent className="space-y-3 p-3.5 sm:space-y-4 sm:p-5">
                   <div className="flex items-center gap-2">
                     <Cpu className="h-5 w-5 text-[#7440ff]" />
                     <h2 className="text-lg font-semibold">Owner controls</h2>
                   </div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                  <p className="hidden text-sm text-slate-600 dark:text-slate-400 sm:block">
                     Pause the managed Eliza runtime if you want the agent visible but not actively executing Bantah actions.
                   </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      className={softButtonClass}
-                      disabled={!runtimeState?.controls.canPause || runtimeControlMutation.isPending}
-                      onClick={() => runtimeControlMutation.mutate("pause")}
-                    >
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        className={`${softButtonClass} h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm`}
+                        disabled={!runtimeState?.controls.canPause || runtimeControlMutation.isPending}
+                        onClick={() => runtimeControlMutation.mutate("pause")}
+                      >
                       <PauseCircle className="mr-2 h-4 w-4" />
                       Pause runtime
                     </Button>
-                    <Button
-                      type="button"
-                      className={limeButtonClass}
-                      disabled={!runtimeState?.controls.canResume || runtimeControlMutation.isPending}
-                      onClick={() => runtimeControlMutation.mutate("resume")}
-                    >
+                      <Button
+                        type="button"
+                        className={`${limeButtonClass} h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm`}
+                        disabled={!runtimeState?.controls.canResume || runtimeControlMutation.isPending}
+                        onClick={() => runtimeControlMutation.mutate("resume")}
+                      >
                       <PlayCircle className="mr-2 h-4 w-4" />
                       Resume runtime
                     </Button>
-                    <Button
-                      type="button"
-                      className={softButtonClass}
-                      disabled={!runtimeState?.controls.canRestart || runtimeControlMutation.isPending}
-                      onClick={() => runtimeControlMutation.mutate("restart")}
-                    >
+                      <Button
+                        type="button"
+                        className={`${softButtonClass} h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm`}
+                        disabled={!runtimeState?.controls.canRestart || runtimeControlMutation.isPending}
+                        onClick={() => runtimeControlMutation.mutate("restart")}
+                      >
                       <RotateCw className="mr-2 h-4 w-4" />
                       Restart runtime
                     </Button>
                   </div>
                 </CardContent>
               </Card>
+            ) : isViewOnlyManagedAgent ? (
+              <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                <CardContent className="space-y-3 p-3.5 sm:p-5">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-[#7440ff]" />
+                    <h2 className="text-lg font-semibold">View only</h2>
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    <span className="sm:hidden">Only the owner can manage this agent.</span>
+                    <span className="hidden sm:inline">
+                      Only the owner can pause, resume, or restart this agent. You can follow it, review its runtime health,
+                      and track its market activity here.
+                    </span>
+                  </p>
+                </CardContent>
+              </Card>
             ) : null}
 
             <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <CardContent className="space-y-4 p-5">
+              <CardContent className="space-y-3 p-3.5 sm:space-y-4 sm:p-5">
                 <div className="flex items-center gap-2">
                   <Trophy className="h-5 w-5 text-[#7440ff]" />
                   <h2 className="text-lg font-semibold">Reward rule</h2>
                 </div>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Each agent win now adds simple BantCredit rewards to the agent profile. Losses do not deduct BantCredit.
+                  <span className="sm:hidden">Agent wins add BantCredit.</span>
+                  <span className="hidden sm:inline">
+                    Each agent win now adds simple BantCredit rewards to the agent profile. Losses do not deduct BantCredit.
+                  </span>
                 </p>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900 sm:px-4 sm:py-3">
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
                     <Wallet className="h-4 w-4 text-[#7440ff]" />
                     +100 BantCredit per agent win

@@ -21,6 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { MobileNavigation } from "@/components/MobileNavigation";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -69,8 +70,14 @@ function getOwnerName(owner: Pick<AgentOwnerSummary, "firstName" | "lastName" | 
   return "Bantah user";
 }
 
-function getOwnerLabel(agent: AgentRegistryProfile) {
-  return getOwnerName(agent.owner);
+function getOwnerInitials(owner: Pick<AgentOwnerSummary, "firstName" | "lastName" | "username">) {
+  const label = getOwnerName(owner).replace(/^@/, "").trim();
+  if (!label) return "B";
+  return label
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
 }
 
 function getEndpointHost(value: string) {
@@ -135,14 +142,15 @@ function getAgentSummary(agent: AgentRegistryProfile) {
 function AgentCardSkeleton() {
   return (
     <Card className="overflow-hidden rounded-[30px] border border-white/70 bg-white/90 shadow-[0_30px_80px_-40px_rgba(67,92,146,0.5)]">
-      <CardContent className="space-y-4 p-4">
-        <Skeleton className="h-36 rounded-[26px]" />
+      <CardContent className="space-y-3 p-4">
+        <Skeleton className="h-28 rounded-[24px]" />
         <div className="grid grid-cols-3 gap-2">
-          <Skeleton className="h-16 rounded-2xl" />
-          <Skeleton className="h-16 rounded-2xl" />
-          <Skeleton className="h-16 rounded-2xl" />
+          <Skeleton className="h-14 rounded-2xl" />
+          <Skeleton className="h-14 rounded-2xl" />
+          <Skeleton className="h-14 rounded-2xl" />
         </div>
-        <Skeleton className="h-24 rounded-[22px]" />
+        <Skeleton className="h-16 rounded-[20px]" />
+        <Skeleton className="h-16 rounded-[20px]" />
         <div className="flex items-center justify-between gap-3">
           <Skeleton className="h-4 w-24" />
           <div className="flex gap-2">
@@ -182,21 +190,21 @@ function AgentActivityPreview({ agentId }: { agentId: string }) {
   const items = data?.items ?? [];
 
   return (
-    <div className="rounded-[24px] border border-[#e6edf7] bg-[#f7faff] px-4 py-3">
+    <div className="rounded-[20px] border border-[#e6edf7] bg-[#f7faff] px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Recent activity
         </p>
-        <Sparkles className="h-4 w-4 text-slate-400" />
+        <Sparkles className="h-3.5 w-3.5 text-slate-400" />
       </div>
       {items.length === 0 ? (
-        <p className="mt-2 text-xs text-slate-500">No agent activity yet.</p>
+        <p className="mt-1.5 text-xs text-slate-500">No agent activity yet.</p>
       ) : (
-        <div className="mt-2 space-y-2">
+        <div className="mt-1.5 space-y-1.5">
           {items.map((item) => (
             <div
               key={item.activityId}
-              className="flex items-start justify-between gap-3 rounded-2xl bg-white/80 px-3 py-2"
+              className="flex items-start justify-between gap-3 rounded-[16px] bg-white/80 px-2.5 py-2"
             >
               <div className="min-w-0">
                 <p className="text-xs font-medium text-slate-800">{activityLabel(item)}</p>
@@ -527,7 +535,20 @@ export default function Agents() {
                           <h2 className="max-w-xs text-[2rem] font-medium leading-[1] tracking-[-0.06em] text-slate-950">
                             {newestAgent.agentName}
                           </h2>
-                          <p className="text-sm text-slate-700">{getOwnerLabel(newestAgent)}</p>
+                          <div className="flex items-center gap-2">
+                            <Avatar
+                              className="h-7 w-7 border border-white/90 shadow-sm"
+                              title={getOwnerName(newestAgent.owner)}
+                            >
+                              <AvatarImage src={newestAgent.owner.profileImageUrl || undefined} alt="" className="object-cover" />
+                              <AvatarFallback className="bg-white/90 text-[10px] font-semibold text-slate-700">
+                                {getOwnerInitials(newestAgent.owner)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                              Owner
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <button
@@ -577,16 +598,16 @@ export default function Agents() {
                       Newest arrival
                     </Badge>
                     <div className="space-y-1">
-                      <h3 className="text-xl font-medium tracking-[-0.04em] text-slate-950">
-                        {newestAgent ? newestAgent.agentName : "No live agent yet"}
-                      </h3>
-                      <p className="text-sm leading-6 text-slate-700">
-                        {newestAgent
-                          ? `${getOwnerLabel(newestAgent)} added this ${newestAgent.specialty} agent${
-                              newestAgent.createdAt
-                                ? ` ${formatDistanceToNow(new Date(newestAgent.createdAt), { addSuffix: true })}`
-                                : " recently"
-                            }.`
+                        <h3 className="text-xl font-medium tracking-[-0.04em] text-slate-950">
+                          {newestAgent ? newestAgent.agentName : "No live agent yet"}
+                        </h3>
+                        <p className="text-sm leading-6 text-slate-700">
+                          {newestAgent
+                            ? `Fresh ${newestAgent.specialty} agent added${
+                                newestAgent.createdAt
+                                  ? ` ${formatDistanceToNow(new Date(newestAgent.createdAt), { addSuffix: true })}`
+                                  : " recently"
+                              }.`
                           : "The newest Bantah or imported agent will land here as soon as the registry goes live."}
                       </p>
                     </div>
@@ -706,48 +727,58 @@ export default function Agents() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-5 lg:grid-cols-2">
-              {agents.map((agent) => {
+              <div className="grid gap-4 lg:grid-cols-2">
+                {agents.map((agent) => {
                 const theme = getSpecialtyTheme(agent.specialty);
                 const rank = topAgentRankMap.get(agent.agentId);
 
                 return (
-                  <Card
-                    key={agent.agentId}
-                    className="overflow-hidden rounded-[30px] border border-white/80 bg-white/92 shadow-[0_30px_80px_-42px_rgba(67,92,146,0.45)] transition-transform duration-200 hover:-translate-y-1"
-                  >
-                    <CardContent className="space-y-4 p-5">
-                      <div className={cn("relative overflow-hidden rounded-[26px] p-4", theme.surface)}>
-                        <div
-                          className={cn(
-                            "absolute -right-8 -top-10 h-32 w-32 rounded-full blur-3xl",
-                            theme.glow,
-                          )}
-                        />
-                        <div className="relative space-y-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex min-w-0 items-center gap-3">
-                              <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-white/88 text-slate-950 shadow-sm">
-                                <AgentAvatar
-                                  avatarUrl={agent.avatarUrl}
-                                  agentName={agent.agentName}
-                                  className="h-12 w-12 rounded-[18px]"
-                                  fallbackClassName="bg-white/88 text-slate-950"
-                                  iconClassName="h-5 w-5"
-                                />
+                    <Card
+                      key={agent.agentId}
+                      className="overflow-hidden rounded-[26px] border border-white/80 bg-white/92 shadow-[0_26px_68px_-42px_rgba(67,92,146,0.42)] transition-transform duration-200 hover:-translate-y-1"
+                    >
+                      <CardContent className="space-y-3.5 p-4">
+                        <div className={cn("relative overflow-hidden rounded-[22px] p-3.5", theme.surface)}>
+                          <div
+                            className={cn(
+                              "absolute -right-8 -top-10 h-28 w-28 rounded-full blur-3xl",
+                              theme.glow,
+                            )}
+                          />
+                          <div className="relative space-y-3">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white/88 text-slate-950 shadow-sm">
+                                  <AgentAvatar
+                                    avatarUrl={agent.avatarUrl}
+                                    agentName={agent.agentName}
+                                    className="h-11 w-11 rounded-[16px]"
+                                    fallbackClassName="bg-white/88 text-slate-950"
+                                    iconClassName="h-5 w-5"
+                                  />
                                 {agent.lastSkillCheckStatus === "passed" ? (
                                   <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
                                     <ShieldCheck className="h-3 w-3" />
                                   </div>
                                 ) : null}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <h3 className="truncate text-lg font-medium tracking-[-0.04em] text-slate-950">
+                                      {agent.agentName}
+                                    </h3>
+                                    <Avatar
+                                      className="h-6 w-6 shrink-0 border border-white/90 shadow-sm"
+                                      title={getOwnerName(agent.owner)}
+                                    >
+                                      <AvatarImage src={agent.owner.profileImageUrl || undefined} alt="" className="object-cover" />
+                                      <AvatarFallback className="bg-white/90 text-[10px] font-semibold text-slate-700">
+                                        {getOwnerInitials(agent.owner)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                  </div>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <h3 className="truncate text-xl font-medium tracking-[-0.04em] text-slate-950">
-                                  {agent.agentName}
-                                </h3>
-                                <p className="truncate text-sm text-slate-700">{getOwnerLabel(agent)}</p>
-                              </div>
-                            </div>
 
                             <div className="flex flex-col items-end gap-2">
                               <Badge
@@ -782,43 +813,43 @@ export default function Agents() {
                             ) : null}
                           </div>
 
-                          <p className="max-w-[28rem] text-sm leading-6 text-slate-700">
-                            {getAgentSummary(agent)}
-                          </p>
+                            <p className="max-w-[28rem] text-[13px] leading-5 text-slate-700">
+                              {getAgentSummary(agent)}
+                            </p>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-[22px] border border-[#e6edf7] bg-[#f7faff] px-3 py-3">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            BantCredit
-                          </p>
-                          <p className="mt-1 text-base font-semibold text-slate-950">
-                            {agent.points.toLocaleString()}
-                          </p>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="rounded-[18px] border border-[#e6edf7] bg-[#f7faff] px-3 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              BantCredit
+                            </p>
+                            <p className="mt-1 text-[15px] font-semibold text-slate-950">
+                              {agent.points.toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="rounded-[18px] border border-[#e6edf7] bg-[#f7faff] px-3 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              Wins
+                            </p>
+                            <p className="mt-1 text-[15px] font-semibold text-slate-950">
+                              {agent.winCount}
+                            </p>
+                          </div>
+                          <div className="rounded-[18px] border border-[#e6edf7] bg-[#f7faff] px-3 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              Markets
+                            </p>
+                            <p className="mt-1 text-[15px] font-semibold text-slate-950">
+                              {agent.marketCount}
+                            </p>
+                          </div>
                         </div>
-                        <div className="rounded-[22px] border border-[#e6edf7] bg-[#f7faff] px-3 py-3">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Wins
-                          </p>
-                          <p className="mt-1 text-base font-semibold text-slate-950">
-                            {agent.winCount}
-                          </p>
-                        </div>
-                        <div className="rounded-[22px] border border-[#e6edf7] bg-[#f7faff] px-3 py-3">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Markets
-                          </p>
-                          <p className="mt-1 text-base font-semibold text-slate-950">
-                            {agent.marketCount}
-                          </p>
-                        </div>
-                      </div>
 
-                      <div className="rounded-[24px] border border-[#e6edf7] bg-[#f7faff] px-4 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-medium text-slate-500">Endpoint</span>
-                          <span className="truncate text-xs font-semibold text-slate-700">
+                        <div className="rounded-[20px] border border-[#e6edf7] bg-[#f7faff] px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-xs font-medium text-slate-500">Endpoint</span>
+                            <span className="truncate text-xs font-semibold text-slate-700">
                             {getEndpointHost(agent.endpointUrl)}
                           </span>
                         </div>
@@ -827,27 +858,27 @@ export default function Agents() {
                           <span className="text-xs font-semibold text-slate-700">
                             {shortAddress(agent.walletAddress)}
                           </span>
+                          </div>
                         </div>
-                      </div>
 
-                      <AgentActivityPreview agentId={agent.agentId} />
+                        <AgentActivityPreview agentId={agent.agentId} />
 
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-xs text-slate-500">
-                          Added{" "}
-                          {agent.createdAt
+                        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-xs text-slate-500">
+                            Added{" "}
+                            {agent.createdAt
                             ? formatDistanceToNow(new Date(agent.createdAt), { addSuffix: true })
                             : "recently"}
                         </p>
 
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            className={secondaryButtonClass}
-                            onClick={() => navigate(`/agents/${agent.agentId}`)}
-                          >
-                            Open profile
-                          </Button>
+                            <Button
+                              type="button"
+                              className={secondaryButtonClass}
+                              onClick={() => navigate(`/agents/${agent.agentId}`)}
+                            >
+                              Open
+                            </Button>
                           <Button
                             type="button"
                             className={cn(subtleButtonClass, "h-10 w-10 px-0")}
