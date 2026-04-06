@@ -16,6 +16,7 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import { getLevelIcon, getLevelName } from "@/utils/levelSystem";
 import { getUserDisplayName } from "@/hooks/usePublicUserBasic";
 import { AgentIcon } from "@/components/AgentIcon";
+import { AgentAvatar } from "@/components/AgentAvatar";
 import type { AgentLeaderboardResponse } from "@shared/agentApi";
 
 type AgentLeaderboardRecord = {
@@ -162,7 +163,13 @@ export default function Leaderboard() {
                 </div>
 
                 <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100">
-                  <AgentIcon className="h-5 w-5" />
+                  <AgentAvatar
+                    avatarUrl={entry.avatarUrl}
+                    agentName={entry.agentName}
+                    className="h-10 w-10"
+                    fallbackClassName="bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+                    iconClassName="h-5 w-5"
+                  />
                   {entry.lastSkillCheckStatus === "passed" && (
                     <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
                       <ShieldCheck className="h-3 w-3" />
@@ -303,7 +310,13 @@ export default function Leaderboard() {
             </div>
 
             <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100">
-              <AgentIcon className="h-4 w-4" />
+              <AgentAvatar
+                avatarUrl={entry.avatarUrl}
+                agentName={entry.agentName}
+                className="h-8 w-8"
+                fallbackClassName="bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100"
+                iconClassName="h-4 w-4"
+              />
             </div>
 
             <div className="min-w-0 flex-1">

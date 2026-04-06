@@ -33,6 +33,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ExternalLink, ShieldCheck, Sparkles } from "lucide-react";
 import { AgentIcon } from "@/components/AgentIcon";
+import { AgentAvatar } from "@/components/AgentAvatar";
+import type { AgentListResponse, AgentRegistryProfile } from "@shared/agentApi";
 
 const createChallengeSchema = z.object({
   challenged: z.string().min(1, "Challenged user required"),
@@ -43,36 +45,14 @@ const createChallengeSchema = z.object({
   dueDate: z.string().min(1, "Due date required"),
 });
 
-type AgentFriendRecord = {
-  agentId: string;
-  agentName: string;
-  walletAddress: string;
-  endpointUrl: string;
-  specialty: "sports" | "crypto" | "politics" | "general";
-  points: number;
-  winCount: number;
-  marketCount: number;
-  lastSkillCheckStatus: "passed" | "failed" | null;
-  owner: {
-    id: string;
-    username?: string | null;
-    firstName?: string | null;
-    lastName?: string | null;
-  };
-};
-
-type AgentFriendResponse = {
-  items: AgentFriendRecord[];
-};
-
-function getAgentOwnerLabel(owner: AgentFriendRecord["owner"]) {
+function getAgentOwnerLabel(owner: AgentRegistryProfile["owner"]) {
   const fullName = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
   if (fullName) return fullName;
   if (owner.username) return `@${owner.username}`;
   return "Bantah user";
 }
 
-function getAgentSpecialtyLabel(value: AgentFriendRecord["specialty"]) {
+function getAgentSpecialtyLabel(value: AgentRegistryProfile["specialty"]) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
@@ -156,7 +136,7 @@ function RequestRowSkeleton() {
     staleTime: 1000 * 60,
   });
 
-  const { data: agentsResponse, isLoading: isAgentsLoading } = useQuery<AgentFriendResponse>({
+  const { data: agentsResponse, isLoading: isAgentsLoading } = useQuery<AgentListResponse>({
     queryKey: ["/api/agents"],
     retry: false,
     refetchOnWindowFocus: false,
@@ -499,6 +479,9 @@ function RequestRowSkeleton() {
     );
   });
 
+  const getAgentActionLabel = (agent: AgentRegistryProfile) =>
+    agent.ownerId === user?.id ? "Manage" : "View";
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 theme-transition pb-[80px] md:pb-0">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -740,30 +723,36 @@ function RequestRowSkeleton() {
                   key={agent.agentId}
                   className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                 >
-                  <CardContent className="p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center space-x-3 min-w-0">
-                        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100">
-                          <AgentIcon className="h-5 w-5" />
+                  <CardContent className="p-2 md:p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 min-w-0">
+                        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100">
+                          <AgentAvatar
+                            avatarUrl={agent.avatarUrl}
+                            agentName={agent.agentName}
+                            className="h-9 w-9"
+                            fallbackClassName="bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100"
+                            iconClassName="h-4.5 w-4.5"
+                          />
                           {agent.lastSkillCheckStatus === "passed" && (
-                            <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
-                              <ShieldCheck className="h-3 w-3" />
+                            <div className="absolute -bottom-1 -right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                              <ShieldCheck className="h-2.5 w-2.5" />
                             </div>
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+                          <div className="flex items-center gap-1.5">
+                            <h3 className="truncate font-bold text-xs text-slate-900 dark:text-slate-100 leading-tight">
                               {agent.agentName}
                             </h3>
-                            <Badge className="border-0 bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                            <Badge className="h-5 border-0 bg-slate-100 px-1.5 text-[10px] text-slate-700 dark:bg-slate-700 dark:text-slate-200">
                               {getAgentSpecialtyLabel(agent.specialty)}
                             </Badge>
                           </div>
-                          <p className="text-[11px] text-slate-500 font-medium truncate">
+                          <p className="text-[10px] text-slate-500 font-medium truncate">
                             Owned by {getAgentOwnerLabel(agent.owner)}
                           </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
                             <span>{agent.points.toLocaleString()} BantCredit</span>
                             <span>•</span>
                             <span>{agent.winCount || 0} wins</span>
@@ -773,24 +762,27 @@ function RequestRowSkeleton() {
                         </div>
                       </div>
 
-                      <div className="flex items-center space-x-1.5 shrink-0">
+                      <div className="flex items-center space-x-1.5">
                         <Button
                           size="sm"
-                          className="h-8 rounded-lg bg-slate-100 px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
-                          onClick={() => navigate("/agents")}
+                          variant="outline"
+                          className="h-8 text-[11px] px-2.5 rounded-lg border-slate-200 dark:border-slate-700 font-medium hover:bg-slate-50"
+                          onClick={() => navigate(`/agents/${agent.agentId}`)}
                         >
-                          Registry
+                          {getAgentActionLabel(agent)}
                         </Button>
                         <Button
                           size="sm"
-                          className="h-8 rounded-lg bg-[#ccff00] px-2.5 text-[11px] font-bold text-black hover:bg-[#b8eb00]"
+                          className="h-8 text-[11px] px-2.5 rounded-lg font-bold text-black"
+                          style={{ backgroundColor: "#ccff00" }}
                           onClick={() => navigate("/challenges?tab=agents")}
                         >
                           Feed
                         </Button>
                         <Button
                           size="sm"
-                          className="h-8 rounded-lg bg-white px-2.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700 dark:hover:bg-slate-700"
+                          variant="outline"
+                          className="h-8 text-[11px] px-2.5 rounded-lg border-slate-200 dark:border-slate-700 font-medium hover:bg-slate-50"
                           onClick={() => window.open(agent.endpointUrl, "_blank", "noopener,noreferrer")}
                         >
                           <ExternalLink className="h-3.5 w-3.5" />

@@ -32,6 +32,7 @@ const escrowNativeAbi = parseAbi([
 
 type BantahAgentWalletErrorCode =
   | "wallet_not_provisioned"
+  | "wallet_provision_failed"
   | "unsupported_chain"
   | "wallet_restore_failed"
   | "transaction_incomplete"
@@ -297,23 +298,37 @@ export async function provisionBantahAgentWallet(
   ensureLocalCdpEnvFallback();
 
   const { CdpSmartWalletProvider } = await loadLocalAgentKit();
-  const walletProvider = await CdpSmartWalletProvider.configureWithWallet({
-    networkId,
-    idempotencyKey: `bantah-agent-${agentId}`,
-    apiKeyId: requireCdpEnvValue("CDP_API_KEY_ID"),
-    apiKeySecret: requireCdpEnvValue("CDP_API_KEY_SECRET"),
-    walletSecret: requireCdpEnvValue("CDP_WALLET_SECRET"),
-  });
+  try {
+    const walletProvider = await CdpSmartWalletProvider.configureWithWallet({
+      networkId,
+      idempotencyKey: `bantah-agent-${agentId}`,
+      apiKeyId: requireCdpEnvValue("CDP_API_KEY_ID"),
+      apiKeySecret: requireCdpEnvValue("CDP_API_KEY_SECRET"),
+      walletSecret: requireCdpEnvValue("CDP_WALLET_SECRET"),
+    });
 
-  const walletData = await walletProvider.exportWallet();
+    const walletData = await walletProvider.exportWallet();
 
-  return {
-    walletAddress: walletData.address,
-    ownerWalletAddress: walletData.ownerAddress,
-    walletProvider: "cdp_smart_wallet",
-    walletNetworkId: networkId,
-    walletData,
-  };
+    return {
+      walletAddress: walletData.address,
+      ownerWalletAddress: walletData.ownerAddress,
+      walletProvider: "cdp_smart_wallet",
+      walletNetworkId: networkId,
+      walletData,
+    };
+  } catch (error: any) {
+    if (error?.statusCode === 401 || error?.errorType === "unauthorized") {
+      throw new BantahAgentWalletError(
+        "wallet_provision_failed",
+        "Coinbase AgentKit wallet provisioning failed because the configured CDP credentials were rejected by Coinbase.",
+      );
+    }
+
+    throw new BantahAgentWalletError(
+      "wallet_provision_failed",
+      error?.message || "Failed to provision Bantah agent wallet with AgentKit.",
+    );
+  }
 }
 
 export async function restoreBantahAgentWallet(
@@ -325,9 +340,12 @@ export async function restoreBantahAgentWallet(
   ensureLocalCdpEnvFallback();
 
   if (snapshot.walletProvider && snapshot.walletProvider !== "cdp_smart_wallet") {
+    const walletProvider = String(snapshot.walletProvider || "").trim();
     throw new BantahAgentWalletError(
       "wallet_not_provisioned",
-      `Unsupported Bantah agent wallet provider: ${snapshot.walletProvider}`,
+      walletProvider === "local_demo_wallet"
+        ? "This agent is still on a local demo wallet because AgentKit provisioning is unavailable. Onchain execution will stay disabled until the Coinbase CDP credentials are fixed."
+        : `This Bantah agent does not have a live AgentKit wallet provider yet (${walletProvider}).`,
     );
   }
 

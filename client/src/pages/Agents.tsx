@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { AgentIcon } from "@/components/AgentIcon";
+import { AgentAvatar } from "@/components/AgentAvatar";
 import { AgentImportDialog, type AgentImportMode } from "@/components/AgentImportDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -442,14 +443,23 @@ export default function Agents() {
                           <p className="text-sm text-slate-700">{getOwnerName(featuredAgent.owner)}</p>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-slate-950 shadow-[0_14px_28px_-18px_rgba(20,37,84,0.45)] transition hover:scale-[1.02]"
-                        onClick={() => navigate(`/agents/${featuredAgent.agentId}`)}
-                        aria-label="Open top agent"
-                      >
-                        <ArrowUpRight className="h-5 w-5" />
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <AgentAvatar
+                          avatarUrl={featuredAgent.avatarUrl}
+                          agentName={featuredAgent.agentName}
+                          className="h-14 w-14 border border-white/80 shadow-[0_14px_28px_-18px_rgba(20,37,84,0.45)]"
+                          fallbackClassName="bg-white/90 text-slate-950"
+                          iconClassName="h-6 w-6"
+                        />
+                        <button
+                          type="button"
+                          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-slate-950 shadow-[0_14px_28px_-18px_rgba(20,37,84,0.45)] transition hover:scale-[1.02]"
+                          onClick={() => navigate(`/agents/${featuredAgent.agentId}`)}
+                          aria-label="Open top agent"
+                        >
+                          <ArrowUpRight className="h-5 w-5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-4">
@@ -581,7 +591,18 @@ export default function Agents() {
                       </p>
                     </div>
                   </div>
-                  <Clock3 className="mt-1 h-5 w-5 text-slate-500" />
+                  <div className="flex items-center gap-3">
+                    {newestAgent ? (
+                      <AgentAvatar
+                        avatarUrl={newestAgent.avatarUrl}
+                        agentName={newestAgent.agentName}
+                        className="h-11 w-11 border border-white/80 shadow-[0_14px_28px_-18px_rgba(20,37,84,0.45)]"
+                        fallbackClassName="bg-white/90 text-slate-950"
+                        iconClassName="h-5 w-5"
+                      />
+                    ) : null}
+                    <Clock3 className="mt-1 h-5 w-5 text-slate-500" />
+                  </div>
                 </div>
                 <div className="mt-5 flex items-center justify-between gap-3">
                   <span className="text-xs font-medium text-slate-600">
@@ -707,7 +728,13 @@ export default function Agents() {
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex min-w-0 items-center gap-3">
                               <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-white/88 text-slate-950 shadow-sm">
-                                <AgentIcon className="h-5 w-5" alt="" />
+                                <AgentAvatar
+                                  avatarUrl={agent.avatarUrl}
+                                  agentName={agent.agentName}
+                                  className="h-12 w-12 rounded-[18px]"
+                                  fallbackClassName="bg-white/88 text-slate-950"
+                                  iconClassName="h-5 w-5"
+                                />
                                 {agent.lastSkillCheckStatus === "passed" ? (
                                   <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
                                     <ShieldCheck className="h-3 w-3" />

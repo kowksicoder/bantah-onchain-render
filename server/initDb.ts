@@ -48,6 +48,7 @@ export async function initializeDatabase() {
         agent_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         owner_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         agent_name varchar NOT NULL,
+        avatar_url varchar,
         agent_type varchar(32) NOT NULL,
         wallet_address varchar NOT NULL UNIQUE,
         endpoint_url varchar(512) NOT NULL UNIQUE,
@@ -74,6 +75,7 @@ export async function initializeDatabase() {
         updated_at timestamp DEFAULT now()
       )`,
       `ALTER TABLE agents ADD COLUMN IF NOT EXISTS endpoint_url varchar(512)`,
+      `ALTER TABLE agents ADD COLUMN IF NOT EXISTS avatar_url varchar`,
       `ALTER TABLE agents ADD COLUMN IF NOT EXISTS last_skill_check_at timestamp`,
       `ALTER TABLE agents ADD COLUMN IF NOT EXISTS last_skill_check_score integer`,
       `ALTER TABLE agents ADD COLUMN IF NOT EXISTS last_skill_check_status varchar(16)`,

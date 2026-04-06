@@ -46,6 +46,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, setAuthToken } from "@/lib/queryClient";
+import { uploadImage } from "@/lib/uploadImage";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -232,6 +233,9 @@ export default function Challenges() {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
+  const [agentAvatarFile, setAgentAvatarFile] = useState<File | null>(null);
+  const [agentAvatarPreview, setAgentAvatarPreview] = useState<string | null>(null);
+  const [isAgentAvatarUploading, setIsAgentAvatarUploading] = useState(false);
   const [isPreparingChallenge, setIsPreparingChallenge] = useState(false);
   const [headerChainId, setHeaderChainId] = useState<number | null>(null);
   const dueDatePickerRef = useRef<HTMLDivElement | null>(null);
@@ -329,6 +333,38 @@ export default function Challenges() {
   const clearCoverImage = () => {
     setCoverImageFile(null);
     setCoverPreview(null);
+  };
+
+  const handleAgentAvatarSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please select an avatar smaller than 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file type",
+        description: "Please select an image file",
+        variant: "destructive",
+      });
+      return;
+    }
+    setAgentAvatarFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAgentAvatarPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearAgentAvatar = () => {
+    setAgentAvatarFile(null);
+    setAgentAvatarPreview(null);
   };
 
   const ensureFreshAuthToken = async (): Promise<string | null> => {
@@ -816,10 +852,19 @@ export default function Challenges() {
 
   const createAgentMutation = useMutation({
     mutationFn: async () => {
+      await ensureFreshAuthToken();
+      let avatarUrl: string | null = null;
+      if (agentAvatarFile) {
+        avatarUrl = await uploadAgentAvatar(agentAvatarFile);
+        if (!avatarUrl) {
+          throw new Error("Please upload a valid avatar before creating this agent.");
+        }
+      }
       return apiRequest("POST", "/api/agents/create", {
         agentName: agentDisplayName.trim(),
         specialty: agentSpecialty,
         chainId: selectedChainId,
+        avatarUrl,
       });
     },
     onSuccess: (result: any) => {
@@ -872,6 +917,7 @@ export default function Challenges() {
       setIsCreateDialogOpen(false);
       setAgentDisplayName("");
       setAgentSpecialty("general");
+      clearAgentAvatar();
       window.setTimeout(() => {
         window.location.href = "/agents";
       }, 150);
@@ -901,6 +947,25 @@ export default function Challenges() {
     setCreateMode("agent");
     setAgentFlowMode(agentImportMode);
     setIsCreateDialogOpen(true);
+  };
+
+  const uploadAgentAvatar = async (file: File): Promise<string | null> => {
+    try {
+      setIsAgentAvatarUploading(true);
+      const authToken = await ensureFreshAuthToken();
+      return await uploadImage(file, authToken);
+    } catch (error) {
+      console.error("Agent avatar upload error:", error);
+      toast({
+        title: "Avatar upload failed",
+        description:
+          error instanceof Error ? error.message : "Failed to upload avatar. Please try again.",
+        variant: "destructive",
+      });
+      return null;
+    } finally {
+      setIsAgentAvatarUploading(false);
+    }
   };
 
   const categoryTabs = [
@@ -1895,6 +1960,54 @@ export default function Challenges() {
                       />
                     </div>
 
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="agent-avatar-upload"
+                        className="text-[10px] font-semibold tracking-normal text-slate-600 dark:text-slate-400"
+                      >
+                        Agent avatar
+                      </label>
+                      <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
+                        <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm dark:bg-slate-800">
+                          {agentAvatarPreview ? (
+                            <img
+                              src={agentAvatarPreview}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <AgentIcon className="h-5 w-5 text-slate-400 dark:text-slate-500" />
+                          )}
+                        </div>
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <label
+                            htmlFor="agent-avatar-upload"
+                            className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg bg-white px-3 text-[10px] font-semibold text-slate-700 shadow-sm hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                          >
+                            <Upload className="h-3 w-3" />
+                            {agentAvatarPreview ? "Change avatar" : "Upload avatar"}
+                          </label>
+                          {agentAvatarPreview ? (
+                            <button
+                              type="button"
+                              onClick={clearAgentAvatar}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg bg-slate-100 px-3 text-[10px] font-semibold text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                            >
+                              <X className="h-3 w-3" />
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
+                        <input
+                          id="agent-avatar-upload"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAgentAvatarSelect}
+                          className="hidden"
+                        />
+                      </div>
+                    </div>
+
                     <div className="space-y-0.5">
                       <label
                         htmlFor="agent-specialty"
@@ -2388,7 +2501,10 @@ export default function Challenges() {
                 <div className="flex space-x-2 pt-1">
                   <Button
                     type="button"
-                    onClick={() => setIsCreateDialogOpen(false)}
+                    onClick={() => {
+                      setIsCreateDialogOpen(false);
+                      clearAgentAvatar();
+                    }}
                     className="h-9 flex-1 rounded-xl bg-slate-100 text-sm text-slate-700 hover:bg-slate-200"
                   >
                     Cancel
@@ -2400,7 +2516,8 @@ export default function Challenges() {
                         ? agentFlowMode === "bantah"
                           ? !agentDisplayName.trim() ||
                             !canProvisionAgentOnSelectedChain ||
-                            createAgentMutation.isPending
+                            createAgentMutation.isPending ||
+                            isAgentAvatarUploading
                           : false
                         : createChallengeMutation.isPending || isCoverUploading || isPreparingChallenge
                     }
@@ -2409,7 +2526,9 @@ export default function Challenges() {
                   >
                     {createMode === "agent"
                       ? agentFlowMode === "bantah"
-                        ? createAgentMutation.isPending
+                        ? isAgentAvatarUploading
+                          ? "Uploading Avatar..."
+                          : createAgentMutation.isPending
                           ? "Creating Agent..."
                           : "Create Agent"
                         : "Continue to Import"

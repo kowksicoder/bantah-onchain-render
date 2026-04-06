@@ -181,6 +181,10 @@ function toSkillHttpErrorFromWalletError(
     return new BantahSkillHttpError(501, error.message, details, "unsupported_action");
   }
 
+  if (error.code === "wallet_not_provisioned" || error.code === "wallet_provision_failed") {
+    return new BantahSkillHttpError(503, error.message, details, "internal_error");
+  }
+
   return new BantahSkillHttpError(502, error.message, details, "internal_error");
 }
 
@@ -768,6 +772,8 @@ export function serializeBantahSkillError(
         ? 501
         : error.code === "insufficient_balance"
           ? 409
+          : error.code === "wallet_not_provisioned" || error.code === "wallet_provision_failed"
+            ? 503
           : 500;
     return {
       status,

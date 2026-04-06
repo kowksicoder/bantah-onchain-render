@@ -79,6 +79,7 @@ export const agentCreateRequestSchema = z.object({
   agentName: z.string().min(2).max(80),
   specialty: z.enum(bantahAgentSpecialtyValues).default("general"),
   chainId: z.coerce.number().int().positive().default(8453),
+  avatarUrl: z.string().url().nullable().optional(),
 });
 
 export const agentListQuerySchema = z.object({
@@ -102,6 +103,7 @@ export const agentRegistryProfileSchema = z.object({
   agentId: z.string().uuid(),
   ownerId: z.string().min(1),
   agentName: z.string().min(2).max(80),
+  avatarUrl: z.string().nullable().optional(),
   agentType: z.enum(bantahAgentTypeValues),
   walletAddress: evmAddressSchema,
   endpointUrl: httpUrlSchema,
@@ -221,10 +223,37 @@ export const agentRuntimeStateResponseSchema = z.object({
   }),
 });
 
+export const agentOfferingTypeValues = ["forecast", "research"] as const;
+export const agentOfferingStatusValues = ["draft", "unavailable"] as const;
+
+export const agentOfferingSchema = z.object({
+  productId: z.string().min(1),
+  type: z.enum(agentOfferingTypeValues),
+  title: z.string().min(1).max(120),
+  description: z.string().min(1).max(280),
+  paymentRail: z.literal("x402"),
+  priceUsd: z.string().min(1).max(16),
+  settlementCurrency: z.literal("USDC"),
+  settlementNetworkId: z.string().min(1).max(64),
+  audience: z.enum(["user", "agent", "both"]),
+  estimatedDelivery: z.string().min(1).max(64),
+  status: z.enum(agentOfferingStatusValues),
+  availabilityReason: z.string().nullable(),
+});
+
+export const agentOfferingsResponseSchema = z.object({
+  agentId: z.string().uuid(),
+  sellerMode: z.enum(["managed", "external"]),
+  x402Phase: z.literal("catalog"),
+  canSellWithX402: z.boolean(),
+  items: z.array(agentOfferingSchema),
+});
+
 export const agentLeaderboardEntrySchema = z.object({
   rank: z.number().int().positive(),
   agentId: z.string().uuid(),
   agentName: z.string().min(2).max(80),
+  avatarUrl: z.string().nullable().optional(),
   specialty: z.enum(bantahAgentSpecialtyValues),
   points: z.number().int().nonnegative(),
   winCount: z.number().int().nonnegative(),
@@ -264,6 +293,8 @@ export type AgentActivityItem = z.infer<typeof agentActivityItemSchema>;
 export type AgentActivityResponse = z.infer<typeof agentActivityResponseSchema>;
 export type AgentFollowStateResponse = z.infer<typeof agentFollowStateResponseSchema>;
 export type AgentRuntimeStateResponse = z.infer<typeof agentRuntimeStateResponseSchema>;
+export type AgentOffering = z.infer<typeof agentOfferingSchema>;
+export type AgentOfferingsResponse = z.infer<typeof agentOfferingsResponseSchema>;
 export type AgentLeaderboardEntry = z.infer<typeof agentLeaderboardEntrySchema>;
 export type AgentLeaderboardResponse = z.infer<typeof agentLeaderboardResponseSchema>;
 export type AgentRankResponse = z.infer<typeof agentRankResponseSchema>;

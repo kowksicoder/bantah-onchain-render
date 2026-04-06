@@ -6,6 +6,7 @@ import {
   agentImportRequestSchema,
   agentListQuerySchema,
   agentCreateRequestSchema,
+  agentOfferingsResponseSchema,
   agentSkillCheckRequestSchema,
   agentFollowStateResponseSchema,
   agentLeaderboardResponseSchema,
@@ -265,6 +266,7 @@ async function serializeAgent(agentId: string): Promise<AgentRegistryProfile> {
     agentId: storedAgent.agentId,
     ownerId: storedAgent.ownerId,
     agentName: storedAgent.agentName,
+    avatarUrl: (storedAgent as any).avatarUrl ?? null,
     agentType: storedAgent.agentType,
     walletAddress: storedAgent.walletAddress,
     endpointUrl: storedAgent.endpointUrl,
@@ -301,6 +303,80 @@ async function serializeAgent(agentId: string): Promise<AgentRegistryProfile> {
   };
 }
 
+function buildAgentOfferings(storedAgent: Awaited<ReturnType<typeof storage.getAgentById>>) {
+  if (!storedAgent) {
+    throw new HttpError(404, "Agent not found");
+  }
+
+  const isManagedSeller = storedAgent.agentType === "bantah_created";
+  const runtimeEntry = getManagedBantahAgentRuntime(storedAgent.agentId);
+  const runtimeStatus =
+    runtimeEntry?.config.status || storedAgent.runtimeStatus || null;
+  const runtimeHealth = resolveRuntimeHealth(
+    storedAgent.agentType,
+    runtimeStatus,
+    Boolean(runtimeEntry),
+  );
+  const hasVerifiedSkills = storedAgent.lastSkillCheckStatus === "passed";
+  const canSellWithX402 =
+    isManagedSeller &&
+    storedAgent.status === "active" &&
+    hasVerifiedSkills &&
+    runtimeHealth !== "error";
+
+  const availabilityReason = !isManagedSeller
+    ? "First x402 seller rollout is limited to Bantah-created agents."
+    : storedAgent.status !== "active"
+      ? "Only active Bantah agents can be listed as x402 sellers."
+      : !hasVerifiedSkills
+        ? "This Bantah agent needs a passing skill check before it can sell outputs."
+        : runtimeHealth === "error"
+          ? "Runtime health must recover before this agent can sell paid outputs."
+          : "Offerings are catalogued now; x402 charge execution is the next layer.";
+
+  const settlementNetworkId =
+    storedAgent.walletNetworkId || "base-mainnet";
+
+  return agentOfferingsResponseSchema.parse({
+    agentId: storedAgent.agentId,
+    sellerMode: isManagedSeller ? "managed" : "external",
+    x402Phase: "catalog",
+    canSellWithX402,
+    items: [
+      {
+        productId: `${storedAgent.agentId}:forecast`,
+        type: "forecast",
+        title: "Agent forecast",
+        description:
+          "Short-form YES/NO lean with probability, confidence, and a fast market summary.",
+        paymentRail: "x402",
+        priceUsd: "0.10",
+        settlementCurrency: "USDC",
+        settlementNetworkId,
+        audience: "both",
+        estimatedDelivery: "10-30s",
+        status: canSellWithX402 ? "draft" : "unavailable",
+        availabilityReason,
+      },
+      {
+        productId: `${storedAgent.agentId}:research`,
+        type: "research",
+        title: "Research report",
+        description:
+          "Deeper thesis with bull case, bear case, risk factors, and a final market position.",
+        paymentRail: "x402",
+        priceUsd: "0.50",
+        settlementCurrency: "USDC",
+        settlementNetworkId,
+        audience: "both",
+        estimatedDelivery: "30-90s",
+        status: canSellWithX402 ? "draft" : "unavailable",
+        availabilityReason,
+      },
+    ],
+  });
+}
+
 async function listRankedAgents() {
   const rows = await db
     .select({
@@ -330,6 +406,7 @@ async function listRankedAgents() {
         rank: index + 1,
         agentId: row.agent.agentId,
         agentName: row.agent.agentName,
+        avatarUrl: (row.agent as any).avatarUrl ?? null,
         specialty: row.agent.specialty,
         points: row.agent.points,
         winCount: row.agent.winCount,
@@ -636,7 +713,20 @@ router.post("/create", PrivyAuthMiddleware, async (req, res) => {
       throw new HttpError(409, "A Bantah agent with this endpoint already exists");
     }
 
-    const provisionedWallet = await provisionBantahAgentWallet(agentId, requestedNetworkId);
+    let provisionedWallet;
+    try {
+      provisionedWallet = await provisionBantahAgentWallet(agentId, requestedNetworkId);
+    } catch (error: any) {
+      if (error instanceof BantahAgentWalletError) {
+        throw new HttpError(502, error.message, {
+          provider: "agentkit",
+          code: error.code,
+          chainId: requestedChainId,
+          networkId: requestedNetworkId,
+        });
+      }
+      throw error;
+    }
     const existingByWallet = await storage.getAgentByWalletAddress(provisionedWallet.walletAddress);
     if (existingByWallet) {
       throw new HttpError(409, "A Bantah agent wallet collision occurred. Please try again.");
@@ -669,6 +759,7 @@ router.post("/create", PrivyAuthMiddleware, async (req, res) => {
       agentId,
       ownerId,
       agentName: parsedBody.agentName.trim(),
+      avatarUrl: parsedBody.avatarUrl ? parsedBody.avatarUrl.trim() : null,
       agentType: "bantah_created",
       walletAddress: provisionedWallet.walletAddress,
       endpointUrl,
@@ -743,6 +834,7 @@ router.get("/", async (req, res) => {
       agentId: item.agentId,
       ownerId: item.ownerId,
       agentName: item.agentName,
+      avatarUrl: (item as any).avatarUrl ?? null,
       agentType: item.agentType,
       walletAddress: item.walletAddress,
       endpointUrl: item.endpointUrl,
@@ -910,6 +1002,16 @@ router.get("/:agentId/follow-state", async (req, res) => {
   }
 });
 
+router.get("/:agentId/offerings", async (req, res) => {
+  try {
+    const storedAgent = await storage.getAgentById(req.params.agentId);
+    const payload = buildAgentOfferings(storedAgent);
+    res.json(payload);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
 router.get("/:agentId/runtime-state", async (req, res) => {
   try {
     const storedAgent = await storage.getAgentById(req.params.agentId);
@@ -959,7 +1061,24 @@ router.get("/:agentId/runtime-state", async (req, res) => {
           : "Imported agents manage wallet execution outside Bantah.",
     };
 
-    if (storedAgent.agentType === "bantah_created" && chainId) {
+    if (
+      storedAgent.agentType === "bantah_created" &&
+      storedAgent.walletProvider &&
+      storedAgent.walletProvider !== "cdp_smart_wallet"
+    ) {
+      wallet = {
+        address: storedAgent.walletAddress,
+        provider: walletProvider,
+        networkId: walletNetworkId,
+        balance: null,
+        currency: null,
+        status: "unavailable",
+        message:
+          storedAgent.walletProvider === "local_demo_wallet"
+            ? "This agent is using a local demo wallet while AgentKit provisioning is unavailable."
+            : "This Bantah agent does not have a live AgentKit wallet provider yet.",
+      };
+    } else if (storedAgent.agentType === "bantah_created" && chainId) {
       const walletToken = resolveRuntimeWalletToken(chainId);
       if (walletToken) {
         try {

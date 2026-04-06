@@ -93,6 +93,7 @@ export const agents = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     agentName: varchar("agent_name").notNull(),
+    avatarUrl: varchar("avatar_url"),
     agentType: varchar("agent_type", { length: 32 }).$type<BantahAgentType>().notNull(),
     walletAddress: varchar("wallet_address").notNull().unique(),
     endpointUrl: varchar("endpoint_url", { length: 512 }).notNull().unique(),

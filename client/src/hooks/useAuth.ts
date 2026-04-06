@@ -1,7 +1,12 @@
 import { usePrivy } from '@privy-io/react-auth';
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from 'react';
-import { apiRequest, setAuthToken } from '@/lib/queryClient';
+import {
+  apiRequest,
+  clearAuthTokenProvider,
+  setAuthToken,
+  setAuthTokenProvider,
+} from '@/lib/queryClient';
 
 export function useAuth() {
   const { toast } = useToast();
@@ -17,10 +22,33 @@ export function useAuth() {
   const [resolvingAuthToken, setResolvingAuthToken] = useState(false);
 
   useEffect(() => {
+    if (!ready || !authenticated || !getAccessToken) {
+      clearAuthTokenProvider();
+      return;
+    }
+
+    const provider = async () => {
+      try {
+        return (await getAccessToken()) || null;
+      } catch (error) {
+        console.error('Failed to refresh Privy access token:', error);
+        return null;
+      }
+    };
+
+    setAuthTokenProvider(provider);
+
+    return () => {
+      clearAuthTokenProvider(provider);
+    };
+  }, [authenticated, ready, getAccessToken]);
+
+  useEffect(() => {
     if (!ready) return;
 
     if (!authenticated || !getAccessToken) {
       setAuthToken(null);
+      clearAuthTokenProvider();
       setStableAuthenticated(false);
       setResolvingAuthToken(false);
       return;
@@ -34,6 +62,7 @@ export function useAuth() {
         const token = await getAccessToken();
         if (!token) {
           setAuthToken(null);
+          clearAuthTokenProvider();
           setStableAuthenticated(false);
           return;
         }
@@ -54,6 +83,7 @@ export function useAuth() {
       } catch (err) {
         console.error('Failed to get Privy access token:', err);
         setAuthToken(null);
+        clearAuthTokenProvider();
         setStableAuthenticated(false);
       } finally {
         setResolvingAuthToken(false);
@@ -65,6 +95,7 @@ export function useAuth() {
     try {
       await privyLogout();
       setAuthToken(null);
+      clearAuthTokenProvider();
       setStableAuthenticated(false);
       // Force redirect to home page after logout
       window.location.replace('/');

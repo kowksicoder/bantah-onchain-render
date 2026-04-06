@@ -5,7 +5,7 @@ import { CheckCircle2, Import, Loader2, Sparkles } from "lucide-react";
 import { AgentIcon } from "@/components/AgentIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, setAuthToken } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,7 +112,7 @@ export function AgentImportDialog({
   initialSpecialty = "general",
   onImported,
 }: AgentImportDialogProps) {
-  const { isAuthenticated, authLoading, login } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, login, getAccessToken } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -138,6 +138,22 @@ export function AgentImportDialog({
     if (!open) return;
     resetForm();
   }, [open, initialName, initialSpecialty, mode]);
+
+  const ensureFreshAuthToken = async (): Promise<string | null> => {
+    if (!getAccessToken) return null;
+
+    try {
+      const token = await getAccessToken();
+      if (token) {
+        setAuthToken(token);
+        return token;
+      }
+    } catch (error) {
+      console.error("Failed to refresh auth token for agent import:", error);
+    }
+
+    return null;
+  };
 
   const skillCheckMutation = useMutation({
     mutationFn: async () => {
@@ -171,6 +187,8 @@ export function AgentImportDialog({
       if (!isAuthenticated || authLoading) {
         throw new Error("Sign in to import agents");
       }
+
+      await ensureFreshAuthToken();
 
       return apiRequest("POST", "/api/agents/import", {
         agentName: agentName.trim(),
