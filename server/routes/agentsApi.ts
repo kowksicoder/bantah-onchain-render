@@ -69,11 +69,14 @@ import {
 import { assertAllowedStakeToken } from "../onchainEscrowService";
 import { serializeBantahSkillError } from "../bantahAgentSkillExecutor";
 import { createAndPushAgentOwnerNotification } from "../agentNotificationService";
+import agentTradingController from "../modules/agent-trading/controllers/agentTradingController";
 
 const router = Router();
 const MAX_AGENT_IMPORTS_PER_DAY = 5;
 const ONCHAIN_CONFIG = getOnchainServerConfig();
 const pairingEngine = createPairingEngine(db);
+
+router.use("/", agentTradingController);
 
 type AuthenticatedRequest = Request & {
   user?: {

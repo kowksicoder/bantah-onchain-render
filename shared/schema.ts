@@ -36,6 +36,14 @@ import {
   type BantahElizaRuntimeEngine,
   type BantahElizaRuntimeStatus,
 } from "./elizaAgent";
+import {
+  type AgentOrderStatus,
+  type AgentPositionStatus,
+  type AgentRiskProfile,
+  type AgentStrategyType,
+  type AgentTradingVisibility,
+  type ProbabilityThresholdStrategyConfig,
+} from "./agentTrading";
 
 // Session storage table - Required for auth
 export const sessions = pgTable(
@@ -108,6 +116,22 @@ export const agents = pgTable(
       .$type<BantahAgentStatus>()
       .notNull()
       .default("active"),
+    canTrade: boolean("can_trade").notNull().default(true),
+    strategyType: varchar("strategy_type", { length: 48 })
+      .$type<AgentStrategyType>()
+      .notNull()
+      .default("probability_threshold"),
+    strategyConfig: jsonb("strategy_config").$type<ProbabilityThresholdStrategyConfig>(),
+    riskProfile: jsonb("risk_profile").$type<AgentRiskProfile>(),
+    visibility: varchar("visibility", { length: 24 })
+      .$type<AgentTradingVisibility>()
+      .notNull()
+      .default("public"),
+    maxPositionSize: decimal("max_position_size", { precision: 12, scale: 2 })
+      .notNull()
+      .default("25.00"),
+    dailyTradeLimit: integer("daily_trade_limit").notNull().default(5),
+    maxOpenPositions: integer("max_open_positions").notNull().default(3),
     skillActions: jsonb("skill_actions")
       .$type<BantahSkillAction[]>()
       .notNull()
@@ -139,6 +163,7 @@ export const agents = pgTable(
     statusIdx: index("idx_agents_status").on(table.status),
     specialtyIdx: index("idx_agents_specialty").on(table.specialty),
     pointsIdx: index("idx_agents_points").on(table.points),
+    canTradeIdx: index("idx_agents_can_trade").on(table.canTrade),
   }),
 );
 
@@ -158,6 +183,96 @@ export const agentFollows = pgTable(
     userIdx: index("idx_agent_follows_user_id").on(table.userId),
     agentIdx: index("idx_agent_follows_agent_id").on(table.agentId),
     uniqueFollow: unique("agent_follows_user_agent_unique").on(table.userId, table.agentId),
+  }),
+);
+
+export const agentOrders = pgTable(
+  "agent_orders",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.agentId, { onDelete: "cascade" }),
+    marketId: varchar("market_id", { length: 128 }).notNull(),
+    externalMarketId: varchar("external_market_id", { length: 128 }).notNull(),
+    marketQuestion: text("market_question"),
+    side: varchar("side", { length: 8 }).$type<"yes" | "no">().notNull(),
+    action: varchar("action", { length: 16 }).notNull().default("buy"),
+    intendedStakeUsd: decimal("intended_stake_usd", { precision: 12, scale: 2 }).notNull(),
+    intendedPrice: decimal("intended_price", { precision: 8, scale: 4 }).notNull(),
+    externalOrderId: varchar("external_order_id", { length: 255 }),
+    status: varchar("status", { length: 32 }).$type<AgentOrderStatus>().notNull().default("pending"),
+    failureReason: text("failure_reason"),
+    lastSyncedAt: timestamp("last_synced_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    agentIdx: index("idx_agent_orders_agent_id").on(table.agentId),
+    marketIdx: index("idx_agent_orders_market_id").on(table.marketId),
+    externalMarketIdx: index("idx_agent_orders_external_market_id").on(table.externalMarketId),
+    statusIdx: index("idx_agent_orders_status").on(table.status),
+    createdIdx: index("idx_agent_orders_created_at").on(table.createdAt),
+  }),
+);
+
+export const agentPositions = pgTable(
+  "agent_positions",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.agentId, { onDelete: "cascade" }),
+    marketId: varchar("market_id", { length: 128 }).notNull(),
+    externalMarketId: varchar("external_market_id", { length: 128 }).notNull(),
+    marketQuestion: text("market_question"),
+    side: varchar("side", { length: 8 }).$type<"yes" | "no">().notNull(),
+    totalShares: decimal("total_shares", { precision: 18, scale: 6 }).notNull().default("0"),
+    avgEntryPrice: decimal("avg_entry_price", { precision: 8, scale: 4 }).notNull().default("0"),
+    currentMarkPrice: decimal("current_mark_price", { precision: 8, scale: 4 }),
+    realizedPnl: decimal("realized_pnl", { precision: 14, scale: 4 }).notNull().default("0"),
+    unrealizedPnl: decimal("unrealized_pnl", { precision: 14, scale: 4 }).notNull().default("0"),
+    status: varchar("status", { length: 16 }).$type<AgentPositionStatus>().notNull().default("open"),
+    openedAt: timestamp("opened_at").defaultNow(),
+    closedAt: timestamp("closed_at"),
+    lastSyncedAt: timestamp("last_synced_at"),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    agentIdx: index("idx_agent_positions_agent_id").on(table.agentId),
+    marketIdx: index("idx_agent_positions_market_id").on(table.marketId),
+    externalMarketIdx: index("idx_agent_positions_external_market_id").on(table.externalMarketId),
+    statusIdx: index("idx_agent_positions_status").on(table.status),
+    updatedIdx: index("idx_agent_positions_updated_at").on(table.updatedAt),
+  }),
+);
+
+export const decisionLogs = pgTable(
+  "decision_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.agentId, { onDelete: "cascade" }),
+    marketId: varchar("market_id", { length: 128 }).notNull(),
+    externalMarketId: varchar("external_market_id", { length: 128 }).notNull(),
+    marketQuestion: text("market_question"),
+    strategyType: varchar("strategy_type", { length: 48 }).$type<AgentStrategyType>().notNull(),
+    action: varchar("action", { length: 16 }).notNull(),
+    confidence: decimal("confidence", { precision: 5, scale: 4 }).notNull().default("0"),
+    intendedPrice: decimal("intended_price", { precision: 8, scale: 4 }),
+    intendedStakeUsd: decimal("intended_stake_usd", { precision: 12, scale: 2 }),
+    reason: text("reason").notNull(),
+    riskAllowed: boolean("risk_allowed").notNull().default(false),
+    riskReasons: jsonb("risk_reasons").notNull().default(sql`'[]'::jsonb`),
+    linkedOrderId: uuid("linked_order_id").references(() => agentOrders.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    agentIdx: index("idx_decision_logs_agent_id").on(table.agentId),
+    marketIdx: index("idx_decision_logs_market_id").on(table.marketId),
+    externalMarketIdx: index("idx_decision_logs_external_market_id").on(table.externalMarketId),
+    createdIdx: index("idx_decision_logs_created_at").on(table.createdAt),
   }),
 );
 
@@ -1034,6 +1149,9 @@ export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
 export type AgentFollow = typeof agentFollows.$inferSelect;
+export type AgentOrderRecord = typeof agentOrders.$inferSelect;
+export type AgentPositionRecord = typeof agentPositions.$inferSelect;
+export type DecisionLogRecord = typeof decisionLogs.$inferSelect;
 export type InsertAgent = z.infer<typeof insertAgentSchema>;
 export type Event = typeof events.$inferSelect;
 export type InsertEvent = z.infer<typeof insertEventSchema>;

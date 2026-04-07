@@ -21,6 +21,11 @@ import {
 } from "lucide-react";
 
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { AgentDecisionResultPanel } from "@/components/agent-trading/AgentDecisionResultPanel";
+import { AgentOrdersTable } from "@/components/agent-trading/AgentOrdersTable";
+import { AgentPositionsTable } from "@/components/agent-trading/AgentPositionsTable";
+import { AgentTradingReadinessCard } from "@/components/agent-trading/AgentTradingReadinessCard";
+import { EligibleMarketsList } from "@/components/agent-trading/EligibleMarketsList";
 import { MobileNavigation } from "@/components/MobileNavigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -46,6 +51,14 @@ import type {
   AgentRuntimeStateResponse,
   AgentWalletSendResponse,
 } from "@shared/agentApi";
+import type {
+  AgentDecisionResponse,
+  AgentOrdersResponse,
+  AgentPerformanceResponse,
+  AgentPositionsResponse,
+  EligibleMarketsResponse,
+  TradingReadinessResponse,
+} from "@shared/agentTrading";
 
 const limeButtonClass =
   "border-0 bg-[#ccff00] text-slate-950 hover:bg-[#b8eb00] dark:bg-[#ccff00] dark:text-slate-950 dark:hover:bg-[#b8eb00]";
@@ -74,6 +87,8 @@ export default function AgentDetail() {
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sendToken, setSendToken] = useState<"USDC" | "USDT" | "ETH" | "BNB">("USDC");
+  const [latestDecision, setLatestDecision] = useState<AgentDecisionResponse | null>(null);
+  const [decidingMarketId, setDecidingMarketId] = useState<string | null>(null);
 
   const { data: agent, isLoading: loadingAgent } = useQuery<AgentRegistryProfile>({
     queryKey: [`/api/agents/${agentId}`],
@@ -117,6 +132,49 @@ export default function AgentDetail() {
     queryFn: () => apiRequest("GET", `/api/agents/${agentId}/offerings`),
     retry: false,
     staleTime: 1000 * 60 * 5,
+  });
+
+  const { data: tradingReadiness, isLoading: loadingTradingReadiness } =
+    useQuery<TradingReadinessResponse>({
+      queryKey: [`/api/agents/${agentId}/trading-readiness`],
+      enabled: Boolean(agentId),
+      queryFn: () => apiRequest("GET", `/api/agents/${agentId}/trading-readiness`),
+      retry: false,
+      refetchInterval: 30000,
+    });
+
+  const { data: eligibleMarkets, isLoading: loadingEligibleMarkets } =
+    useQuery<EligibleMarketsResponse>({
+      queryKey: [`/api/agents/${agentId}/eligible-markets`],
+      enabled: Boolean(agentId),
+      queryFn: () => apiRequest("GET", `/api/agents/${agentId}/eligible-markets?limit=8`),
+      retry: false,
+      refetchInterval: 60000,
+    });
+
+  const { data: agentOrders, isLoading: loadingAgentOrders } = useQuery<AgentOrdersResponse>({
+    queryKey: [`/api/agents/${agentId}/orders`],
+    enabled: Boolean(agentId),
+    queryFn: () => apiRequest("GET", `/api/agents/${agentId}/orders`),
+    retry: false,
+    refetchInterval: 30000,
+  });
+
+  const { data: agentPositions, isLoading: loadingAgentPositions } =
+    useQuery<AgentPositionsResponse>({
+      queryKey: [`/api/agents/${agentId}/positions`],
+      enabled: Boolean(agentId),
+      queryFn: () => apiRequest("GET", `/api/agents/${agentId}/positions`),
+      retry: false,
+      refetchInterval: 30000,
+    });
+
+  const { data: agentPerformance } = useQuery<AgentPerformanceResponse>({
+    queryKey: [`/api/agents/${agentId}/performance`],
+    enabled: Boolean(agentId),
+    queryFn: () => apiRequest("GET", `/api/agents/${agentId}/performance`),
+    retry: false,
+    refetchInterval: 30000,
   });
 
   const followMutation = useMutation({
@@ -223,6 +281,61 @@ export default function AgentDetail() {
     onError: (error: Error) => {
       toast({
         title: "Send failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const decideMutation = useMutation({
+    mutationFn: async (marketId: string) => {
+      if (!agentId) throw new Error("Agent not found");
+      setDecidingMarketId(marketId);
+      return apiRequest("POST", `/api/agents/${agentId}/decide`, { marketId }) as Promise<AgentDecisionResponse>;
+    },
+    onSuccess: (result) => {
+      setLatestDecision(result);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Decision failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      setDecidingMarketId(null);
+    },
+  });
+
+  const executeDecisionMutation = useMutation({
+    mutationFn: async () => {
+      if (!agentId || !latestDecision || latestDecision.decision.action === "skip") {
+        throw new Error("No executable decision is selected.");
+      }
+
+      return apiRequest("POST", `/api/agents/${agentId}/execute`, {
+        marketId: latestDecision.decision.marketId,
+        action: latestDecision.decision.action,
+      }) as Promise<AgentDecisionResponse>;
+    },
+    onSuccess: (result) => {
+      setLatestDecision(result);
+      queryClient.invalidateQueries({ queryKey: [`/api/agents/${agentId}/orders`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/agents/${agentId}/positions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/agents/${agentId}/performance`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/agents/${agentId}/trading-readiness`] });
+      toast({
+        title: "Execution attempted",
+        description:
+          result.order?.status === "failed"
+            ? result.order.failureReason || "The order could not be routed."
+            : "The order was passed into the execution pipeline.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Execution failed",
         description: error.message,
         variant: "destructive",
       });
@@ -851,6 +964,53 @@ export default function AgentDetail() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold">Agent trading</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Phase 1 trading readiness, decisions, and local tracking for fetched Polymarket markets.
+              </p>
+            </div>
+            <Badge className="border-0 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              Phase 1
+            </Badge>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+            <AgentTradingReadinessCard
+              readiness={tradingReadiness}
+              performance={agentPerformance}
+              loading={loadingTradingReadiness}
+            />
+            <AgentDecisionResultPanel
+              result={latestDecision}
+              canExecute={Boolean(isOwner)}
+              onExecute={() => executeDecisionMutation.mutate()}
+              executing={executeDecisionMutation.isPending}
+              buttonClassName={limeButtonClass}
+            />
+          </div>
+
+          <EligibleMarketsList
+            markets={eligibleMarkets?.items}
+            loading={loadingEligibleMarkets}
+            canDecide={Boolean(isOwner)}
+            onDecide={(marketId) => decideMutation.mutate(marketId)}
+            decidingMarketId={decidingMarketId}
+            buttonClassName={limeButtonClass}
+            subtleButtonClassName={softButtonClass}
+          />
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <AgentOrdersTable orders={agentOrders?.items ?? []} loading={loadingAgentOrders} />
+            <AgentPositionsTable
+              positions={agentPositions?.items ?? []}
+              loading={loadingAgentPositions}
+            />
           </div>
         </section>
       </div>
