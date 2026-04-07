@@ -20,6 +20,10 @@ import { getOnchainIndexerHealthSnapshot } from "./onchainIndexer";
 import { DB_IDENTITY, db, pool } from "./db";
 import { insertEventSchema, insertChallengeSchema, insertNotificationSchema } from "@shared/schema";
 import {
+  BANTCREDIT_REFERRED_REWARD,
+  BANTCREDIT_REFERRER_REWARD,
+} from "@shared/bantCredit";
+import {
   normalizeEvmAddress,
   normalizeOnchainTokenSymbol,
   parseWalletAddresses,
@@ -670,6 +674,41 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     } catch (error) {
       console.error("Failed to push realtime notification:", error);
     }
+  }
+
+  async function awardChallengeCreationBantCreditAndNotify(params: {
+    userId: string;
+    challenge: { id: number; title?: string | null };
+    marketSize: number;
+  }) {
+    const reward = await storage.awardChallengeCreationBantCredit(params.userId, {
+      challengeId: params.challenge.id,
+      marketSize: params.marketSize,
+      challengeTitle: params.challenge.title ?? null,
+    });
+
+    if (!reward.awarded || reward.pointsAwarded <= 0) {
+      return reward;
+    }
+
+    const notification = await storage.createNotification({
+      userId: params.userId,
+      type: "challenge_creation_reward",
+      title: "BantCredit earned",
+      message: `You earned ${reward.pointsAwarded} BantCredit for creating "${params.challenge.title || "your challenge"}".`,
+      data: {
+        challengeId: params.challenge.id,
+        challengeTitle: params.challenge.title ?? null,
+        pointsAwarded: reward.pointsAwarded,
+        marketSize: reward.marketSize,
+        activityCount: reward.activityCount,
+        activityMultiplier: reward.activityMultiplier,
+        baseRate: reward.baseRate,
+      },
+    });
+
+    await triggerNotificationPush(params.userId, notification);
+    return reward;
   }
 
   function getNotificationChallengeId(notification: any, data?: Record<string, any> | null): number | null {
@@ -1727,24 +1766,28 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         .where(eq(users.id, userId));
 
       // Process rewards (simplified version of the logic in server/auth.ts)
-      const bonusPoints = 1500;
-      const bonusCoins = 500;
+      const bonusPoints = BANTCREDIT_REFERRED_REWARD;
+      const bonusCoins = 0;
       await storage.updateUserPoints(userId, bonusPoints);
-      await storage.updateUserCoins(userId, bonusCoins);
+      if (bonusCoins > 0) {
+        await storage.updateUserCoins(userId, bonusCoins);
+      }
 
       await storage.createNotification({
         userId: userId,
         type: 'referral_success',
         title: '🎁 Referral Bonus Applied!',
-        message: `You earned ${bonusPoints} BantCredit and ${bonusCoins} coins from the referral!`,
-        data: { points: bonusPoints, coins: bonusCoins },
+        message: `You earned ${bonusPoints} BantCredit from the referral!`,
+        data: { points: bonusPoints },
       });
 
       // Reward the referrer too
-      const referrerBonus = 100;
-      const referrerCoinBonus = 250;
+      const referrerBonus = BANTCREDIT_REFERRER_REWARD;
+      const referrerCoinBonus = 0;
       await storage.updateUserPoints(referrer.id, referrerBonus);
-      await storage.updateUserCoins(referrer.id, referrerCoinBonus);
+      if (referrerCoinBonus > 0) {
+        await storage.updateUserCoins(referrer.id, referrerCoinBonus);
+      }
 
       // Create referral record in database for tracking
       await storage.createReferral({
@@ -1775,8 +1818,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         userId: referrer.id,
         type: 'referral_success',
         title: '🎉 Referral Success!',
-        message: `${user.username || 'A new user'} joined using your code! You earned ${referrerBonus} BantCredit and ${referrerCoinBonus} coins.`,
-        data: { points: referrerBonus, coins: referrerCoinBonus },
+        message: `${user.username || 'A new user'} joined using your code! You earned ${referrerBonus} BantCredit.`,
+        data: { points: referrerBonus },
       });
 
       res.json({ success: true });
@@ -4523,6 +4566,11 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       // Use standard P2P creation (sets adminCreated to false by default)
       console.log('About to call storage.createChallenge with:', challengeData);
       const challenge = await storage.createChallenge(challengeData);
+      const bantCreditReward = await awardChallengeCreationBantCreditAndNotify({
+        userId,
+        challenge,
+        marketSize: parsedAmount,
+      });
       const challenger = await storage.getUser(userId);
       const challenged = challenge.challenged ? await storage.getUser(challenge.challenged) : null;
       const challengeMeta = {
@@ -4734,6 +4782,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       res.setHeader("x-onchain-execution-mode", ONCHAIN_CONFIG.executionMode);
       res.json({
         ...challenge,
+        bantCreditReward,
         onchainExecution: {
           mode: ONCHAIN_CONFIG.executionMode,
           contractEnabled: ONCHAIN_CONFIG.contractEnabled,
@@ -4851,6 +4900,11 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         status: finalStatus as any,
         escrowTxHash: verifiedEscrowTx.txHash,
       } as any);
+      const bantCreditReward = await awardChallengeCreationBantCreditAndNotify({
+        userId,
+        challenge: updatedChallenge,
+        marketSize: parseFloat(String(updatedChallenge.amount || challenge.amount || 0)) || 0,
+      });
 
       await storage.recordChallengeEscrowHold(
         challengeId,
@@ -5038,6 +5092,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       res.setHeader("x-onchain-execution-mode", ONCHAIN_CONFIG.executionMode);
       res.json({
         ...updatedChallenge,
+        bantCreditReward,
         onchainExecution: {
           mode: ONCHAIN_CONFIG.executionMode,
           contractEnabled: ONCHAIN_CONFIG.contractEnabled,

@@ -816,8 +816,8 @@ export default function Challenges() {
     mutationFn: async (challengeData: Record<string, any>) => {
       return await apiRequest("POST", "/api/challenges", challengeData);
     },
-    onSuccess: () => {
-      handleChallengeCreateSuccess();
+    onSuccess: (result: any) => {
+      handleChallengeCreateSuccess(result);
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -839,12 +839,20 @@ export default function Challenges() {
     },
   });
 
-  const handleChallengeCreateSuccess = () => {
+  const handleChallengeCreateSuccess = (result?: any) => {
+    const bantCreditReward = result?.bantCreditReward;
     toast({
       title: "Challenge Created",
-      description: "Your challenge has been sent!",
+      description:
+        bantCreditReward?.pointsAwarded > 0
+          ? `Your challenge is live. +${bantCreditReward.pointsAwarded} BantCredit earned.`
+          : "Your challenge has been sent!",
     });
     queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
     setIsCreateDialogOpen(false);
     setPreSelectedUser(null);
     form.reset();
@@ -1322,7 +1330,7 @@ export default function Challenges() {
           description: `${amount.toLocaleString()} ${selectedToken} secured in escrow.`,
         });
 
-        handleChallengeCreateSuccess();
+        handleChallengeCreateSuccess(finalizedChallenge);
         return finalizedChallenge;
       }
 

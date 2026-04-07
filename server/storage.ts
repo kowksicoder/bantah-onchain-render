@@ -68,7 +68,7 @@ import {
 } from "@shared/schema";
 import type { AgentListQuery } from "@shared/agentApi";
 import { db, pool } from "./db";
-import { eq, ne, desc, and, or, sql, count, sum, inArray, asc, isNull } from "drizzle-orm";
+import { eq, ne, desc, and, or, sql, count, sum, inArray, asc, isNull, not } from "drizzle-orm";
 import { nanoid } from 'nanoid';
 import session from "express-session";
 import createMemoryStore from "memorystore";
@@ -76,6 +76,12 @@ import { challengeNotifications } from './challengeNotifications';
 import { normalizeEvmAddress, parseWalletAddresses } from "@shared/onchainConfig";
 import { getOnchainServerConfig } from "./onchainConfig";
 import { CHALLENGE_PLATFORM_FEE_RATE } from "@shared/feeConfig";
+import {
+  BANTCREDIT_ACTIVITY_EXCLUDED_TRANSACTION_TYPES,
+  calculateChallengeCreationBantCredit,
+  BANTCREDIT_SIGNUP_REWARD,
+  type BantCreditChallengeRewardResult,
+} from "@shared/bantCredit";
 
 const ONCHAIN_CONFIG = getOnchainServerConfig();
 export const AGENT_WIN_BANTCREDIT_REWARD = 100;
@@ -262,6 +268,14 @@ export interface IStorage {
 
   // Update user points
   updateUserPoints(userId: string, pointsAmount: number): Promise<void>;
+  awardChallengeCreationBantCredit(
+    userId: string,
+    rewardInput: {
+      challengeId: number;
+      marketSize: number;
+      challengeTitle?: string | null;
+    },
+  ): Promise<BantCreditChallengeRewardResult>;
 
   // Get all users
   getAllUsers(): Promise<User[]>;
@@ -4228,8 +4242,8 @@ export class DatabaseStorage implements IStorage {
         userId,
         type: 'welcome',
         title: '🎉 Welcome to Bantah!',
-        message: 'You received 1000 BantCredit for joining! Start betting and challenging friends.',
-        data: { points: 1000, type: 'welcome_bonus' }
+        message: `You received ${BANTCREDIT_SIGNUP_REWARD} BantCredit for joining! Start betting and challenging friends.`,
+        data: { points: BANTCREDIT_SIGNUP_REWARD, type: 'welcome_bonus' }
       });
 
       // Check if user was referred
@@ -4242,9 +4256,9 @@ export class DatabaseStorage implements IStorage {
             userId: user.referredBy,
             type: 'referral_reward',
             title: '💰 Referral Bonus!',
-            message: `You earned 500 BantCredit for referring @${user.firstName || user.username || 'a new user'}!`,
+            message: `You earned ${BANTCREDIT_REFERRER_REWARD} BantCredit for referring @${user.firstName || user.username || 'a new user'}!`,
             data: { 
-              points: 500, 
+              points: BANTCREDIT_REFERRER_REWARD, 
               referredUserId: userId,
               referredUserName: user.firstName || user.username,
               type: 'referral_bonus'
@@ -4255,7 +4269,7 @@ export class DatabaseStorage implements IStorage {
           await this.db
             .update(users)
             .set({ 
-              points: sql`${users.points} + 500`,
+              points: sql`${users.points} + ${BANTCREDIT_REFERRER_REWARD}`,
               updatedAt: new Date()
             })
             .where(eq(users.id, user.referredBy));
@@ -4264,7 +4278,7 @@ export class DatabaseStorage implements IStorage {
           await this.createTransaction({
             userId: user.referredBy,
             type: 'referral_bonus',
-            amount: '500',
+            amount: String(BANTCREDIT_REFERRER_REWARD),
             description: `Referral bonus for ${user.firstName || user.username || 'new user'}`,
             status: 'completed'
           });
@@ -4690,6 +4704,95 @@ export class DatabaseStorage implements IStorage {
         updatedAt: new Date() 
       })
       .where(eq(users.id, userId));
+  }
+
+  async awardChallengeCreationBantCredit(
+    userId: string,
+    rewardInput: {
+      challengeId: number;
+      marketSize: number;
+      challengeTitle?: string | null;
+    },
+  ): Promise<BantCreditChallengeRewardResult> {
+    const [actionCountRow, existingRewardRow] = await Promise.all([
+      this.db
+        .select({ count: count() })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.status, "completed"),
+            not(
+              inArray(
+                transactions.type,
+                [...BANTCREDIT_ACTIVITY_EXCLUDED_TRANSACTION_TYPES],
+              ),
+            ),
+          ),
+        )
+        .then((rows) => rows[0]),
+      this.db
+        .select({ amount: transactions.amount })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.type, "challenge_creation_reward"),
+            eq(transactions.relatedId, rewardInput.challengeId),
+            eq(transactions.status, "completed"),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]),
+    ]);
+
+    const activityCount = Number(actionCountRow?.count ?? 0);
+    const calculatedReward = calculateChallengeCreationBantCredit({
+      marketSize: rewardInput.marketSize,
+      activityCount,
+    });
+
+    if (existingRewardRow) {
+      return {
+        ...calculatedReward,
+        awarded: false,
+        pointsAwarded: Math.max(
+          0,
+          Math.round(Number.parseFloat(String(existingRewardRow.amount || 0)) || 0),
+        ),
+      };
+    }
+
+    if (calculatedReward.pointsAwarded <= 0) {
+      return calculatedReward;
+    }
+
+    const titleSuffix = rewardInput.challengeTitle
+      ? ` for "${rewardInput.challengeTitle}"`
+      : "";
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({
+          points: sql`COALESCE(${users.points}, 0) + ${calculatedReward.pointsAwarded}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+
+      await tx.insert(transactions).values({
+        userId,
+        type: "challenge_creation_reward",
+        amount: String(calculatedReward.pointsAwarded),
+        description:
+          `BantCredit reward${titleSuffix} ` +
+          `(${calculatedReward.marketSize} x ${calculatedReward.activityMultiplier}x)`,
+        relatedId: rewardInput.challengeId,
+        status: "completed",
+      });
+    });
+
+    return calculatedReward;
   }
 
   async createReferral(referralData: {

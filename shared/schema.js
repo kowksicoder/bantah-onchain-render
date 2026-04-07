@@ -19,7 +19,7 @@ export const users = pgTable("users", {
     username: varchar("username").unique(),
     level: integer("level").default(1),
     xp: integer("xp").default(0),
-    points: integer("points").default(1000),
+    points: integer("points").default(20),
     balance: decimal("balance", { precision: 10, scale: 2 }).default("0.00"),
     referralCode: varchar("referral_code").unique(),
     referredBy: varchar("referred_by"),

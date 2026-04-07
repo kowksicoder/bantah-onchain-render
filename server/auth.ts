@@ -6,6 +6,11 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser, registerSchema, loginSchema } from "@shared/schema";
+import {
+  BANTCREDIT_REFERRED_REWARD,
+  BANTCREDIT_REFERRER_REWARD,
+  BANTCREDIT_SIGNUP_REWARD,
+} from "@shared/bantCredit";
 import { fromZodError } from "zod-validation-error";
 import { nanoid } from "nanoid";
 
@@ -102,15 +107,15 @@ export function setupAuth(app: Express) {
 
       // Handle referral logic
       let referrerUser = null;
-      let bonusPoints = 1000; // Default signup bonus
+      let bonusPoints = BANTCREDIT_SIGNUP_REWARD; // Default signup bonus
       let bonusCoins = 0;
 
       if (validatedData.referralCode) {
         // Find the referrer by their referral code
         referrerUser = await storage.getUserByReferralCode(validatedData.referralCode);
         if (referrerUser) {
-          bonusPoints = 1500; // Bonus for being referred
-          bonusCoins = 500; // Bonus coins for being referred
+          bonusPoints = BANTCREDIT_REFERRED_REWARD;
+          bonusCoins = 0;
         }
       }
 
@@ -136,8 +141,8 @@ export function setupAuth(app: Express) {
 
       // Create welcome notification and transaction for new user signup bonus
       const welcomeMessage = referrerUser 
-        ? `You received ${bonusPoints} BantCredit and ${bonusCoins} coins for joining through a referral! Start betting and challenging friends to earn more.`
-        : 'You received 1000 BantCredit for joining! Start betting and challenging friends to earn more.';
+        ? `You received ${bonusPoints} BantCredit for joining through a referral! Start betting and challenging friends to earn more.`
+        : `You received ${BANTCREDIT_SIGNUP_REWARD} BantCredit for joining! Start betting and challenging friends to earn more.`;
 
       await storage.createNotification({
         userId: user.id,
@@ -169,11 +174,13 @@ export function setupAuth(app: Express) {
       // Process referral rewards if applicable
       if (referrerUser) {
         // Give referrer bonus
-        const referrerBonus = 100; // BantCredit for referring someone
-        const referrerCoinBonus = 250; // Coins for referring someone
+        const referrerBonus = BANTCREDIT_REFERRER_REWARD;
+        const referrerCoinBonus = 0;
 
         await storage.updateUserPoints(referrerUser.id, referrerBonus);
-        await storage.updateUserCoins(referrerUser.id, referrerCoinBonus);
+        if (referrerCoinBonus > 0) {
+          await storage.updateUserCoins(referrerUser.id, referrerCoinBonus);
+        }
 
         // Create referral record
         await storage.createReferral({
@@ -188,8 +195,8 @@ export function setupAuth(app: Express) {
           userId: referrerUser.id,
           type: 'referral_success',
           title: '🎉 Referral Success!',
-          message: `${user.firstName} joined using your referral code! You earned ${referrerBonus} BantCredit and ${referrerCoinBonus} coins.`,
-          data: { points: referrerBonus, coins: referrerCoinBonus, referredUser: user.firstName },
+          message: `${user.firstName} joined using your referral code! You earned ${referrerBonus} BantCredit.`,
+          data: { points: referrerBonus, referredUser: user.firstName },
         });
 
         // Create transaction records for referrer
@@ -201,13 +208,15 @@ export function setupAuth(app: Express) {
           status: 'completed',
         });
 
-        await storage.createTransaction({
-          userId: referrerUser.id,
-          type: 'referral_reward',
-          amount: referrerCoinBonus.toString(),
-          description: `Referral coin bonus for ${user.firstName} joining`,
-          status: 'completed',
-        });
+        if (referrerCoinBonus > 0) {
+          await storage.createTransaction({
+            userId: referrerUser.id,
+            type: 'referral_reward',
+            amount: referrerCoinBonus.toString(),
+            description: `Referral coin bonus for ${user.firstName} joining`,
+            status: 'completed',
+          });
+        }
       }
 
       // Create initial daily login record for new user

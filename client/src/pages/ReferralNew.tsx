@@ -16,6 +16,10 @@ import {
   Check
 } from "lucide-react";
 import { useLocation } from "wouter";
+import {
+  BANTCREDIT_REFERRED_REWARD,
+  BANTCREDIT_REFERRER_REWARD,
+} from "@shared/bantCredit";
 
 export default function ReferralNew() {
   const { user } = useAuth();
@@ -47,7 +51,7 @@ export default function ReferralNew() {
   // Calculate actual referral stats
   const referralArray = Array.isArray(referrals) ? referrals : [];
   const totalReferrals = referralArray.length;
-  const totalEarned = totalReferrals * 500; // 500 BantCredit per referral based on code
+  const totalEarned = totalReferrals * BANTCREDIT_REFERRER_REWARD;
   const nextMilestone = Math.ceil((totalReferrals + 1) / 5) * 5; // Every 5 referrals milestone
   const progressToNext = totalReferrals % 5;
   const progress = (progressToNext / 5) * 100;
@@ -56,25 +60,25 @@ export default function ReferralNew() {
   const rewards = [
     {
       id: 1,
-      title: "500 BantCredit Bonus",
+      title: `${BANTCREDIT_REFERRER_REWARD} BantCredit Bonus`,
       subtitle: `${totalReferrals} friends joined`,
       icon: "🎯",
       color: "bg-purple-100 dark:bg-purple-900",
       textColor: "text-purple-600 dark:text-purple-400",
       progress: 100,
       canRedeem: false,
-      description: "Earn 500 BantCredit for each friend who joins"
+      description: `Earn ${BANTCREDIT_REFERRER_REWARD} BantCredit for each friend who joins`
     },
     {
       id: 2,
-      title: "Bonus Coins Reward",
-      subtitle: `Next milestone: ${5 - (totalReferrals % 5)} more friends`, 
+      title: `${BANTCREDIT_REFERRED_REWARD} BantCredit Welcome`,
+      subtitle: "Applied to each new friend",
       icon: "🪙",
       color: "bg-amber-100 dark:bg-amber-900",
       textColor: "text-amber-600 dark:text-amber-400",
-      progress: progress,
-      canRedeem: totalReferrals >= 5 && (totalReferrals % 5) === 0,
-      description: "Get bonus coins every 5 successful referrals"
+      progress: 100,
+      canRedeem: false,
+      description: `Each referred user gets ${BANTCREDIT_REFERRED_REWARD} BantCredit after joining through your link`
     },
     {
       id: 3,
@@ -176,7 +180,7 @@ export default function ReferralNew() {
               </div>
               <div className="flex-1">
                 <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mb-1">
-                  500 BantCredit Per Friend
+                  {BANTCREDIT_REFERRER_REWARD} BantCredit Per Friend
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
                   Earn rewards when friends join using your link
@@ -275,7 +279,7 @@ export default function ReferralNew() {
                     Both Get Rewards
                   </div>
                   <div className="text-sm text-slate-500 dark:text-slate-400">
-                    You get 500 BantCredit, they get welcome bonus
+                    You get {BANTCREDIT_REFERRER_REWARD} BantCredit, they get {BANTCREDIT_REFERRED_REWARD} BantCredit
                   </div>
                 </div>
               </div>
@@ -372,7 +376,7 @@ export default function ReferralNew() {
                       </div>
                       <div className="text-right">
                         <div className="text-sm font-medium text-green-600 mb-1">
-                          +500 BantCredit
+                          +{BANTCREDIT_REFERRER_REWARD} BantCredit
                         </div>
                         <div className={`text-xs px-2 py-1 rounded-full ${
                           referral.status === 'active' 

@@ -10,6 +10,7 @@ import crypto from "crypto";
 import { storage } from "./storage";
 import { db } from "./db";
 import { users, challenges, events, eventParticipants, transactions } from "@shared/schema";
+import { BANTCREDIT_SIGNUP_REWARD } from "@shared/bantCredit";
 import { eq, and } from "drizzle-orm";
 
 // Types for Telegram Mini-App
@@ -193,7 +194,7 @@ export function registerTelegramMiniAppRoutes(app: Express) {
           balance: 0,
           level: 1,
           xp: 0,
-          points: 1000,
+          points: BANTCREDIT_SIGNUP_REWARD,
         });
 
         userRecord = await db
