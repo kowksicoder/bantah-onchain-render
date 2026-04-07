@@ -81,6 +81,12 @@ function withEnvChainOverride(chain: OnchainChainConfig): OnchainChainConfig {
     process.env[`ONCHAIN_${prefix}_ESCROW_ADDRESS`] ||
       process.env[`ONCHAIN_${chain.chainId}_ESCROW_ADDRESS`],
   );
+  const escrowSupportsChallengeLock = parseBool(
+    process.env[`ONCHAIN_${prefix}_ESCROW_SUPPORTS_CHALLENGE_LOCK`] ||
+      process.env[`ONCHAIN_${chain.chainId}_ESCROW_SUPPORTS_CHALLENGE_LOCK`] ||
+      process.env.ONCHAIN_ESCROW_SUPPORTS_CHALLENGE_LOCK,
+    false,
+  );
   const escrowStakeMethodErc20 =
     process.env[`ONCHAIN_${prefix}_ESCROW_STAKE_METHOD_ERC20`] ||
     process.env[`ONCHAIN_${chain.chainId}_ESCROW_STAKE_METHOD_ERC20`] ||
@@ -117,6 +123,7 @@ function withEnvChainOverride(chain: OnchainChainConfig): OnchainChainConfig {
     chainId: effectiveChainId,
     rpcUrl,
     escrowContractAddress,
+    escrowSupportsChallengeLock,
     escrowStakeMethodErc20: escrowStakeMethodErc20 ? escrowStakeMethodErc20.trim() : null,
     escrowSettleMethod: escrowSettleMethod ? escrowSettleMethod.trim() : null,
     tokens,

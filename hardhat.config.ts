@@ -103,14 +103,33 @@ export default defineConfig({
     },
   },
   chainDescriptors: {
+    42161: {
+      name: "Arbitrum One",
+      chainType: "generic",
+      blockExplorers: {
+        etherscan: {
+          name: "Arbiscan",
+          url: "https://arbiscan.io",
+        },
+      },
+    },
+    8453: {
+      name: "Base",
+      chainType: "generic",
+      blockExplorers: {
+        etherscan: {
+          name: "Basescan",
+          url: "https://basescan.org",
+        },
+      },
+    },
     56: {
       name: "BNB Smart Chain",
       chainType: "generic",
       blockExplorers: {
-        blockscout: {
-          name: "BSC Blockscout",
+        etherscan: {
+          name: "BscScan",
           url: "https://bscscan.com",
-          apiUrl: "https://api.bscscan.com/api",
         },
       },
     },
@@ -152,48 +171,6 @@ export default defineConfig({
     etherscan: {
       enabled: true,
       apiKey: process.env.ETHERSCAN_API_KEY || "",
-      customChains: [
-        {
-          network: "arbitrum",
-          chainId: 42161,
-          urls: {
-            apiURL: "https://api.arbiscan.io/api",
-            browserURL: "https://arbiscan.io",
-          },
-        },
-        {
-          network: "base",
-          chainId: 8453,
-          urls: {
-            apiURL: "https://api.basescan.org/api",
-            browserURL: "https://basescan.org",
-          },
-        },
-        {
-          network: "celo",
-          chainId: 42220,
-          urls: {
-            apiURL: "https://api.celoscan.io/api",
-            browserURL: "https://celoscan.io",
-          },
-        },
-        {
-          network: "bsc",
-          chainId: 56,
-          urls: {
-            apiURL: "https://api.bscscan.com/api",
-            browserURL: "https://bscscan.com",
-          },
-        },
-        {
-          network: "unichain",
-          chainId: 130,
-          urls: {
-            apiURL: "https://api.uniscan.xyz/api",
-            browserURL: "https://uniscan.xyz",
-          },
-        },
-      ],
     },
     blockscout: {
       enabled: true,

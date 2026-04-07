@@ -371,6 +371,7 @@ export function ChallengeCard({
           preferredWalletAddress,
           onchainConfig,
           chainId: challengeChainId,
+          challengeId: Number(challenge.id),
           tokenSymbol: challengeToken,
           amount: String(challenge.amount || "0"),
           amountAtomic: String(challenge.stakeAtomic ?? (challenge as any).stake_atomic ?? ""),

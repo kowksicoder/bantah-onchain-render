@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useWallets } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,11 @@ import { pusher } from "@/lib/pusher";
 import { TypingIndicator } from "@/components/TypingIndicator";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { getUserDisplayName } from "@/hooks/usePublicUserBasic";
+import {
+  executeOnchainEscrowStakeTx,
+  type OnchainRuntimeConfig,
+  type OnchainTokenSymbol,
+} from "@/lib/onchainEscrow";
 
 interface Challenge {
   id: number;
@@ -26,6 +32,10 @@ interface Challenge {
   status: 'pending' | 'active' | 'completed' | 'disputed' | 'cancelled';
   evidence: any;
   result: 'challenger_won' | 'challenged_won' | 'draw' | null;
+  settlementRail?: string | null;
+  chainId?: number | null;
+  tokenSymbol?: string | null;
+  stakeAtomic?: string | null;
   dueDate: string;
   createdAt: string;
   completedAt: string | null;
@@ -64,6 +74,7 @@ interface ChallengeChatProps {
 
 export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
   const { user } = useAuth();
+  const { wallets } = useWallets();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState("");
@@ -120,7 +131,58 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
 
   const acceptChallengeMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", `/api/challenges/${challenge.id}/accept`);
+      const payload: Record<string, string> = {};
+      const settlementRail = String(challenge.settlementRail || "").toLowerCase();
+      const isOnchainChallenge = settlementRail === "onchain";
+
+      if (isOnchainChallenge) {
+        const onchainConfig = (await apiRequest(
+          "GET",
+          "/api/onchain/config",
+        )) as OnchainRuntimeConfig;
+
+        if (!onchainConfig?.contractEnabled) {
+          throw new Error("Onchain escrow is not available right now.");
+        }
+
+        const challengeChainId = Number(
+          challenge.chainId || onchainConfig.defaultChainId,
+        );
+        const challengeToken = String(
+          challenge.tokenSymbol || onchainConfig.defaultToken,
+        ).toUpperCase() as OnchainTokenSymbol;
+
+        const preferredWalletAddress = (
+          [
+            (user as any)?.walletAddress,
+            (user as any)?.primaryWalletAddress,
+            (user as any)?.wallet?.address,
+            Array.isArray((user as any)?.walletAddresses)
+              ? (user as any)?.walletAddresses?.[0]
+              : null,
+          ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
+        ) as string | null;
+
+        const escrowTx = await executeOnchainEscrowStakeTx({
+          wallets: wallets as any,
+          preferredWalletAddress,
+          onchainConfig,
+          chainId: challengeChainId,
+          challengeId: Number(challenge.id),
+          tokenSymbol: challengeToken,
+          amount: String(challenge.amount || "0"),
+          amountAtomic: String(challenge.stakeAtomic || ""),
+        });
+
+        payload.escrowTxHash = escrowTx.escrowTxHash;
+        payload.walletAddress = escrowTx.walletAddress;
+      }
+
+      return await apiRequest(
+        "POST",
+        `/api/challenges/${challenge.id}/accept`,
+        Object.keys(payload).length > 0 ? payload : undefined,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });

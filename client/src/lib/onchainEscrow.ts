@@ -16,6 +16,7 @@ export type OnchainChainConfig = {
   nativeSymbol: string;
   rpcUrl: string;
   escrowContractAddress?: string | null;
+  escrowSupportsChallengeLock?: boolean;
   escrowStakeMethodErc20?: string | null;
   escrowSettleMethod?: string | null;
   tokens: Record<OnchainTokenSymbol, OnchainTokenConfig>;
@@ -50,6 +51,12 @@ const erc20Abi = parseAbi([
 ]);
 const escrowNativeAbi = parseAbi([
   "function lockStakeNative() payable returns (bool)",
+]);
+const escrowChallengeNativeAbi = parseAbi([
+  "function lockStakeNativeForChallenge(uint256 challengeId) payable returns (bool)",
+]);
+const escrowChallengeTokenAbi = parseAbi([
+  "function lockStakeTokenForChallenge(uint256 challengeId, address token, uint256 amount) returns (bool)",
 ]);
 
 const BASE_ATTRIBUTION_CHAIN_IDS = new Set<number>([8453, 84532]);
@@ -289,6 +296,7 @@ export async function executeOnchainEscrowStakeTx(params: {
   preferredWalletAddress?: string | null;
   onchainConfig: OnchainRuntimeConfig;
   chainId: number;
+  challengeId?: number | null;
   tokenSymbol: OnchainTokenSymbol;
   amount: string | number;
   amountAtomic?: string | null;
@@ -332,11 +340,21 @@ export async function executeOnchainEscrowStakeTx(params: {
   }
 
   if (token.isNative) {
-    const nativeStakeData = encodeFunctionData({
-      abi: escrowNativeAbi,
-      functionName: "lockStakeNative",
-      args: [],
-    });
+    const hasChallengeId =
+      chainConfig.escrowSupportsChallengeLock === true &&
+      Number.isInteger(params.challengeId) &&
+      Number(params.challengeId) > 0;
+    const nativeStakeData = hasChallengeId
+      ? encodeFunctionData({
+          abi: escrowChallengeNativeAbi,
+          functionName: "lockStakeNativeForChallenge",
+          args: [BigInt(Number(params.challengeId))],
+        })
+      : encodeFunctionData({
+          abi: escrowNativeAbi,
+          functionName: "lockStakeNative",
+          args: [],
+        });
     const escrowTxHash = await sendTransactionAndWait({
       provider,
       from: sender,
@@ -366,13 +384,21 @@ export async function executeOnchainEscrowStakeTx(params: {
     chainId: chainConfig.chainId,
   });
 
-  const erc20MethodSignature =
-    chainConfig.escrowStakeMethodErc20?.trim() || "lockStakeToken(address,uint256)";
-  const escrowData = buildErc20EscrowCalldata(
-    erc20MethodSignature,
-    tokenAddress,
-    amountAtomic,
-  );
+  const hasChallengeId =
+    chainConfig.escrowSupportsChallengeLock === true &&
+    Number.isInteger(params.challengeId) &&
+    Number(params.challengeId) > 0;
+  const escrowData = hasChallengeId
+    ? encodeFunctionData({
+        abi: escrowChallengeTokenAbi,
+        functionName: "lockStakeTokenForChallenge",
+        args: [BigInt(Number(params.challengeId)), tokenAddress, amountAtomic],
+      })
+    : buildErc20EscrowCalldata(
+        chainConfig.escrowStakeMethodErc20?.trim() || "lockStakeToken(address,uint256)",
+        tokenAddress,
+        amountAtomic,
+      );
   const escrowTxHash = await sendTransactionAndWait({
     provider,
     from: sender,

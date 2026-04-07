@@ -814,19 +814,10 @@ export default function Challenges() {
 
   const createChallengeMutation = useMutation({
     mutationFn: async (challengeData: Record<string, any>) => {
-      await apiRequest("POST", "/api/challenges", challengeData);
+      return await apiRequest("POST", "/api/challenges", challengeData);
     },
     onSuccess: () => {
-      toast({
-        title: "Challenge Created",
-        description: "Your challenge has been sent!",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
-      setIsCreateDialogOpen(false);
-      setPreSelectedUser(null);
-      form.reset();
-      setCoverImageFile(null);
-      setCoverPreview(null);
+      handleChallengeCreateSuccess();
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -847,6 +838,19 @@ export default function Challenges() {
       });
     },
   });
+
+  const handleChallengeCreateSuccess = () => {
+    toast({
+      title: "Challenge Created",
+      description: "Your challenge has been sent!",
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
+    setIsCreateDialogOpen(false);
+    setPreSelectedUser(null);
+    form.reset();
+    setCoverImageFile(null);
+    setCoverPreview(null);
+  };
 
   const createAgentMutation = useMutation({
     mutationFn: async () => {
@@ -1271,7 +1275,18 @@ export default function Challenges() {
         payload.coverImageUrl = finalCoverUrl;
       }
 
-      if (onchainConfig?.contractEnabled) {
+      const supportsChallengeAwareEscrow =
+        onchainConfig?.contractEnabled &&
+        selectedChainConfig?.escrowSupportsChallengeLock === true;
+
+      if (supportsChallengeAwareEscrow) {
+        const draftResult = await apiRequest("POST", "/api/challenges/draft", payload);
+        const draftChallenge = draftResult?.challenge || draftResult;
+        const draftChallengeId = Number(draftChallenge?.id);
+        if (!Number.isFinite(draftChallengeId)) {
+          throw new Error("Unable to reserve this challenge onchain right now.");
+        }
+
         const preferredWalletAddress = (
           [
             (user as any)?.walletAddress,
@@ -1283,22 +1298,32 @@ export default function Challenges() {
           ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
         ) as string | null;
 
-          const escrowTx = await executeOnchainEscrowStakeTx({
-            wallets: wallets as any,
-            preferredWalletAddress,
-            onchainConfig,
-            chainId: selectedChainId,
-            tokenSymbol: selectedToken,
-            amount: normalizedAmount,
-          });
+        const escrowTx = await executeOnchainEscrowStakeTx({
+          wallets: wallets as any,
+          preferredWalletAddress,
+          onchainConfig,
+          chainId: selectedChainId,
+          challengeId: draftChallengeId,
+          tokenSymbol: selectedToken,
+          amount: normalizedAmount,
+        });
 
-        payload.escrowTxHash = escrowTx.escrowTxHash;
-        payload.walletAddress = escrowTx.walletAddress;
+        const finalizedChallenge = await apiRequest(
+          "POST",
+          `/api/challenges/${draftChallengeId}/onchain/finalize-create`,
+          {
+            escrowTxHash: escrowTx.escrowTxHash,
+            walletAddress: escrowTx.walletAddress,
+          },
+        );
 
         toast({
           title: "Escrow locked",
           description: `${amount.toLocaleString()} ${selectedToken} secured in escrow.`,
         });
+
+        handleChallengeCreateSuccess();
+        return finalizedChallenge;
       }
 
       createChallengeMutation.mutate(payload);
@@ -1437,6 +1462,7 @@ export default function Challenges() {
           chainId: Number(
             challenge?.chainId || challenge?.chain_id || onchainConfig?.defaultChainId,
           ),
+          challengeId,
           tokenSymbol: tokenSymbol as OnchainTokenSymbol,
           amount: String(stakeValue),
         });

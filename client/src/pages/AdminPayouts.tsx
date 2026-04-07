@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { formatDistanceToNow } from 'date-fns';
 import AdminLayout from "@/components/AdminLayout";
+import { CHALLENGE_PLATFORM_FEE_PERCENT, CHALLENGE_PLATFORM_FEE_RATE } from "@shared/feeConfig";
 import { 
   DollarSign, 
   TrendingUp, 
@@ -285,7 +286,7 @@ export default function AdminPayouts() {
   const totalEventPool = events.reduce((sum: number, e: Event) => sum + parseFloat(e.eventPool || '0'), 0);
   const totalChallengeStaked = challenges.reduce((sum: number, c: Challenge) => sum + (parseFloat(c.amount) * 2), 0);
   const totalCreatorFees = events.reduce((sum: number, e: Event) => sum + parseFloat(e.creatorFee || '0'), 0);
-  const totalPlatformFees = completedChallenges.reduce((sum: number, c: Challenge) => sum + (parseFloat(c.amount) * 2 * 0.05), 0);
+  const totalPlatformFees = completedChallenges.reduce((sum: number, c: Challenge) => sum + (parseFloat(c.amount) * CHALLENGE_PLATFORM_FEE_RATE), 0);
 
   const isLoading = eventsLoading || challengesLoading;
 
@@ -350,7 +351,7 @@ export default function AdminPayouts() {
                 <div>
                   <p className="text-slate-400 text-sm">Platform Fees</p>
                   <p className="text-2xl font-bold text-white">₦{totalPlatformFees.toLocaleString()}</p>
-                  <p className="text-xs text-purple-400">5% of challenge pools</p>
+                  <p className="text-xs text-purple-400">{CHALLENGE_PLATFORM_FEE_PERCENT}% of the losing stake</p>
                 </div>
                 <Target className="w-8 h-8 text-purple-400" />
               </div>
@@ -565,7 +566,7 @@ export default function AdminPayouts() {
                             <div className="text-xs text-slate-500">Each participant</div>
                           </td>
                           <td className="p-3 text-purple-400">
-                            ₦{(parseFloat(challenge.amount) * 2 * 0.05).toLocaleString()}
+                            ₦{(parseFloat(challenge.amount) * CHALLENGE_PLATFORM_FEE_RATE).toLocaleString()}
                           </td>
                           <td className="p-3">
                             {challenge.result ? (

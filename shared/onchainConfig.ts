@@ -27,6 +27,7 @@ export interface OnchainChainConfig {
   rpcUrl: string;
   blockExplorerUrl: string;
   escrowContractAddress?: string | null;
+  escrowSupportsChallengeLock?: boolean;
   // ERC20 staking function signature, e.g. lockStakeToken(address,uint256)
   escrowStakeMethodErc20?: string | null;
   // Settlement function signature, e.g. settleChallenge(uint256,uint8)

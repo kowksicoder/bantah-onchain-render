@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { adminApiRequest } from '@/lib/adminApi';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CHALLENGE_PLATFORM_FEE_PERCENT } from "@shared/feeConfig";
 import { 
   Settings, 
   Shield, 
@@ -257,7 +258,7 @@ export default function AdminSettings() {
       registrationEnabled: true,
       minBetAmount: 100,
       maxBetAmount: 100000,
-      platformFeePercentage: 5,
+      platformFeePercentage: CHALLENGE_PLATFORM_FEE_PERCENT,
       creatorFeePercentage: 3,
       withdrawalEnabled: true,
       depositEnabled: true,
@@ -388,7 +389,7 @@ export default function AdminSettings() {
                   value={settings.platformFeePercentage || 0}
                   onChange={(e) => handleSettingChange('platformFeePercentage', parseFloat(e.target.value))}
                   className="bg-slate-800 border-slate-700 mt-1"
-                  step="0.1"
+                  step="0.001"
                 />
               </div>
               <div>

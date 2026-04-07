@@ -11,6 +11,7 @@ import { formatDistanceToNow } from 'date-fns';
 import AdminLayout from "@/components/AdminLayout";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { CHALLENGE_PLATFORM_FEE_PERCENT, CHALLENGE_PLATFORM_FEE_RATE } from "@shared/feeConfig";
 import { 
   DollarSign, 
   TrendingUp, 
@@ -139,8 +140,9 @@ export default function AdminChallengePayouts() {
     const resultText = result === 'challenger_won' ? 'Challenger Wins' : 
                       result === 'challenged_won' ? 'Challenged Wins' : 'Draw';
 
-    const totalAmount = parseFloat(challenge.amount) * 2;
-    const platformFee = totalAmount * 0.05;
+    const stakePerSide = parseFloat(challenge.amount);
+    const totalAmount = stakePerSide * 2;
+    const platformFee = stakePerSide * CHALLENGE_PLATFORM_FEE_RATE;
     const winnerPayout = totalAmount - platformFee;
 
     const confirmMessage = result === 'draw' 
@@ -321,7 +323,7 @@ export default function AdminChallengePayouts() {
   const totalStaked = challenges.reduce((sum: number, c: Challenge) => 
     sum + (parseFloat(c.amount) * 2), 0); // Each challenge has 2 participants
   const totalPlatformFees = completedChallenges.reduce((sum: number, c: Challenge) => 
-    sum + (parseFloat(c.amount) * 2 * 0.05), 0); // 5% platform fee
+    sum + (parseFloat(c.amount) * CHALLENGE_PLATFORM_FEE_RATE), 0);
 
   if (isLoading) {
     return (
@@ -745,7 +747,7 @@ export default function AdminChallengePayouts() {
             const estimatedEscrow = stakeAmount * 2;
             const hasRealData = selectedEscrowData !== null && selectedEscrowData !== undefined;
             const totalEscrow = hasRealData ? selectedEscrowData.totalEscrow : estimatedEscrow;
-            const platformFee = totalEscrow * 0.05;
+            const platformFee = stakeAmount * CHALLENGE_PLATFORM_FEE_RATE;
             const winnerPayout = totalEscrow - platformFee;
             const escrowStatus = selectedEscrowData?.status || (challenge.status === 'completed' ? 'released' : 'holding');
             const hasBonusActive = challenge.bonusEndsAt && new Date(challenge.bonusEndsAt) > new Date();
@@ -853,7 +855,7 @@ export default function AdminChallengePayouts() {
                       )}
                     </div>
                     <div className="bg-slate-800 p-3 rounded-lg text-center">
-                      <div className="text-slate-400 text-xs">Platform Fee (5%)</div>
+                      <div className="text-slate-400 text-xs">Platform Fee ({CHALLENGE_PLATFORM_FEE_PERCENT}% loser)</div>
                       <div className="text-yellow-400 font-bold text-lg">₦{platformFee.toLocaleString()}</div>
                     </div>
                     <div className="bg-slate-800 p-3 rounded-lg text-center">

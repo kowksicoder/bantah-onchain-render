@@ -68,16 +68,26 @@ import {
 } from "@shared/schema";
 import type { AgentListQuery } from "@shared/agentApi";
 import { db, pool } from "./db";
-import { eq, desc, and, or, sql, count, sum, inArray, asc, isNull } from "drizzle-orm";
+import { eq, ne, desc, and, or, sql, count, sum, inArray, asc, isNull } from "drizzle-orm";
 import { nanoid } from 'nanoid';
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import { challengeNotifications } from './challengeNotifications';
 import { normalizeEvmAddress, parseWalletAddresses } from "@shared/onchainConfig";
 import { getOnchainServerConfig } from "./onchainConfig";
+import { CHALLENGE_PLATFORM_FEE_RATE } from "@shared/feeConfig";
 
 const ONCHAIN_CONFIG = getOnchainServerConfig();
 export const AGENT_WIN_BANTCREDIT_REWARD = 100;
+
+function clampCurrencyAmount(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, value);
+}
+
+function calculateLoserSideChallengeFee(losingStakeAmount: number): number {
+  return clampCurrencyAmount(losingStakeAmount) * CHALLENGE_PLATFORM_FEE_RATE;
+}
 
 type StoredAgentWithOwner = Agent & {
   owner: Pick<User, "id" | "username" | "firstName" | "lastName" | "profileImageUrl">;
@@ -187,7 +197,9 @@ export interface IStorage {
   getChallenges(userId: string, limit?: number): Promise<(Challenge & { challengerUser: User, challengedUser: User })[]>;
   getChallengeById(id: number): Promise<Challenge | undefined>;
   createChallenge(challenge: InsertChallenge): Promise<Challenge>;
+  createChallengeDraft(challenge: InsertChallenge): Promise<Challenge>;
   updateChallenge(id: number, updates: Partial<Challenge>): Promise<Challenge>;
+  recordChallengeEscrowHold(challengeId: number, amount: number): Promise<void>;
   getChallengeMessages(challengeId: number): Promise<(ChallengeMessage & { user: User })[]>;
   createChallengeMessage(challengeId: number, userId: string, message: string): Promise<ChallengeMessage>;
 
@@ -608,19 +620,14 @@ export class DatabaseStorage implements IStorage {
 
     if (totalReserved <= 0) return { released: false, reason: 'no_reserved_funds' };
 
-    // Platform fee (use platformSettings table if available; fallback to 5%)
-    let platformFeePct = 0.05;
-    try {
-      const settings: any = await pool.query(`SELECT value FROM platform_settings WHERE key='platform_fee_pct' LIMIT 1`);
-      if (settings.rows && settings.rows[0]) {
-        const val = parseFloat(settings.rows[0].value);
-        if (!isNaN(val)) platformFeePct = val;
-      }
-    } catch (err) {
-      // ignore and use default
-    }
-
-    const platformFee = totalReserved * platformFeePct;
+    const reservationsRes: any = await pool.query(
+      `SELECT participant_id, reserved_amount FROM escrow_reservations WHERE challenge_id = $1 AND status='reserved'`,
+      [String(challengeId)],
+    );
+    const reservations = reservationsRes.rows || [];
+    const loserReservation = reservations.find((row: any) => row.participant_id !== winnerId);
+    const losingStakeAmount = parseFloat(String(loserReservation?.reserved_amount || totalReserved / 2 || 0));
+    const platformFee = calculateLoserSideChallengeFee(losingStakeAmount);
     const net = totalReserved - platformFee;
 
     // Perform ledger transfers in a DB transaction
@@ -632,12 +639,12 @@ export class DatabaseStorage implements IStorage {
       await client.query(`UPDATE users SET balance = balance + $1 WHERE id = $2`, [net, winnerId]);
       await client.query(`INSERT INTO transactions (user_id, type, amount, description, related_id, status, created_at) VALUES ($1,$2,$3,$4,$5,'completed',now())`, [winnerId, 'challenge_payout', net.toString(), `Payout for challenge ${challengeId}`, challengeId]);
 
-      // Credit platform fee to admin account (simplified: first admin)
+      // Credit platform fee to admin account (current offchain treasury ledger)
       const adminRes: any = await client.query(`SELECT id FROM users WHERE is_admin = true LIMIT 1`);
       if (adminRes.rows && adminRes.rows[0]) {
         const adminId = adminRes.rows[0].id;
         await client.query(`UPDATE users SET admin_wallet_balance = admin_wallet_balance + $1 WHERE id = $2`, [platformFee, adminId]);
-        await client.query(`INSERT INTO admin_wallet_transactions (user_id, amount, reason, created_at) VALUES ($1,$2,$3,now())`, [adminId, platformFee.toString(), `Platform fee for challenge ${challengeId}`]);
+        await client.query(`INSERT INTO admin_wallet_transactions (user_id, amount, reason, created_at) VALUES ($1,$2,$3,now())`, [adminId, platformFee.toString(), `Loser-side platform fee for challenge ${challengeId}`]);
       }
 
       // Mark reservations as released
@@ -703,8 +710,9 @@ export class DatabaseStorage implements IStorage {
         await client.query(`UPDATE challenges SET status='cancelled' WHERE id = $1`, [challengeId]);
       } else if (resolution.type === 'winner' && resolution.winnerParticipantId) {
         const winnerId = resolution.winnerParticipantId;
-        // apply platform fee default 5%
-        const platformFee = totalReserved * 0.05;
+        const loserReservation = rows.find((r: any) => r.participant_id !== winnerId);
+        const losingStakeAmount = parseFloat(String(loserReservation?.reserved_amount || totalReserved / 2 || 0));
+        const platformFee = calculateLoserSideChallengeFee(losingStakeAmount);
         const net = totalReserved - platformFee;
         await client.query(`UPDATE users SET balance = balance + $1 WHERE id = $2`, [net, winnerId]);
         await client.query(`INSERT INTO transactions (user_id, type, amount, description, related_id, status, created_at) VALUES ($1,$2,$3,$4,$5,'completed',now())`, [winnerId, 'challenge_payout_admin', net.toString(), `Admin resolved payout for challenge ${challengeId}`, challengeId]);
@@ -1841,7 +1849,7 @@ export class DatabaseStorage implements IStorage {
       .from(challenges)
       .leftJoin(sql`users challenger_user`, eq(challenges.challenger, sql`challenger_user.id`))
       .leftJoin(sql`users challenged_user`, eq(challenges.challenged, sql`challenged_user.id`))
-      .where(or(...visibilityFilters))
+      .where(and(or(...visibilityFilters), ne(challenges.status, "draft")))
       .orderBy(desc(challenges.createdAt))
       .limit(limit) as any;
 
@@ -1945,6 +1953,7 @@ export class DatabaseStorage implements IStorage {
       .from(challenges)
       .leftJoin(sql`users challenger_user`, eq(challenges.challenger, sql`challenger_user.id`))
       .leftJoin(sql`users challenged_user`, eq(challenges.challenged, sql`challenged_user.id`))
+      .where(ne(challenges.status, "draft"))
       .orderBy(desc(challenges.createdAt))
       .limit(limit) as any;
 
@@ -2138,6 +2147,25 @@ export class DatabaseStorage implements IStorage {
     return newChallenge;
   }
 
+  async createChallengeDraft(challenge: InsertChallenge): Promise<Challenge> {
+    console.log("createChallengeDraft called with:", challenge);
+    const challengeAmount = parseFloat(challenge.amount);
+    if (!Number.isFinite(challengeAmount) || challengeAmount <= 0) {
+      throw new Error("Invalid challenge amount");
+    }
+
+    const [draftChallenge] = await this.db
+      .insert(challenges)
+      .values({
+        ...challenge,
+        status: "draft",
+        adminCreated: false,
+      })
+      .returning();
+
+    return draftChallenge;
+  }
+
   // Create a challenge initiated by admin (no challenger required)
   async createAdminChallenge(challengeData: Partial<InsertChallenge>): Promise<Challenge> {
     try {
@@ -2305,6 +2333,23 @@ export class DatabaseStorage implements IStorage {
       .where(eq(challenges.id, id))
       .returning();
     return challenge;
+  }
+
+  async recordChallengeEscrowHold(challengeId: number, amount: number): Promise<void> {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const existing = await this.db
+      .select({ id: escrow.id })
+      .from(escrow)
+      .where(eq(escrow.challengeId, challengeId))
+      .limit(1);
+
+    if (existing.length > 0) return;
+
+    await this.db.insert(escrow).values({
+      challengeId,
+      amount: amount.toString(),
+      status: "holding",
+    });
   }
 
   async acceptChallenge(challengeId: number, userId: string): Promise<Challenge> {
@@ -2487,6 +2532,7 @@ export class DatabaseStorage implements IStorage {
       .from(challenges)
       .leftJoin(sql`users challenger_user`, eq(challenges.challenger, sql`challenger_user.id`))
       .leftJoin(sql`users challenged_user`, eq(challenges.challenged, sql`challenged_user.id`))
+      .where(ne(challenges.status, "draft"))
       .orderBy(desc(challenges.createdAt))
       .limit(limit) as any;
   }
@@ -2510,9 +2556,9 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Challenge not ready for payout');
     }
 
-    const totalAmount = parseFloat(String(challenge.amount || '0')) * 2; // Both participants contributed
-    const platformFeeRate = 0.05; // 5% platform fee
-    const platformFee = totalAmount * platformFeeRate;
+    const stakePerSide = parseFloat(String(challenge.amount || '0'));
+    const totalAmount = stakePerSide * 2; // Both participants contributed
+    const platformFee = calculateLoserSideChallengeFee(stakePerSide);
     let winnerPayout = totalAmount - platformFee;
 
     // Apply bonus multiplier if active and winner matches bonus side
@@ -2637,7 +2683,7 @@ export class DatabaseStorage implements IStorage {
       const loser = winnerId === challenge.challenger ? challenge.challenged : challenge.challenger;
 
       // Calculate base payout and bonus amount for notification
-      const basePayout = (totalAmount - platformFee);
+      const basePayout = totalAmount - platformFee;
       const bonusApplied = isBonusActive && challenge.bonusSide && bonusMultiplier > 1.0;
       let bonusAmount = 0;
       let bonusMessage = '';
@@ -2681,8 +2727,8 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
-    // Award admin commission (5% of total amount)
-    const adminCommission = totalAmount * 0.05;
+    // Award admin commission from the losing side only
+    const adminCommission = platformFee;
     const admin = await this.db.query.users.findFirst({
       where: (users, { eq }) => eq(users.role, 'admin'),
     });
@@ -2705,7 +2751,7 @@ export class DatabaseStorage implements IStorage {
         adminId: admin.id,
         type: 'commission_earned',
         amount: adminCommission.toString(),
-        description: `Commission from challenge: ${challenge.title}`,
+        description: `Loser-side commission from challenge: ${challenge.title}`,
         reference: `challenge_${challengeId}_commission`,
         status: 'completed',
         balanceBefore: currentBalance.toString(),
@@ -3902,10 +3948,11 @@ export class DatabaseStorage implements IStorage {
       })
       .from(transactions);
 
-    // Calculate platform revenue (5% of challenge stakes + 3% event creator fees)
+    // Calculate platform revenue (0.018% of the losing side on matched challenges + 3% event creator fees)
     const challengeVolume = parseFloat(challengeStats?.totalChallengeStaked || '0');
     const creatorFees = parseFloat(eventStats?.totalCreatorFees || '0');
-    const platformFees = (challengeVolume * 0.05) + creatorFees;
+    const estimatedChallengePlatformFees = (challengeVolume / 2) * CHALLENGE_PLATFORM_FEE_RATE;
+    const platformFees = estimatedChallengePlatformFees + creatorFees;
     const totalVolume = parseFloat(eventStats?.totalEventPool || '0') + challengeVolume;
 
     return {
@@ -3925,7 +3972,7 @@ export class DatabaseStorage implements IStorage {
       totalChallengeStaked: challengeVolume,
       totalRevenue: platformFees,
       totalCreatorFees: creatorFees,
-      totalPlatformFees: challengeVolume * 0.05,
+      totalPlatformFees: estimatedChallengePlatformFees,
       totalDeposits: parseFloat(transactionStats?.totalDeposits || '0'),
       totalWithdrawals: parseFloat(transactionStats?.totalWithdrawals || '0'),
       pendingPayouts: transactionStats?.pendingPayouts || 0,
@@ -4689,7 +4736,7 @@ export class DatabaseStorage implements IStorage {
       const result = await this.db
         .select()
         .from(challenges)
-        .where(eq(challenges.challenger, userId))
+        .where(and(eq(challenges.challenger, userId), ne(challenges.status, "draft")))
         .orderBy(desc(challenges.createdAt));
 
       return result;

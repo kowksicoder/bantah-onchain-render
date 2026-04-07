@@ -246,6 +246,7 @@ export function JoinChallengeModal({
           chainId: Number(
             challenge?.chainId || challenge?.chain_id || onchainConfig.defaultChainId,
           ),
+          challengeId: Number(challenge?.id),
           tokenSymbol: tokenSymbol as OnchainTokenSymbol,
           amount: String(stakeAmount),
         });

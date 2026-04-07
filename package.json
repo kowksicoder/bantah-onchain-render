@@ -19,8 +19,20 @@
     "onchain:deploy:celo": "hardhat run scripts/deploy-escrow.ts --network celoSepolia",
     "onchain:deploy:celo-alfajores": "hardhat run scripts/deploy-escrow.ts --network celoAlfajores",
     "onchain:deploy:unichain": "hardhat run scripts/deploy-escrow.ts --network unichainSepolia",
+    "onchain:deploy:v2:base": "hardhat run scripts/deploy-escrow-v2.ts --network baseSepolia",
+    "onchain:deploy:v2:bsc": "hardhat run scripts/deploy-escrow-v2.ts --network bscTestnet",
+    "onchain:deploy:v2:arb": "hardhat run scripts/deploy-escrow-v2.ts --network arbitrumSepolia",
+    "onchain:deploy:v2:celo": "hardhat run scripts/deploy-escrow-v2.ts --network celoSepolia",
+    "onchain:deploy:v2:celo-alfajores": "hardhat run scripts/deploy-escrow-v2.ts --network celoAlfajores",
+    "onchain:deploy:v2:unichain": "hardhat run scripts/deploy-escrow-v2.ts --network unichainSepolia",
+    "onchain:deploy:v2:base-mainnet": "hardhat run scripts/deploy-escrow-v2.ts --network base",
+    "onchain:deploy:v2:bsc-mainnet": "hardhat run scripts/deploy-escrow-v2.ts --network bsc",
+    "onchain:deploy:v2:arb-mainnet": "hardhat run scripts/deploy-escrow-v2.ts --network arbitrum",
+    "onchain:deploy:v2:unichain-mainnet": "hardhat run scripts/deploy-escrow-v2.ts --network unichain",
     "onchain:deploy:token": "hardhat run scripts/deploy-test-token.ts",
-    "onchain:deploy:all": "powershell -ExecutionPolicy Bypass -File scripts/deploy-escrow-all.ps1"
+    "onchain:deploy:all": "powershell -ExecutionPolicy Bypass -File scripts/deploy-escrow-all.ps1",
+    "onchain:deploy:v2:all": "powershell -ExecutionPolicy Bypass -File scripts/deploy-escrow-v2-all.ps1",
+    "onchain:deploy:v2:all-mainnets": "powershell -ExecutionPolicy Bypass -File scripts/deploy-escrow-v2-mainnets.ps1"
   },
   "engines": {
     "node": "20.x"

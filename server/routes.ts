@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import fs from "fs";
 import path from "path";
 import Pusher from "pusher";
+import { ethers } from "ethers";
 import { AGENT_WIN_BANTCREDIT_REWARD, storage } from "./storage";
 import { setupAuth, isAdmin, hashPassword } from "./auth";
 import { PrivyAuthMiddleware } from "./privyAuth";
@@ -23,6 +24,7 @@ import {
   normalizeOnchainTokenSymbol,
   parseWalletAddresses,
   toAtomicUnits,
+  type OnchainChainConfig,
   type OnchainTokenSymbol,
 } from "@shared/onchainConfig";
 import { and, eq } from "drizzle-orm";
@@ -275,6 +277,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       chainId: chain.chainId,
       name: chain.name,
       escrowContractAddress: chain.escrowContractAddress || null,
+      escrowSupportsChallengeLock: chain.escrowSupportsChallengeLock === true,
       escrowStakeMethodErc20: chain.escrowStakeMethodErc20 || null,
       escrowSettleMethod: chain.escrowSettleMethod || null,
       tokenSupport: Object.values(chain.tokens)
@@ -357,6 +360,178 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       .map((part) => normalizeTxHash(part))
       .filter((part): part is string => !!part);
     return parts[0] || null;
+  }
+
+  function extractTxHashes(value: unknown): string[] {
+    if (typeof value !== "string") return [];
+    return value
+      .split(/[,\s]+/)
+      .map((part) => normalizeTxHash(part))
+      .filter((part): part is string => !!part);
+  }
+
+  function getStaticRpcProvider(chain: OnchainChainConfig) {
+    return new ethers.JsonRpcProvider(chain.rpcUrl, chain.chainId, {
+      staticNetwork: true,
+    });
+  }
+
+  async function resolveChallengeEscrowRuntime(params: {
+    challengeLike: any;
+    chain: OnchainChainConfig;
+  }): Promise<{
+    escrowContractAddress: string | null;
+    challengerWallet: string | null;
+    challengedWallet: string | null;
+    txHashes: string[];
+  }> {
+    const txHashes = extractTxHashes(
+      params.challengeLike?.escrowTxHash || params.challengeLike?.escrow_tx_hash,
+    );
+    const provider = getStaticRpcProvider(params.chain);
+    const txs = await Promise.all(
+      txHashes.slice(0, 2).map((hash) =>
+        provider.getTransaction(hash).catch(() => null),
+      ),
+    );
+
+    const escrowContractAddress =
+      normalizeEvmAddress(txs[0]?.to) ||
+      normalizeEvmAddress(params.chain.escrowContractAddress);
+    const challengerWallet = normalizeEvmAddress(txs[0]?.from);
+    const challengedWallet =
+      normalizeEvmAddress(txs[1]?.from) ||
+      normalizeEvmAddress(
+        params.challengeLike?.challengedWalletAddress ||
+          params.challengeLike?.challenged_wallet_address,
+      );
+
+    return {
+      escrowContractAddress,
+      challengerWallet,
+      challengedWallet,
+      txHashes,
+    };
+  }
+
+  const ESCROW_V2_PAYOUT_ABI = [
+    "function settleChallengeNativePayout(uint256 challengeId, address winner, address loser) returns (bool)",
+    "function settleChallengeTokenPayout(uint256 challengeId, address token, address winner, address loser) returns (bool)",
+    "function refundChallengeNative(uint256 challengeId, address participantA, address participantB) returns (bool)",
+    "function refundChallengeToken(uint256 challengeId, address token, address participantA, address participantB) returns (bool)",
+    "function treasury() view returns (address)",
+  ];
+
+  async function executeManagedChallengeSettlement(params: {
+    challengeLike: any;
+    chain: OnchainChainConfig;
+    tokenSymbol: OnchainTokenSymbol;
+    result: "challenger_won" | "challenged_won" | "draw";
+    escrowContractAddress: string;
+    challengerWallet: string;
+    challengedWallet: string;
+  }): Promise<{
+    payoutTxHash: string;
+    method:
+      | "settleChallengeNativePayout"
+      | "settleChallengeTokenPayout"
+      | "refundChallengeNative"
+      | "refundChallengeToken";
+    treasuryAddress: string;
+  }> {
+    const adminKey = String(process.env.ADMIN_PRIVATE_KEY || "").trim();
+    if (!adminKey) {
+      throw new Error("ADMIN_PRIVATE_KEY is required for managed onchain settlement");
+    }
+
+    const provider = getStaticRpcProvider(params.chain);
+    const signer = new ethers.Wallet(adminKey, provider);
+    const contract = new ethers.Contract(
+      params.escrowContractAddress,
+      ESCROW_V2_PAYOUT_ABI,
+      signer,
+    );
+
+    const tokenConfig = params.chain.tokens[params.tokenSymbol];
+    if (!tokenConfig) {
+      throw new Error(`Unsupported token ${params.tokenSymbol} on ${params.chain.name}`);
+    }
+
+    let tx: any;
+    let method:
+      | "settleChallengeNativePayout"
+      | "settleChallengeTokenPayout"
+      | "refundChallengeNative"
+      | "refundChallengeToken";
+
+    if (params.result === "draw") {
+      if (tokenConfig.isNative) {
+        method = "refundChallengeNative";
+        tx = await contract.refundChallengeNative(
+          BigInt(params.challengeLike.id),
+          params.challengerWallet,
+          params.challengedWallet,
+        );
+      } else {
+        const tokenAddress = normalizeEvmAddress(
+          params.challengeLike.tokenAddress || tokenConfig.address,
+        );
+        if (!tokenAddress) {
+          throw new Error(`Token address missing for ${params.tokenSymbol} on ${params.chain.name}`);
+        }
+        method = "refundChallengeToken";
+        tx = await contract.refundChallengeToken(
+          BigInt(params.challengeLike.id),
+          tokenAddress,
+          params.challengerWallet,
+          params.challengedWallet,
+        );
+      }
+    } else {
+      const winnerWallet =
+        params.result === "challenger_won"
+          ? params.challengerWallet
+          : params.challengedWallet;
+      const loserWallet =
+        params.result === "challenger_won"
+          ? params.challengedWallet
+          : params.challengerWallet;
+
+      if (tokenConfig.isNative) {
+        method = "settleChallengeNativePayout";
+        tx = await contract.settleChallengeNativePayout(
+          BigInt(params.challengeLike.id),
+          winnerWallet,
+          loserWallet,
+        );
+      } else {
+        const tokenAddress = normalizeEvmAddress(
+          params.challengeLike.tokenAddress || tokenConfig.address,
+        );
+        if (!tokenAddress) {
+          throw new Error(`Token address missing for ${params.tokenSymbol} on ${params.chain.name}`);
+        }
+        method = "settleChallengeTokenPayout";
+        tx = await contract.settleChallengeTokenPayout(
+          BigInt(params.challengeLike.id),
+          tokenAddress,
+          winnerWallet,
+          loserWallet,
+        );
+      }
+    }
+
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      throw new Error("Managed onchain settlement payout transaction failed");
+    }
+
+    const treasuryAddress = normalizeEvmAddress(await contract.treasury());
+    return {
+      payoutTxHash: String(tx.hash),
+      method,
+      treasuryAddress: treasuryAddress || "",
+    };
   }
 
   function getChallengeScanUrl(challengeLike: any, preferredTxHash?: string | null): string | null {
@@ -632,6 +807,54 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
     const challengerUser = challenge.challenger ? await storage.getUser(challenge.challenger) : null;
     const challengedUser = challenge.challenged ? await storage.getUser(challenge.challenged) : null;
+    const tryManagedOnchainSettlement = async (
+      challengeLike: typeof challenge,
+      settledResult: "challenger_won" | "challenged_won" | "draw",
+    ) => {
+      const isEligible =
+        String(challengeLike.settlementRail || "").toLowerCase() === "onchain" &&
+        ONCHAIN_CONFIG.contractEnabled &&
+        !challengeLike.adminCreated;
+      if (!isEligible) return null;
+
+      const chainId = Number(
+        challengeLike.chainId || ONCHAIN_CONFIG.defaultChainId || ONCHAIN_CONFIG.chainId,
+      );
+      const chainConfig =
+        ONCHAIN_CONFIG.chains[String(chainId)] ||
+        ONCHAIN_CONFIG.chains[String(ONCHAIN_CONFIG.defaultChainId)] ||
+        ONCHAIN_CONFIG.chains[String(ONCHAIN_CONFIG.chainId)];
+      if (!chainConfig || chainConfig.escrowSupportsChallengeLock !== true) return null;
+
+      const configuredEscrowContract = normalizeEvmAddress(chainConfig.escrowContractAddress);
+      if (!configuredEscrowContract) return null;
+
+      const escrowRuntime = await resolveChallengeEscrowRuntime({
+        challengeLike,
+        chain: chainConfig,
+      });
+      if (
+        !escrowRuntime.escrowContractAddress ||
+        escrowRuntime.escrowContractAddress !== configuredEscrowContract
+      ) {
+        return null;
+      }
+      if (!escrowRuntime.challengerWallet || !escrowRuntime.challengedWallet) {
+        throw new Error("Unable to resolve participant wallets for managed onchain payout");
+      }
+
+      return await executeManagedChallengeSettlement({
+        challengeLike,
+        chain: chainConfig,
+        tokenSymbol: normalizeOnchainTokenSymbol(
+          challengeLike.tokenSymbol || ONCHAIN_CONFIG.defaultToken,
+        ) as OnchainTokenSymbol,
+        result: settledResult,
+        escrowContractAddress: configuredEscrowContract,
+        challengerWallet: escrowRuntime.challengerWallet,
+        challengedWallet: escrowRuntime.challengedWallet,
+      });
+    };
 
     const applyAgentChallengeOutcomeStats = async (
       challengeLike: typeof challenge,
@@ -760,6 +983,46 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
     if (result === "draw") {
       const drawMessage = `Challenge "${challenge.title}" ended in a draw. Your stake has been returned to your wallet.`;
+      const managedDrawSettlement = await tryManagedOnchainSettlement(challenge, result);
+
+      if (managedDrawSettlement) {
+        if (challenge.challenger) {
+          await storage.createNotification({
+            userId: challenge.challenger,
+            type: "challenge_draw",
+            title: "🤝 Challenge Draw",
+            message: drawMessage,
+            data: {
+              challengeId: challenge.id,
+              title: challenge.title,
+              result: "draw",
+              payoutTxHash: managedDrawSettlement.payoutTxHash,
+            },
+          } as any);
+        }
+
+        if (challenge.challenged) {
+          await storage.createNotification({
+            userId: challenge.challenged,
+            type: "challenge_draw",
+            title: "🤝 Challenge Draw",
+            message: drawMessage,
+            data: {
+              challengeId: challenge.id,
+              title: challenge.title,
+              result: "draw",
+              payoutTxHash: managedDrawSettlement.payoutTxHash,
+            },
+          } as any);
+        }
+
+        return {
+          challenge,
+          payoutJobId: null,
+          partnerSettlement: null,
+          message: `Challenge result set to draw. Onchain refund sent via ${managedDrawSettlement.method}.`,
+        };
+      }
 
       // Draw refund flow for market-style/admin challenges:
       // refund all active queue stakes (both waiting and matched).
@@ -937,6 +1200,23 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       } catch (treasuryErr) {
         console.error("Error settling Treasury matches:", treasuryErr);
       }
+    }
+
+    const managedWinnerSettlement = await tryManagedOnchainSettlement(challenge, result);
+    if (managedWinnerSettlement) {
+      let partnerSettlement: any = null;
+      try {
+        partnerSettlement = await calculatePartnerFeeSettlement(challengeId, resolvedByUserId || null);
+      } catch (partnerFeeError) {
+        console.error(`Error calculating partner settlement for challenge ${challengeId}:`, partnerFeeError);
+      }
+
+      return {
+        challenge,
+        payoutJobId: null,
+        partnerSettlement,
+        message: `Challenge result set to ${result}. Onchain payout sent via ${managedWinnerSettlement.method}.`,
+      };
     }
 
     let payoutJobId: string | null = null;
@@ -3901,6 +4181,162 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
+  app.post('/api/challenges/draft', PrivyAuthMiddleware, requireOnchainWallet, async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = getUserId(req);
+      const selectedChainId = Number(
+        req.body?.chainId || ONCHAIN_CONFIG.defaultChainId || ONCHAIN_CONFIG.chainId,
+      );
+      const chainConfig =
+        ONCHAIN_CONFIG.chains[String(selectedChainId)] ||
+        ONCHAIN_CONFIG.chains[String(ONCHAIN_CONFIG.defaultChainId)] ||
+        ONCHAIN_CONFIG.chains[String(ONCHAIN_CONFIG.chainId)];
+
+      if (!chainConfig) {
+        return res.status(400).json({ message: "Unsupported chainId for onchain challenge" });
+      }
+
+      const tokenSymbol = normalizeOnchainTokenSymbol(
+        req.body?.tokenSymbol || ONCHAIN_CONFIG.defaultToken,
+      ) as OnchainTokenSymbol;
+      const tokenConfig = chainConfig.tokens[tokenSymbol];
+
+      if (!tokenConfig || !isSupportedOnchainToken(chainConfig, tokenSymbol)) {
+        return res.status(400).json({ message: "Unsupported token" });
+      }
+      if (!tokenConfig.isNative && !normalizeEvmAddress(tokenConfig.address)) {
+        return res.status(400).json({
+          message: `Token ${tokenSymbol} not configured for chainId ${chainConfig.chainId}. Set token address in env.`,
+        });
+      }
+      if (!tokenConfig.isNative) {
+        try {
+          await assertAllowedStakeToken({
+            rpcUrl: chainConfig.rpcUrl,
+            tokenAddress: String(tokenConfig.address),
+            tokenSymbol,
+          });
+        } catch (tokenError: any) {
+          return res.status(400).json({
+            message:
+              tokenError?.message ||
+              `Token ${tokenSymbol} is not allowed for onchain challenge staking.`,
+          });
+        }
+      }
+
+      const amountValue = req.body.amount;
+      if (!amountValue) {
+        return res.status(400).json({ message: "Amount is required" });
+      }
+
+      const parsedAmount = Number.parseFloat(String(amountValue));
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        return res.status(400).json({ message: "Amount must be a valid positive number" });
+      }
+      if (parsedAmount > MAX_CHALLENGE_AMOUNT) {
+        return res.status(400).json({
+          message: `Amount is too large. Maximum allowed is ${MAX_CHALLENGE_AMOUNT.toLocaleString()} ${tokenSymbol}`,
+        });
+      }
+
+      if (!req.body.title || !req.body.title.trim()) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+
+      if (!req.body.category || !req.body.category.trim()) {
+        return res.status(400).json({ message: "Category is required" });
+      }
+
+      const creatorWallet = normalizeEvmAddress(req.user.walletAddress);
+      if (ONCHAIN_CONFIG.contractEnabled && !creatorWallet) {
+        return res.status(403).json({
+          message: "Wallet required. Connect an EVM wallet to continue.",
+          code: "WALLET_REQUIRED",
+        });
+      }
+
+      const stakeAtomic = toAtomicUnits(String(amountValue), tokenConfig.decimals);
+      const amountForSchema = Math.max(1, Math.round(parsedAmount));
+      const challengedWalletAddress = normalizeEvmAddress(
+        (req.body as any)?.challengedWalletAddress,
+      );
+      const challengedInput =
+        typeof req.body?.challenged === "string" ? req.body.challenged.trim() : "";
+      let challengedUserId: string | null = null;
+
+      if (challengedInput) {
+        const normalizedChallengeTarget = challengedInput.replace(/^@+/, "");
+        const challengedUser =
+          (await storage.getUser(normalizedChallengeTarget)) ||
+          (await storage.getUserByUsername(normalizedChallengeTarget));
+
+        if (!challengedUser) {
+          return res.status(404).json({
+            message: "Opponent not found. Enter a valid username.",
+          });
+        }
+
+        if (challengedUser.id === userId) {
+          return res.status(400).json({
+            message: "You can't challenge yourself.",
+          });
+        }
+
+        challengedUserId = challengedUser.id;
+      }
+
+      const dataToValidate: any = {
+        ...req.body,
+        challenger: userId,
+        amount: amountForSchema,
+        dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
+        settlementRail: "onchain",
+        chainId: chainConfig.chainId,
+        tokenSymbol,
+        tokenAddress: tokenConfig.address,
+        decimals: tokenConfig.decimals,
+        stakeAtomic,
+        escrowTxHash: undefined,
+        status: "draft",
+      };
+
+      if (challengedUserId) {
+        dataToValidate.challenged = challengedUserId;
+        delete dataToValidate.challengedWalletAddress;
+      } else if (challengedWalletAddress) {
+        delete dataToValidate.challenged;
+        dataToValidate.challengedWalletAddress = challengedWalletAddress;
+      } else {
+        delete dataToValidate.challenged;
+        delete dataToValidate.challengedWalletAddress;
+      }
+
+      const challengeData = insertChallengeSchema.parse(dataToValidate);
+      const challenge = await storage.createChallengeDraft(challengeData);
+
+      res.status(201).json({
+        challenge,
+        onchainExecution: {
+          mode: ONCHAIN_CONFIG.executionMode,
+          contractEnabled: ONCHAIN_CONFIG.contractEnabled,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error creating challenge draft:", error);
+      if (error?.message?.includes("validation") || error?.issues) {
+        return res.status(400).json({
+          message: "Validation error",
+          details: error?.issues || error?.message,
+        });
+      }
+      res.status(500).json({
+        message: "Failed to create challenge draft",
+        error: error?.message || "Unknown error",
+      });
+    }
+  });
+
   app.post('/api/challenges', PrivyAuthMiddleware, requireOnchainWallet, async (req: AuthenticatedRequest, res) => {
     try {
       const userId = getUserId(req);
@@ -4328,6 +4764,290 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       res.status(500).json({ 
         message: "Failed to create challenge",
         error: error?.message || "Unknown error"
+      });
+    }
+  });
+
+  app.post('/api/challenges/:id/onchain/finalize-create', PrivyAuthMiddleware, requireOnchainWallet, async (req: AuthenticatedRequest, res) => {
+    try {
+      const challengeId = parseInt(req.params.id, 10);
+      if (Number.isNaN(challengeId)) {
+        return res.status(400).json({ message: "Invalid challenge id" });
+      }
+
+      const userId = getUserId(req);
+      const challenge = await storage.getChallengeById(challengeId);
+      if (!challenge) {
+        return res.status(404).json({ message: "Challenge not found" });
+      }
+      if (challenge.challenger !== userId) {
+        return res.status(403).json({ message: "Only the challenge creator can finalize this challenge" });
+      }
+      if (String(challenge.status || "").toLowerCase() !== "draft") {
+        return res.status(400).json({ message: "This challenge is not awaiting onchain finalization" });
+      }
+      if (String(challenge.settlementRail || "").toLowerCase() !== "onchain") {
+        return res.status(400).json({ message: "This challenge is not configured for onchain settlement" });
+      }
+      if (!ONCHAIN_CONFIG.contractEnabled) {
+        return res.status(400).json({
+          message:
+            "Contract execution is disabled. Switch ONCHAIN_EXECUTION_MODE=contract to finalize onchain challenge creation.",
+        });
+      }
+
+      const chainId = Number(challenge.chainId || ONCHAIN_CONFIG.defaultChainId || ONCHAIN_CONFIG.chainId);
+      const chainConfig =
+        ONCHAIN_CONFIG.chains[String(chainId)] ||
+        ONCHAIN_CONFIG.chains[String(ONCHAIN_CONFIG.defaultChainId)] ||
+        ONCHAIN_CONFIG.chains[String(ONCHAIN_CONFIG.chainId)];
+      if (!chainConfig) {
+        return res.status(400).json({ message: "Unsupported chainId for this challenge" });
+      }
+
+      const configuredEscrowContract = normalizeEvmAddress(chainConfig.escrowContractAddress);
+      if (!configuredEscrowContract) {
+        return res.status(500).json({
+          message: `Escrow contract not configured for chainId ${chainConfig.chainId}`,
+        });
+      }
+
+      if (!req.body?.escrowTxHash) {
+        return res.status(400).json({ message: "escrowTxHash is required" });
+      }
+
+      const creatorWallet = normalizeEvmAddress(req.user.walletAddress);
+      if (!creatorWallet) {
+        return res.status(403).json({
+          message: "Wallet required. Connect an EVM wallet to continue.",
+          code: "WALLET_REQUIRED",
+        });
+      }
+
+      const tokenSymbol = normalizeOnchainTokenSymbol(
+        challenge.tokenSymbol || ONCHAIN_CONFIG.defaultToken,
+      ) as OnchainTokenSymbol;
+      const verifiedEscrowTx = await verifyEscrowTransaction({
+        rpcUrl: chainConfig.rpcUrl,
+        expectedChainId: chainConfig.chainId,
+        expectedFrom: creatorWallet,
+        expectedEscrowContract: escrowContract,
+        tokenSymbol,
+        txHash: String(req.body.escrowTxHash),
+      });
+
+      const alreadyUsed = await findChallengeUsingEscrowTxHash(verifiedEscrowTx.txHash, challengeId);
+      if (alreadyUsed) {
+        return res.status(409).json({
+          message: "This escrow transaction hash has already been used for another challenge.",
+          challengeId: alreadyUsed.id,
+        });
+      }
+
+      const finalStatus =
+        challenge.challenged || (challenge as any).challengedWalletAddress ? "pending" : "open";
+
+      const updatedChallenge = await storage.updateChallenge(challengeId, {
+        status: finalStatus as any,
+        escrowTxHash: verifiedEscrowTx.txHash,
+      } as any);
+
+      await storage.recordChallengeEscrowHold(
+        challengeId,
+        parseFloat(String(updatedChallenge.amount || challenge.amount || 0)) || 0,
+      );
+
+      const challenger = await storage.getUser(userId);
+      const challenged = updatedChallenge.challenged
+        ? await storage.getUser(updatedChallenge.challenged)
+        : null;
+      const challengeMeta = {
+        chainId: updatedChallenge.chainId ?? chainId,
+        settlementRail: updatedChallenge.settlementRail ?? "onchain",
+        tokenSymbol: updatedChallenge.tokenSymbol ?? tokenSymbol,
+        escrowTxHash: updatedChallenge.escrowTxHash ?? verifiedEscrowTx.txHash,
+        settleTxHash: updatedChallenge.settleTxHash ?? null,
+      };
+      const challengeScanUrl = getChallengeScanUrl(challengeMeta, verifiedEscrowTx.txHash);
+      const telegramBot = getTelegramBot();
+
+      try {
+        const metadataPayload = {
+          version: 1,
+          challengeId: updatedChallenge.id,
+          chainId: Number(challengeMeta.chainId || chainConfig.chainId),
+          escrowTxHash: challengeMeta.escrowTxHash ?? null,
+          challengerWallet: creatorWallet,
+          challengerUserId: updatedChallenge.challenger ?? null,
+          challengedUserId: updatedChallenge.challenged ?? null,
+          challengedWalletAddress: updatedChallenge.challengedWalletAddress ?? null,
+          title: updatedChallenge.title,
+          description: updatedChallenge.description ?? null,
+          category: updatedChallenge.category,
+          amount: parseFloat(String(updatedChallenge.amount || 0)) || 0,
+          challengerSide: updatedChallenge.challengerSide ?? null,
+          dueDate: updatedChallenge.dueDate ? new Date(updatedChallenge.dueDate).toISOString() : null,
+          settlementRail: updatedChallenge.settlementRail ?? "onchain",
+          tokenSymbol: updatedChallenge.tokenSymbol ?? tokenSymbol,
+          tokenAddress: updatedChallenge.tokenAddress ?? chainConfig.tokens[tokenSymbol]?.address ?? null,
+          decimals: Number(updatedChallenge.decimals ?? chainConfig.tokens[tokenSymbol]?.decimals ?? 0) || null,
+          stakeAtomic: updatedChallenge.stakeAtomic ?? null,
+          adminCreated: updatedChallenge.adminCreated ?? false,
+          createdAt: updatedChallenge.createdAt ? new Date(updatedChallenge.createdAt).toISOString() : null,
+        };
+
+        const metadataRecord = await upsertOnchainChallengeMetadata({
+          payload: metadataPayload,
+          chainId: metadataPayload.chainId,
+          escrowTxHash: metadataPayload.escrowTxHash,
+          challengeId: updatedChallenge.id,
+        });
+
+        const metadataLoggerEnabled = String(process.env.ONCHAIN_METADATA_LOGGER_ENABLED || "")
+          .trim()
+          .toLowerCase();
+        const shouldLogMetadata =
+          metadataLoggerEnabled === "true" ||
+          metadataLoggerEnabled === "1" ||
+          metadataLoggerEnabled === "yes";
+
+        if (shouldLogMetadata && metadataPayload.escrowTxHash) {
+          await logOnchainChallengeCreated({
+            chain: chainConfig,
+            metadataHash: metadataRecord.metadataHash,
+            challengeId: updatedChallenge.id,
+            challengeType: "challenge",
+          });
+        }
+      } catch (metadataError) {
+        console.error("⚠️ Failed to persist/log onchain metadata:", metadataError);
+      }
+
+      if (updatedChallenge.challenged && challenged) {
+        const challengedNotification = await storage.createNotification({
+          userId: updatedChallenge.challenged,
+          type: 'challenge',
+          title: '🎯 New Challenge Request',
+          message: `${challenger?.firstName || challenger?.username || 'Someone'} challenged you to "${updatedChallenge.title}"`,
+          data: {
+            challengeId: updatedChallenge.id,
+            challengerName: challenger?.firstName || challenger?.username,
+            challengeTitle: updatedChallenge.title,
+            amount: updatedChallenge.amount,
+            category: updatedChallenge.category,
+            chainId: challengeMeta.chainId,
+            settlementRail: challengeMeta.settlementRail,
+            tokenSymbol: challengeMeta.tokenSymbol,
+            scanUrl: challengeScanUrl,
+            explorerUrl: challengeScanUrl,
+          },
+        });
+
+        try {
+          await pusher.trigger(`user-${updatedChallenge.challenged}`, 'challenge-received', {
+            id: challengedNotification.id,
+            type: 'challenge_received',
+            title: '🎯 Challenge Received!',
+            message: `${challenger?.firstName || challenger?.username || 'Someone'} challenged you to "${updatedChallenge.title}"`,
+            challengerName: challenger?.firstName || challenger?.username || 'Someone',
+            challengeTitle: updatedChallenge.title,
+            amount: parseFloat(updatedChallenge.amount.toString()),
+            challengeId: updatedChallenge.id,
+            data: challengedNotification.data,
+            scanUrl: challengeScanUrl,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (pusherError) {
+          console.error("Error sending Pusher notification to challenged user:", pusherError);
+        }
+      }
+
+      const challengerNotification = await storage.createNotification({
+        userId,
+        type: 'challenge_sent',
+        title: '🚀 Challenge Sent',
+        message: `Your challenge "${updatedChallenge.title}" was sent to ${challenged?.firstName || challenged?.username || 'Open Challenge'}`,
+        data: {
+          challengeId: updatedChallenge.id,
+          challengedName: challenged?.firstName || challenged?.username || 'Open Challenge',
+          challengeTitle: updatedChallenge.title,
+          amount: updatedChallenge.amount,
+          category: updatedChallenge.category,
+          chainId: challengeMeta.chainId,
+          settlementRail: challengeMeta.settlementRail,
+          tokenSymbol: challengeMeta.tokenSymbol,
+          scanUrl: challengeScanUrl,
+          explorerUrl: challengeScanUrl,
+        },
+      });
+
+      try {
+        await pusher.trigger(`user-${userId}`, 'challenge-sent', {
+          id: challengerNotification.id,
+          type: 'challenge_sent',
+          title: '🚀 Challenge Sent',
+          message: `Your challenge "${updatedChallenge.title}" was sent to ${challenged?.firstName || challenged?.username || 'Open Challenge'}`,
+          data: challengerNotification.data,
+          scanUrl: challengeScanUrl,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (pusherError) {
+        console.error("Error sending Pusher notification to challenger:", pusherError);
+      }
+
+      try {
+        const { notifyChallengeCreated } = await import('./challengeNotifications');
+        await notifyChallengeCreated(
+          updatedChallenge.id,
+          challenger?.firstName || challenger?.username || 'Unknown',
+          updatedChallenge.challenged,
+          updatedChallenge.title,
+          parseFloat(updatedChallenge.amount)
+        );
+      } catch (notifErr) {
+        console.error('Error sending challenge created notification:', notifErr);
+      }
+
+      if (telegramBot) {
+        try {
+          const stakeBroadcastMeta = buildChallengeStakeBroadcastMeta(updatedChallenge);
+          await telegramBot.broadcastChallenge({
+            id: updatedChallenge.id,
+            title: updatedChallenge.title,
+            description: updatedChallenge.description || undefined,
+            creator: {
+              name: challenger?.firstName || challenger?.username || 'Unknown',
+              username: challenger?.username || undefined,
+            },
+            challenged: {
+              name: challenged?.firstName || challenged?.username || 'Open Challenge',
+              username: challenged?.username || undefined,
+            },
+            stake_amount: parseFloat(updatedChallenge.amount.toString()),
+            stake_display: stakeBroadcastMeta.stakeDisplay,
+            settlement_label: stakeBroadcastMeta.settlementLabel,
+            status: updatedChallenge.status,
+            end_time: updatedChallenge.dueDate,
+            category: updatedChallenge.category,
+          });
+        } catch (error) {
+          console.error("❌ Failed to broadcast finalized challenge to Telegram:", error);
+        }
+      }
+
+      res.setHeader("x-onchain-execution-mode", ONCHAIN_CONFIG.executionMode);
+      res.json({
+        ...updatedChallenge,
+        onchainExecution: {
+          mode: ONCHAIN_CONFIG.executionMode,
+          contractEnabled: ONCHAIN_CONFIG.contractEnabled,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error finalizing onchain challenge creation:", error);
+      res.status(500).json({
+        message: "Failed to finalize onchain challenge creation",
+        error: error?.message || "Unknown error",
       });
     }
   });
@@ -4998,11 +5718,18 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const tokenSymbol = normalizeOnchainTokenSymbol(
         challenge.tokenSymbol || ONCHAIN_CONFIG.defaultToken,
       ) as OnchainTokenSymbol;
+      const escrowRuntime = await resolveChallengeEscrowRuntime({
+        challengeLike: challenge,
+        chain: chainConfig,
+      });
+      const expectedSettlementEscrowContract =
+        escrowRuntime.escrowContractAddress || configuredEscrowContract;
+
       const verifiedSettleTx = await verifyEscrowTransaction({
         rpcUrl: chainConfig.rpcUrl,
         expectedChainId: chainConfig.chainId,
         expectedFrom: settlementWallet,
-        expectedEscrowContract: escrowContract,
+        expectedEscrowContract: expectedSettlementEscrowContract,
         tokenSymbol,
         txHash: String(req.body.settleTxHash),
       });
@@ -5025,6 +5752,26 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(409).json({
           message: "This challenge already has a different settlement transaction recorded.",
           settleTxHash: challenge.settleTxHash,
+        });
+      }
+      if (
+        existingSettleTxHash &&
+        existingSettleTxHash === verifiedSettleTx.txHash &&
+        String(challenge.status || "").toLowerCase() === "completed"
+      ) {
+        return res.json({
+          challenge,
+          result: challenge.result,
+          alreadyRecorded: true,
+          settlementTx: {
+            hash: verifiedSettleTx.txHash,
+            chainId: verifiedSettleTx.chainId,
+            recordedBy: settlementWallet,
+          },
+          onchainExecution: {
+            mode: ONCHAIN_CONFIG.executionMode,
+            contractEnabled: ONCHAIN_CONFIG.contractEnabled,
+          },
         });
       }
 
@@ -5069,6 +5816,42 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       if (!nextResult) {
         return res.status(400).json({
           message: "Settlement result is missing. Submit participant consensus or admin result.",
+        });
+      }
+
+      let payoutExecution:
+        | {
+            payoutTxHash: string;
+            method:
+              | "settleChallengeNativePayout"
+              | "settleChallengeTokenPayout"
+              | "refundChallengeNative"
+              | "refundChallengeToken";
+            treasuryAddress: string;
+          }
+        | null = null;
+
+      const eligibleForManagedV2Settlement =
+        chainConfig.escrowSupportsChallengeLock === true &&
+        !challenge.adminCreated &&
+        !!escrowRuntime.escrowContractAddress &&
+        escrowRuntime.escrowContractAddress === configuredEscrowContract;
+
+      if (eligibleForManagedV2Settlement) {
+        if (!escrowRuntime.challengerWallet || !escrowRuntime.challengedWallet) {
+          return res.status(500).json({
+            message: "Unable to resolve participant wallets for onchain settlement payout.",
+          });
+        }
+
+        payoutExecution = await executeManagedChallengeSettlement({
+          challengeLike: challenge,
+          chain: chainConfig,
+          tokenSymbol,
+          result: nextResult,
+          escrowContractAddress: configuredEscrowContract,
+          challengerWallet: escrowRuntime.challengerWallet,
+          challengedWallet: escrowRuntime.challengedWallet,
         });
       }
 
@@ -5162,7 +5945,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
             String(challenge.status || 'voting'),
             'resolved',
             userId,
-            `onchain_settlement tx=${verifiedSettleTx.txHash} result=${nextResult}`,
+            `onchain_settlement tx=${verifiedSettleTx.txHash} result=${nextResult}${payoutExecution ? ` payout=${payoutExecution.payoutTxHash}` : ""}`,
           ],
         );
       } catch (historyError) {
@@ -5195,6 +5978,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
           chainId: verifiedSettleTx.chainId,
           recordedBy: settlementWallet,
         },
+        payoutExecution,
         onchainExecution: {
           mode: ONCHAIN_CONFIG.executionMode,
           contractEnabled: ONCHAIN_CONFIG.contractEnabled,
