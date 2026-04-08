@@ -91,6 +91,31 @@ const modeMeta: Record<
   },
 };
 
+function isValidEvmAddress(value: string) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value.trim());
+}
+
+function normalizeEndpointUrlInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^localhost[:/]/i.test(trimmed) || /^127\.0\.0\.1[:/]/.test(trimmed)) {
+    return `http://${trimmed}`;
+  }
+  return `https://${trimmed}`;
+}
+
+function looksLikeValidEndpointUrl(value: string) {
+  const normalized = normalizeEndpointUrlInput(value);
+  if (!normalized) return false;
+  try {
+    const parsed = new URL(normalized);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function resultTone(result: AgentSkillCheckActionResult) {
   return result.passed
     ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
@@ -118,6 +143,12 @@ export function AgentImportDialog({
   const [lastSkillCheck, setLastSkillCheck] = useState<AgentSkillCheckResult | null>(null);
 
   const currentModeMeta = useMemo(() => modeMeta[mode], [mode]);
+  const canCheckEndpoint = looksLikeValidEndpointUrl(endpointUrl);
+  const canImportAgent =
+    agentName.trim().length > 0 &&
+    canCheckEndpoint &&
+    isValidEvmAddress(walletAddress) &&
+    !importMutation.isPending;
 
   const resetForm = () => {
     setAgentName(initialName?.trim() || "");
@@ -151,7 +182,7 @@ export function AgentImportDialog({
 
   const skillCheckMutation = useMutation({
     mutationFn: async () => {
-      const endpoint = endpointUrl.trim();
+      const endpoint = normalizeEndpointUrlInput(endpointUrl);
       if (!endpoint) {
         throw new Error("Endpoint URL is required");
       }
@@ -182,12 +213,26 @@ export function AgentImportDialog({
         throw new Error("Sign in to import agents");
       }
 
+      const normalizedAgentName = agentName.trim();
+      const normalizedWalletAddress = walletAddress.trim();
+      const normalizedEndpointUrl = normalizeEndpointUrlInput(endpointUrl);
+
+      if (!normalizedAgentName) {
+        throw new Error("Agent name is required");
+      }
+      if (!normalizedEndpointUrl) {
+        throw new Error("Endpoint URL is required");
+      }
+      if (!isValidEvmAddress(normalizedWalletAddress)) {
+        throw new Error("Wallet address must be a valid EVM address");
+      }
+
       await ensureFreshAuthToken();
 
       return apiRequest("POST", "/api/agents/import", {
-        agentName: agentName.trim(),
-        walletAddress: walletAddress.trim(),
-        endpointUrl: endpointUrl.trim(),
+        agentName: normalizedAgentName,
+        walletAddress: normalizedWalletAddress,
+        endpointUrl: normalizedEndpointUrl,
         specialty,
         isTokenized,
       }) as Promise<AgentImportResponse>;
@@ -452,7 +497,7 @@ export function AgentImportDialog({
             <Button
               type="button"
               onClick={() => skillCheckMutation.mutate()}
-              disabled={skillCheckMutation.isPending}
+              disabled={skillCheckMutation.isPending || !canCheckEndpoint}
               className="h-10 rounded-xl border-0 bg-[#7440ff] px-4 text-sm text-white hover:bg-[#6435e6]"
             >
               {skillCheckMutation.isPending ? (
@@ -465,7 +510,7 @@ export function AgentImportDialog({
             <Button
               type="button"
               onClick={() => importMutation.mutate()}
-              disabled={importMutation.isPending}
+              disabled={!canImportAgent}
               className="h-10 flex-1 rounded-xl border-0 bg-[#ccff00] text-sm text-slate-950 hover:bg-[#b8eb00]"
             >
               {importMutation.isPending ? (

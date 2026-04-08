@@ -62,9 +62,11 @@ export type BantahWebhookEvent = (typeof bantahWebhookEventValues)[number];
 
 export const evmAddressSchema = z
   .string()
+  .trim()
   .regex(/^0x[a-fA-F0-9]{40}$/, "Wallet address must be a valid EVM address");
 export const evmTransactionHashSchema = z
   .string()
+  .trim()
   .regex(/^0x[a-fA-F0-9]{64}$/, "Transaction hash must be a valid EVM hash");
 
 export const marketOptionSchema = z.object({

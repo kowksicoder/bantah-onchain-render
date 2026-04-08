@@ -1265,6 +1265,10 @@ export default function Challenges() {
           Object.keys(onchainConfig?.chains || {})[0] ||
           8453,
       );
+      const resolvedSelectedChainConfig =
+        onchainConfig?.chains?.[String(selectedChainId)] ||
+        chainOptions.find((chain) => Number(chain.chainId) === Number(selectedChainId)) ||
+        null;
       const selectedToken =
         (data.tokenSymbol || onchainConfig?.defaultToken || "USDC") as OnchainTokenSymbol;
 
@@ -1283,9 +1287,9 @@ export default function Challenges() {
         payload.coverImageUrl = finalCoverUrl;
       }
 
+      const contractModeEnabled = onchainConfig?.contractEnabled === true;
       const supportsChallengeAwareEscrow =
-        onchainConfig?.contractEnabled &&
-        selectedChainConfig?.escrowSupportsChallengeLock === true;
+        contractModeEnabled && resolvedSelectedChainConfig?.escrowSupportsChallengeLock === true;
 
       if (supportsChallengeAwareEscrow) {
         const draftResult = await apiRequest("POST", "/api/challenges/draft", payload);
@@ -1332,6 +1336,36 @@ export default function Challenges() {
 
         handleChallengeCreateSuccess(finalizedChallenge);
         return finalizedChallenge;
+      }
+
+      if (contractModeEnabled) {
+        const preferredWalletAddress = (
+          [
+            (user as any)?.walletAddress,
+            (user as any)?.primaryWalletAddress,
+            (user as any)?.wallet?.address,
+            Array.isArray((user as any)?.walletAddresses)
+              ? (user as any)?.walletAddresses?.[0]
+              : null,
+          ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
+        ) as string | null;
+
+        const escrowTx = await executeOnchainEscrowStakeTx({
+          wallets: wallets as any,
+          preferredWalletAddress,
+          onchainConfig,
+          chainId: selectedChainId,
+          tokenSymbol: selectedToken,
+          amount: normalizedAmount,
+        });
+
+        payload.escrowTxHash = escrowTx.escrowTxHash;
+        payload.walletAddress = escrowTx.walletAddress;
+
+        toast({
+          title: "Escrow locked",
+          description: `${amount.toLocaleString()} ${selectedToken} secured in escrow.`,
+        });
       }
 
       createChallengeMutation.mutate(payload);

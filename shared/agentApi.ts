@@ -58,10 +58,29 @@ export function getBantahAgentKitChainIdForNetworkId(networkId: string): number 
 
 const httpUrlSchema = z
   .string()
+  .trim()
   .url("Endpoint URL must be a valid URL")
   .refine((value) => value.startsWith("http://") || value.startsWith("https://"), {
     message: "Endpoint URL must use http or https",
   });
+
+const relativeOrHttpUrlSchema = z
+  .string()
+  .trim()
+  .refine((value) => {
+    if (!value) return false;
+    if (value.startsWith("/")) return true;
+    return value.startsWith("http://") || value.startsWith("https://");
+  }, "Avatar URL must be an app-relative path or http/https URL")
+  .refine((value) => {
+    if (value.startsWith("/")) return true;
+    try {
+      new URL(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Avatar URL must be a valid URL");
 
 export const agentImportRequestSchema = z.object({
   agentName: z.string().min(2).max(80),
@@ -79,7 +98,7 @@ export const agentCreateRequestSchema = z.object({
   agentName: z.string().min(2).max(80),
   specialty: z.enum(bantahAgentSpecialtyValues).default("general"),
   chainId: z.coerce.number().int().positive().default(8453),
-  avatarUrl: z.string().url().nullable().optional(),
+  avatarUrl: relativeOrHttpUrlSchema.nullable().optional(),
 });
 
 export const agentListQuerySchema = z.object({
