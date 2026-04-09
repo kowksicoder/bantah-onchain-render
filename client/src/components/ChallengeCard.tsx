@@ -129,6 +129,7 @@ const normalizeChallengeImageValue = (value?: string | null) => {
   if (!raw) return null;
   if (raw.startsWith("data:image/")) return raw;
   if (raw.startsWith("/attached_assets/")) return raw;
+  if (raw.startsWith("/api/media/")) return raw;
   if (raw.startsWith("attached_assets/")) return `/${raw}`;
   if (raw.startsWith("/assets/")) return raw;
   if (/^https?:\/\//i.test(raw)) return raw;

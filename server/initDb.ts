@@ -229,6 +229,22 @@ export async function initializeDatabase() {
         last_block bigint not null,
         updated_at timestamp default now()
       )`,
+      `CREATE TABLE IF NOT EXISTS media_assets (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        original_filename varchar(512),
+        mime_type varchar(128) NOT NULL,
+        storage_kind varchar(24) NOT NULL DEFAULT 'database',
+        data_base64 text,
+        local_path varchar(1024),
+        remote_url text,
+        provider varchar(64),
+        created_by_user_id varchar REFERENCES users(id) ON DELETE SET NULL,
+        created_at timestamp DEFAULT now()
+      )`,
+      `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS remote_url text`,
+      `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS provider varchar(64)`,
+      `CREATE INDEX IF NOT EXISTS idx_media_assets_created_at ON media_assets(created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_media_assets_created_by_user_id ON media_assets(created_by_user_id)`,
     ];
 
     for (const statement of onchainStatements) {

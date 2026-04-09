@@ -342,9 +342,14 @@ export default function ChallengeDetail() {
                     Sign In to Take Action
                   </Button>
                 )}
-                <Button variant="outline" size="icon" className="h-12 w-12 rounded-full border-slate-200 dark:border-slate-800">
-                  <Share2 className="w-5 h-5" />
-                </Button>
+                <SocialMediaShare
+                  challenge={challenge}
+                  trigger={
+                    <Button variant="outline" size="icon" className="h-12 w-12 rounded-full border-slate-200 dark:border-slate-800">
+                      <Share2 className="w-5 h-5" />
+                    </Button>
+                  }
+                />
               </div>
             </div>
 

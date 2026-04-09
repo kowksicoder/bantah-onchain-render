@@ -39,7 +39,7 @@ export function shareChallenge(
   targetedWalletAddress?: string,
 ) {
   const baseUrl = getBaseUrl();
-  const shareUrl = `${baseUrl}/challenges/${challengeId}/activity`;
+  const shareUrl = `${baseUrl}/share/challenges/${challengeId}`;
   const normalizedTargetWallet = typeof targetedWalletAddress === "string"
     ? targetedWalletAddress.trim().toLowerCase()
     : "";
@@ -56,7 +56,7 @@ export function shareChallenge(
     shareUrl,
     shareData: {
       title: `Bantah Challenge: ${challengeTitle}`,
-      description: `${challengeTitle}. ${stakeLabel} ${targetLabel} Join now.`,
+      description: `${challengeTitle}. ${stakeLabel} ${targetLabel} Open on Bantah.`,
       url: shareUrl,
       hashtags: ["Bantah", "Challenge", "Onchain", "EVM"],
     },

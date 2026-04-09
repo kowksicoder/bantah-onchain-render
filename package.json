@@ -33,6 +33,7 @@
     "onchain:update:v2:fee:bsc-mainnet": "hardhat run scripts/update-escrow-v2-fee.ts --network bsc",
     "onchain:update:v2:fee:arb-mainnet": "hardhat run scripts/update-escrow-v2-fee.ts --network arbitrum",
     "onchain:update:v2:fee:unichain-mainnet": "hardhat run scripts/update-escrow-v2-fee.ts --network unichain",
+    "media:migrate:challenge-covers": "tsx scripts/migrate-challenge-covers-to-media.ts",
     "onchain:deploy:token": "hardhat run scripts/deploy-test-token.ts",
     "onchain:deploy:all": "powershell -ExecutionPolicy Bypass -File scripts/deploy-escrow-all.ps1",
     "onchain:deploy:v2:all": "powershell -ExecutionPolicy Bypass -File scripts/deploy-escrow-v2-all.ps1",

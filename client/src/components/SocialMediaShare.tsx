@@ -1,203 +1,139 @@
-﻿import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ChallengeIntentCard } from "@/components/ChallengeIntentCard";
-import { 
-  Share2, 
-  Copy, 
-  MessageCircle, 
-  Send,
-  ExternalLink,
-  Check,
-  Eye,
-  Smartphone,
-  Monitor
-} from "lucide-react";
-import { 
-  SiX, 
-  SiFacebook, 
-  SiWhatsapp, 
-  SiTelegram, 
-  SiInstagram,
-  SiTiktok
-} from "react-icons/si";
+import { Share2, Copy, Send, ExternalLink, Check, Loader2 } from "lucide-react";
+import { SiX, SiWhatsapp, SiTelegram } from "react-icons/si";
+import {
+  getTelegramShareUrl,
+  getTwitterShareUrl,
+  getWhatsAppShareUrl,
+  shareChallenge,
+  shareNative,
+  copyToClipboard,
+} from "@/utils/sharing";
 
 interface SocialMediaShareProps {
   challenge: {
     id: number;
     title: string;
-    description?: string;
-    category: string;
-    amount: string;
-    challengerUser: {
-      username?: string;
-      firstName?: string;
-    };
-    challengedUser: {
-      username?: string;
-      firstName?: string;
-    };
+    amount: string | number;
+    tokenSymbol?: string | null;
     status: string;
-    dueDate?: string;
+    dueDate?: string | null;
+    challengerSide?: string | null;
+    challengedSide?: string | null;
+    challengerUser?: {
+      username?: string | null;
+      firstName?: string | null;
+    } | null;
+    challengedUser?: {
+      username?: string | null;
+      firstName?: string | null;
+    } | null;
+    challengerAgent?: {
+      name?: string | null;
+    } | null;
+    challengedAgent?: {
+      name?: string | null;
+    } | null;
+    updatedAt?: string | null;
   };
   trigger?: React.ReactNode;
+}
+
+function formatParticipant(
+  side: string | null | undefined,
+  user?: { username?: string | null; firstName?: string | null } | null,
+  agent?: { name?: string | null } | null,
+) {
+  const label = agent?.name || user?.username || user?.firstName || "Open";
+  const cleanSide = side?.toUpperCase() === "YES" || side?.toUpperCase() === "NO" ? side.toUpperCase() : null;
+  return cleanSide ? `${cleanSide} ${label}` : label;
 }
 
 export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [previewErrored, setPreviewErrored] = useState(false);
 
-  const challengeUrl = `${window.location.origin}/challenges/${challenge.id}`;
-  
-  const getChallengerName = () => {
-    return challenge.challengerUser.username || challenge.challengerUser.firstName || 'User';
-  };
+  const share = useMemo(() => {
+    const stakeLabel = `${challenge.amount} ${challenge.tokenSymbol || "ETH"}`;
+    return shareChallenge(String(challenge.id), challenge.title, stakeLabel);
+  }, [challenge.amount, challenge.id, challenge.title, challenge.tokenSymbol]);
 
-  const getChallengedName = () => {
-    return challenge.challengedUser.username || challenge.challengedUser.firstName || 'User';
-  };
+  const origin = typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.host}`
+    : "https://bantah.fun";
 
-  const generateShareText = (platform: string) => {
-    const challengerName = getChallengerName();
-    const challengedName = getChallengedName();
-    const amount = challenge.amount;
-    const title = challenge.title;
-    const category = challenge.category;
+  const openChallengeUrl = `${origin}/challenges/${challenge.id}`;
+  const previewImageUrl = `${origin}/api/og/challenges/${challenge.id}.png?v=${encodeURIComponent(challenge.updatedAt || String(challenge.id))}`;
+  const challengerLine = formatParticipant(challenge.challengerSide, challenge.challengerUser, challenge.challengerAgent);
+  const opponentLine = formatParticipant(challenge.challengedSide, challenge.challengedUser, challenge.challengedAgent);
 
-    const baseText = `🎯 CHALLENGE ALERT!\n\n"${title}"\n\n${challengerName} vs ${challengedName}\n💰 Stake: ${amount}\n📂 Category: ${category}\n\n`;
-    
-    switch (platform) {
-      case 'twitter':
-        return `${baseText}Who do you think will win? 🏆\n\n#Bantah #Challenge #Gaming #Nigeria\n\n${challengeUrl}`;
-      case 'facebook':
-        return `${baseText}Join the excitement and place your predictions! 🚀\n\nWho's your pick to win this challenge?\n\n${challengeUrl}`;
-      case 'whatsapp':
-        return `${baseText}Join Bantah to watch this epic showdown! 🔥\n\n${challengeUrl}`;
-      case 'telegram':
-        return `${baseText}Don't miss this epic battle! Join Bantah now! ⚡\n\n${challengeUrl}`;
-      case 'instagram':
-        return `${baseText}Epic challenge happening now! 🎮\n\n#Bantah #Challenge #Gaming #Nigeria\n\n${challengeUrl}`;
-      case 'tiktok':
-        return `${baseText}Who's winning this one? 🤔\n\n#Bantah #Challenge #Gaming #FYP\n\n${challengeUrl}`;
-      default:
-        return `${baseText}Check out this challenge on Bantah!\n\n${challengeUrl}`;
-    }
-  };
+  const shareOptions = [
+    {
+      name: "X",
+      key: "twitter",
+      icon: SiX,
+      url: getTwitterShareUrl(share.shareData),
+      className: "border-slate-200 hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800",
+    },
+    {
+      name: "WhatsApp",
+      key: "whatsapp",
+      icon: SiWhatsapp,
+      url: getWhatsAppShareUrl(share.shareData),
+      className: "border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-900 dark:hover:bg-emerald-950/30",
+    },
+    {
+      name: "Telegram",
+      key: "telegram",
+      icon: SiTelegram,
+      url: getTelegramShareUrl(share.shareData),
+      className: "border-sky-200 hover:border-sky-400 hover:bg-sky-50 dark:border-sky-900 dark:hover:bg-sky-950/30",
+    },
+  ];
 
   const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(challengeUrl);
-      setCopied(true);
+    const success = await copyToClipboard(share.shareUrl);
+    if (!success) {
       toast({
-        title: "Link Copied! 📋",
-        description: "Challenge link has been copied to your clipboard",
-      });
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      toast({
-        title: "Copy Failed",
-        description: "Failed to copy link to clipboard",
+        title: "Copy failed",
+        description: "We couldn't copy the share link. Please try again.",
         variant: "destructive",
       });
+      return;
     }
+
+    setCopied(true);
+    toast({
+      title: "Share link copied",
+      description: "The public challenge share link is ready to paste anywhere.",
+    });
+    window.setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleShare = (platform: string) => {
-    const text = generateShareText(platform);
-    const encodedText = encodeURIComponent(text);
-    const encodedUrl = encodeURIComponent(challengeUrl);
-    
-    let shareUrl = '';
-    
-    switch (platform) {
-      case 'twitter':
-        shareUrl = `https://twitter.com/intent/tweet?text=${encodedText}`;
-        break;
-      case 'facebook':
-        shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedText}`;
-        break;
-      case 'whatsapp':
-        shareUrl = `https://wa.me/?text=${encodedText}`;
-        break;
-      case 'telegram':
-        shareUrl = `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`;
-        break;
-      case 'instagram':
-        // Instagram doesn't support direct sharing via URL, so we copy the text
-        handleCopyLink();
-        toast({
-          title: "Text Copied for Instagram! 📱",
-          description: "Paste this in your Instagram story or post",
-        });
-        return;
-      case 'tiktok':
-        // TikTok doesn't support direct sharing via URL, so we copy the text
-        handleCopyLink();
-        toast({
-          title: "Text Copied for TikTok! 🎵",
-          description: "Paste this in your TikTok caption",
-        });
-        return;
+  const handlePlatformShare = async (platform: "native" | "copy" | "twitter" | "whatsapp" | "telegram", url?: string) => {
+    if (platform === "native") {
+      const shared = await shareNative(share.shareData);
+      if (!shared) {
+        await handleCopyLink();
+      }
+      return;
     }
-    
-    if (shareUrl) {
-      window.open(shareUrl, '_blank', 'width=600,height=400');
-      toast({
-        title: "Sharing to " + platform.charAt(0).toUpperCase() + platform.slice(1),
-        description: "Opening share dialog...",
-      });
+
+    if (platform === "copy") {
+      await handleCopyLink();
+      return;
+    }
+
+    if (url) {
+      window.open(url, "_blank", "width=700,height=520");
     }
   };
-
-  const socialPlatforms = [
-    { 
-      name: 'Twitter', 
-      key: 'twitter', 
-      icon: SiX, 
-      color: 'text-blue-400 hover:text-blue-300',
-      bgColor: 'hover:bg-blue-50 dark:hover:bg-blue-900/20'
-    },
-    { 
-      name: 'Facebook', 
-      key: 'facebook', 
-      icon: SiFacebook, 
-      color: 'text-blue-600 hover:text-blue-500',
-      bgColor: 'hover:bg-blue-50 dark:hover:bg-blue-900/20'
-    },
-    { 
-      name: 'WhatsApp', 
-      key: 'whatsapp', 
-      icon: SiWhatsapp, 
-      color: 'text-green-500 hover:text-green-400',
-      bgColor: 'hover:bg-green-50 dark:hover:bg-green-900/20'
-    },
-    { 
-      name: 'Telegram', 
-      key: 'telegram', 
-      icon: SiTelegram, 
-      color: 'text-blue-500 hover:text-blue-400',
-      bgColor: 'hover:bg-blue-50 dark:hover:bg-blue-900/20'
-    },
-    { 
-      name: 'Instagram', 
-      key: 'instagram', 
-      icon: SiInstagram, 
-      color: 'text-pink-500 hover:text-pink-400',
-      bgColor: 'hover:bg-pink-50 dark:hover:bg-pink-900/20'
-    },
-    { 
-      name: 'TikTok', 
-      key: 'tiktok', 
-      icon: SiTiktok, 
-      color: 'text-black dark:text-white hover:text-gray-700 dark:hover:text-gray-300',
-      bgColor: 'hover:bg-gray-50 dark:hover:bg-gray-900/20'
-    }
-  ];
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -209,127 +145,83 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="w-5 h-5" />
             Share Challenge
           </DialogTitle>
         </DialogHeader>
-        
-        <div className="space-y-6">
-          {/* Challenge Preview with Different Formats */}
-          <Tabs defaultValue="social" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="social" className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4" />
-                Social
-              </TabsTrigger>
-              <TabsTrigger value="compact" className="flex items-center gap-2">
-                <Monitor className="w-4 h-4" />
-                Compact
-              </TabsTrigger>
-              <TabsTrigger value="full" className="flex items-center gap-2">
-                <Eye className="w-4 h-4" />
-                Full
-              </TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="social" className="mt-4">
-              <div className="flex justify-center">
-                <ChallengeIntentCard 
-                  challenge={challenge} 
-                  variant="social" 
-                  showActions={false}
-                />
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="compact" className="mt-4">
-              <div className="flex justify-center">
-                <ChallengeIntentCard 
-                  challenge={challenge} 
-                  variant="compact" 
-                  showActions={false}
-                />
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="full" className="mt-4">
-              <ChallengeIntentCard 
-                challenge={challenge} 
-                variant="default" 
-                showActions={false}
-              />
-            </TabsContent>
-          </Tabs>
 
-          {/* Copy Link */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Challenge Link</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={challengeUrl}
-                readOnly
-                className="flex-1 px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md text-sm"
+        <div className="space-y-5">
+          <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+            {!previewErrored ? (
+              <img
+                src={previewImageUrl}
+                alt={`Share preview for ${challenge.title}`}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 object-cover dark:border-slate-800 dark:bg-slate-900"
+                onError={() => setPreviewErrored(true)}
               />
-              <Button onClick={handleCopyLink} size="sm" variant="outline">
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              </Button>
-            </div>
+            ) : (
+              <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center dark:border-slate-700 dark:bg-slate-900">
+                <Loader2 className="mb-3 h-6 w-6 animate-spin text-slate-400" />
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Preview image is still warming up.</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  The share URL is already live. If the preview doesn't appear here yet, social apps will still fetch it from the server.
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* Social Media Platforms */}
-          <div className="space-y-3">
-            <label className="text-sm font-medium">Share on Social Media</label>
-            <div className="grid grid-cols-2 gap-3">
-              {socialPlatforms.map((platform) => (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{challenge.title}</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {challengerLine} vs {opponentLine}
+                </p>
+              </div>
+              <Badge variant="outline" className="shrink-0 rounded-full px-3 py-1 text-[11px] uppercase tracking-wide">
+                {challenge.status}
+              </Badge>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              {shareOptions.map((option) => (
                 <Button
-                  key={platform.key}
+                  key={option.key}
                   variant="outline"
-                  className={`justify-start gap-3 h-12 ${platform.bgColor}`}
-                  onClick={() => handleShare(platform.key)}
+                  className={`justify-start gap-3 rounded-2xl h-12 ${option.className}`}
+                  onClick={() => handlePlatformShare(option.key as "twitter" | "whatsapp" | "telegram", option.url)}
                 >
-                  <platform.icon className={`w-5 h-5 ${platform.color}`} />
-                  <span className="font-medium">{platform.name}</span>
+                  <option.icon className="h-4 w-4" />
+                  <span>{option.name}</span>
                 </Button>
               ))}
             </div>
-          </div>
 
-          {/* Additional Actions */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">More Options</label>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (navigator.share) {
-                    navigator.share({
-                      title: challenge.title,
-                      text: generateShareText('general'),
-                      url: challengeUrl,
-                    });
-                  } else {
-                    handleCopyLink();
-                  }
-                }}
-                className="gap-2"
-              >
-                <Send className="w-4 h-4" />
-                Native Share
+            <div className="mt-4 flex flex-wrap gap-2">
+              {typeof navigator !== "undefined" && navigator.share && (
+                <Button variant="outline" className="rounded-full" onClick={() => handlePlatformShare("native")}>
+                  <Send className="mr-2 h-4 w-4" />
+                  More options
+                </Button>
+              )}
+
+              <Button variant="outline" className="rounded-full" onClick={() => handlePlatformShare("copy")}>
+                {copied ? <Check className="mr-2 h-4 w-4 text-emerald-500" /> : <Copy className="mr-2 h-4 w-4" />}
+                {copied ? "Copied" : "Copy share link"}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.open(challengeUrl, '_blank')}
-                className="gap-2"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Open Challenge
+
+              <Button variant="outline" className="rounded-full" onClick={() => window.open(openChallengeUrl, "_blank")}>
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Open challenge
               </Button>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+              <span className="font-semibold text-slate-900 dark:text-white">Public share URL:</span>{" "}
+              <span className="break-all">{share.shareUrl}</span>
             </div>
           </div>
         </div>

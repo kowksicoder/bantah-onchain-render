@@ -77,6 +77,7 @@ import {
   getAgentRankSnapshot,
   notifyAgentRankChangeIfNeeded,
 } from "./agentNotificationService";
+import { getStoredMediaAsset, storeUploadedImage } from "./mediaStorage";
 
 // Import notification routes
 import notificationsApi from './routes/notificationsApi';
@@ -118,6 +119,44 @@ import { createPairingEngine } from './pairingEngine';
 // Import formatBalance utility for coin operations
 function formatBalance(amount: number): string {
   return `₦${amount.toLocaleString()}`;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderShareRedirectPage(
+  ogMeta: { title: string; description: string; url: string },
+  redirectPath: string,
+  metaTags: string,
+) {
+  const safeRedirectPath = escapeHtml(redirectPath);
+  const safeTitle = escapeHtml(ogMeta.title);
+  const safeDescription = escapeHtml(ogMeta.description);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${safeTitle}</title>
+  ${metaTags}
+  <meta http-equiv="refresh" content="0; url=${safeRedirectPath}" />
+  <script>window.location.replace(${JSON.stringify(redirectPath)});</script>
+</head>
+<body>
+  <main style="font-family: Arial, Helvetica, sans-serif; padding: 24px;">
+    <h1>${safeTitle}</h1>
+    <p>${safeDescription}</p>
+    <p><a href="${safeRedirectPath}">Open challenge on Bantah</a></p>
+  </main>
+</body>
+</html>`;
 }
 import axios from "axios";
 import fs from "fs/promises";
@@ -235,6 +274,8 @@ function normalizeCommunityCoverImageUrl(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("/attached_assets/")) return trimmed;
+  if (trimmed.startsWith("/api/media/")) return trimmed;
+  if (trimmed.startsWith("data:image/")) return trimmed;
   return normalizeSocialUrl(trimmed);
 }
 
@@ -2043,26 +2084,14 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(400).json({ message: "File too large. Maximum size is 8MB." });
       }
 
-      const extensionMap: Record<string, string> = {
-        "image/jpeg": "jpg",
-        "image/jpg": "jpg",
-        "image/png": "png",
-        "image/webp": "webp",
-        "image/gif": "gif",
-      };
-
-      const ext = extensionMap[String(file.mimetype || "").toLowerCase()] || "jpg";
-      const filename = `partner-cover-${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${ext}`;
-      const uploadDir = path.resolve(process.cwd(), "attached_assets");
-      const filePath = path.join(uploadDir, filename);
-
-      await fs.mkdir(uploadDir, { recursive: true });
-      await fs.writeFile(filePath, file.buffer);
+      const stored = await storeUploadedImage(file, {
+        prefix: "partner-cover",
+      });
 
       return res.json({
         success: true,
-        imageUrl: `/attached_assets/${filename}`,
-        filename,
+        imageUrl: stored.imageUrl,
+        filename: stored.filename,
       });
     } catch (error) {
       console.error("Error uploading partner signup cover image:", error);
@@ -9864,6 +9893,32 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
+  app.get('/share/challenges/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const numericId = parseInt(id, 10);
+      if (Number.isNaN(numericId)) {
+        return res.status(400).send("Invalid challenge id");
+      }
+
+      const challenge = await storage.getChallengeById(numericId);
+      if (!challenge) {
+        return res.status(404).send("Challenge not found");
+      }
+
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const ogMeta = await generateChallengeOGMeta(id, baseUrl);
+      const redirectPath = `/challenges/${numericId}`;
+      const html = renderShareRedirectPage(ogMeta, redirectPath, generateOGMetaTags(ogMeta));
+
+      res.set("Content-Type", "text/html");
+      res.send(html);
+    } catch (error) {
+      console.error("Error generating challenge share page:", error);
+      res.redirect("/challenges");
+    }
+  });
+
   app.get('/profile/:userId', async (req, res) => {
     try {
       const { userId } = req.params;
@@ -9982,26 +10037,51 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         return res.status(400).json({ message: 'File too large. Maximum size is 5MB.' });
       }
 
-      const fileExtension = String(imageFile.originalname || imageFile.filename || 'image.png').split('.').pop();
-      const uniqueFilename = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExtension}`;
-      const uploadDir = path.resolve('./attached_assets');
-      const uploadPath = path.join(uploadDir, uniqueFilename);
+      const stored = await storeUploadedImage(imageFile, {
+        userId: typeof userId === "string" ? userId : null,
+        prefix: "image",
+      });
 
-      await fs.mkdir(uploadDir, { recursive: true });
-      await fs.writeFile(uploadPath, imageFile.buffer);
-
-      const imageUrl = `/attached_assets/${uniqueFilename}`;
-
-      console.log(`Image uploaded successfully: ${imageUrl} by user ${userId}`);
+      console.log(`Image uploaded successfully: ${stored.imageUrl} by user ${userId}`);
 
       res.json({
         success: true,
-        imageUrl,
-        filename: uniqueFilename,
+        imageUrl: stored.imageUrl,
+        filename: stored.filename,
       });
     } catch (error) {
       console.error('Error uploading image:', error);
       res.status(500).json({ message: 'Failed to upload image' });
+    }
+  });
+
+  app.get('/api/media/:id', async (req, res) => {
+    try {
+      const asset = await getStoredMediaAsset(String(req.params.id || ""));
+      if (!asset) {
+        return res.status(404).json({ message: "Media asset not found" });
+      }
+
+      if (asset.storage_kind === "cloudinary" && asset.remote_url) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return res.redirect(302, asset.remote_url);
+      }
+
+      if (asset.storage_kind === "database" && asset.data_base64) {
+        const payload = Buffer.from(asset.data_base64, "base64");
+        res.setHeader("Content-Type", asset.mime_type || "application/octet-stream");
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return res.send(payload);
+      }
+
+      if (asset.storage_kind === "local" && asset.local_path) {
+        return res.sendFile(path.resolve(asset.local_path));
+      }
+
+      return res.status(404).json({ message: "Media asset payload unavailable" });
+    } catch (error) {
+      console.error("Error serving media asset:", error);
+      return res.status(500).json({ message: "Failed to load media asset" });
     }
   });
 

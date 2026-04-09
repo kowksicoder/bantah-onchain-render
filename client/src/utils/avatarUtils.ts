@@ -50,7 +50,7 @@ function looksLikeImageUrl(value: string): boolean {
   const v = value.trim().toLowerCase();
   if (!v) return false;
   if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("data:image/")) return true;
-  if (v.startsWith("/attached_assets/") || v.startsWith("/uploads/") || v.startsWith("/assets/")) return true;
+  if (v.startsWith("/attached_assets/") || v.startsWith("/uploads/") || v.startsWith("/assets/") || v.startsWith("/api/media/")) return true;
   return /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/.test(v);
 }
 
