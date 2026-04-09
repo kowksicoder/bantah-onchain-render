@@ -43,6 +43,7 @@ export async function initializeDatabase() {
     const onchainStatements = [
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_wallet_address varchar`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_addresses jsonb DEFAULT '[]'::jsonb`,
+      `ALTER TABLE users ALTER COLUMN points SET DEFAULT 5`,
       `CREATE INDEX IF NOT EXISTS idx_users_primary_wallet_address ON users(primary_wallet_address)`,
       `CREATE TABLE IF NOT EXISTS agents (
         agent_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

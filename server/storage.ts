@@ -4245,9 +4245,9 @@ export class DatabaseStorage implements IStorage {
         data: { points: BANTCREDIT_SIGNUP_REWARD, type: 'welcome_bonus' }
       });
 
-      // Check if user was referred
+      // Legacy referral bonus path kept disabled to avoid double-awarding.
       const user = userCreatedToday[0];
-      if (user.referredBy) {
+      if (false && user.referredBy) {
         // Find referrer and create referral notification
         const referrer = await this.getUser(user.referredBy);
         if (referrer) {

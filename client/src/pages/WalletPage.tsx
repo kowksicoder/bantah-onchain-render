@@ -655,30 +655,6 @@ export default function WalletPage() {
               </div>
             </div>
 
-            {/* Chain Selector */}
-            {chainOptions.length > 0 && (
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-3 border border-slate-200 dark:border-slate-700 mb-5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
-                  Network
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {chainOptions.map((chain) => (
-                    <button
-                      key={chain.chainId}
-                      type="button"
-                      onClick={() => setSelectedChainId(Number(chain.chainId))}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                        Number(selectedChain?.chainId) === Number(chain.chainId)
-                          ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100"
-                          : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600"
-                      }`}
-                    >
-                      {chain.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">

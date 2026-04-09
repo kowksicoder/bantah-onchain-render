@@ -394,7 +394,7 @@ export function Navigation() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
-                          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                          className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-[10px] font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800"
                           aria-label="Select chain"
                         >
                           {(() => {
@@ -409,7 +409,6 @@ export function Navigation() {
                               <Network className="h-3.5 w-3.5" />
                             );
                           })()}
-                          <span>{formatChainLabel(activeChain)}</span>
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent

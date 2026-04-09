@@ -1675,39 +1675,14 @@ export default function Challenges() {
     const seeded = shouldInjectMocks ? [...mockAgentChallenges, ...base] : base;
 
     return [...seeded].sort((a: any, b: any) => {
-    // Priority 0: Pinned challenges first
-    if (a.isPinned && !b.isPinned) return -1;
-    if (!a.isPinned && b.isPinned) return 1;
+      // Keep explicit admin pins at the top, then sort the rest by newest first.
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
 
-    // Priority 1: Pending (Action Required)
-    const aIsPending = a.status === 'pending' && !a.adminCreated && (a.challengerId === user?.id || a.challengedId === user?.id);
-    const bIsPending = b.status === 'pending' && !b.adminCreated && (b.challengerId === user?.id || b.challengedId === user?.id);
-    if (aIsPending && !bIsPending) return -1;
-    if (!aIsPending && bIsPending) return 1;
-
-    // Priority 2: Active/Live
-    const aIsActive = a.status === 'active';
-    const bIsActive = b.status === 'active';
-    if (aIsActive && !bIsActive) return -1;
-    if (!aIsActive && bIsActive) return 1;
-
-    // Priority 3: Featured/Open (Admin created matches)
-    const aIsOpen = a.status === 'open' && a.adminCreated;
-    const bIsOpen = b.status === 'open' && b.adminCreated;
-    if (aIsOpen && !bIsOpen) return -1;
-    if (!aIsOpen && bIsOpen) return 1;
-
-    // Priority 4: Awaiting Resolution
-    const aIsAwaiting = a.status === 'pending_admin';
-    const bIsAwaiting = b.status === 'pending_admin';
-    if (aIsAwaiting && !bIsAwaiting) return -1;
-    if (!aIsAwaiting && bIsAwaiting) return 1;
-
-    // Default: Newest first (with resilient timestamps)
-    const timeDiff = resolveSortTime(b) - resolveSortTime(a);
-    if (timeDiff !== 0) return timeDiff;
-    return resolveSortId(b) - resolveSortId(a);
-  });
+      const timeDiff = resolveSortTime(b) - resolveSortTime(a);
+      if (timeDiff !== 0) return timeDiff;
+      return resolveSortId(b) - resolveSortId(a);
+    });
   }, [filteredChallenges, user?.id]);
 
   const visibleChallenges = useMemo(

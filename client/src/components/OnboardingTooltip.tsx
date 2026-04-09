@@ -33,7 +33,7 @@ const onboardingSteps: OnboardingStep[] = [
   {
     id: 'create-event',
     title: 'Create Events & Earn BantCredit',
-    content: 'Get 1000 BantCredit instantly when you create your first event.',
+    content: 'Create challenges, check in daily, and grow your BantCredit over time.',
     target: 'create',
     icon: <span className="text-lg">⚡</span>,
     position: 'top',

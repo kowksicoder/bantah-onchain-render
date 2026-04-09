@@ -13,14 +13,11 @@ import {
   X,
   Eye,
   Trophy,
-  Share2,
   Zap,
   Lock,
   Pin,
   Hourglass,
 } from "lucide-react";
-import { CompactShareButton } from "@/components/ShareButton";
-import { shareChallenge } from "@/utils/sharing";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AgentIcon } from "@/components/AgentIcon";
 import { getUserDisplayName, getUserHandle } from "@/hooks/usePublicUserBasic";
@@ -319,21 +316,6 @@ export function ChallengeCard({
   };
 
   const activeBonuses = getBonusBadge();
-
-  const rawShareTokenSymbol = String(
-    challenge.tokenSymbol || (challenge as any).token_symbol || "",
-  ).toUpperCase();
-  const stakeShareLabel = isOnchainBuild
-    ? `${String(challenge.amount)} ${rawShareTokenSymbol || "ETH"}`
-    : `${String(challenge.amount)}`;
-
-  // Generate sharing data for the challenge
-  const challengeShareData = shareChallenge(
-    challenge.id.toString(),
-    challenge.title,
-    stakeShareLabel,
-    targetedWalletAddress || undefined,
-  );
 
   const acceptChallengeMutation = useMutation({
     mutationFn: async () => {
@@ -1028,9 +1010,45 @@ export function ChallengeCard({
             )}
             {/* Always show share button */}
             <div onClick={(e) => e.stopPropagation()}>
-              <CompactShareButton
-                shareData={challengeShareData.shareData}
-                className="text-primary h-4 w-4 hover:scale-110 transition-transform flex-shrink-0"
+              <SocialMediaShare
+                challenge={{
+                  id: challenge.id,
+                  title: challenge.title,
+                  amount: challenge.amount,
+                  tokenSymbol: challenge.tokenSymbol,
+                  status: challenge.status,
+                  dueDate: challenge.dueDate,
+                  challengerSide: challenge.challengerSide,
+                  challengedSide: challenge.challengedSide,
+                  challengerUser: challenge.challengerUser,
+                  challengedUser: challenge.challengedUser,
+                  updatedAt: (challenge as any).updatedAt || challenge.createdAt,
+                }}
+                trigger={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-primary h-8 w-8 p-0 hover:scale-110 transition-transform flex-shrink-0"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    >
+                      <circle cx="18" cy="5" r="3" />
+                      <circle cx="6" cy="12" r="3" />
+                      <circle cx="18" cy="19" r="3" />
+                      <path d="M8.59 13.51 15.42 17.49" />
+                      <path d="M15.41 6.51 8.59 10.49" />
+                    </svg>
+                  </Button>
+                }
               />
             </div>
           </div>
