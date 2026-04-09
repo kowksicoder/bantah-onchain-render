@@ -13,7 +13,10 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import { formatDistanceToNow } from "date-fns";
 import { ShareButton } from "@/components/ShareButton";
 import { shareReferral } from "@/utils/sharing";
-import { BANTCREDIT_REFERRER_REWARD } from "@shared/bantCredit";
+import {
+  BANTCREDIT_REFERRAL_SHARE_PERCENT,
+  BANTCREDIT_REFERRER_REWARD,
+} from "@shared/bantCredit";
 import { 
   Users, 
   Gift, 
@@ -149,6 +152,9 @@ export default function ReferralPage() {
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white">Share Your Link</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400">Earn {BANTCREDIT_REFERRER_REWARD} BantCredit for each successful referral</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Referral update: you receive {BANTCREDIT_REFERRAL_SHARE_PERCENT}% of your referred friends&apos; trading fees and {BANTCREDIT_REFERRAL_SHARE_PERCENT}% of their BantCredit.
+              </p>
             </div>
           </div>
           

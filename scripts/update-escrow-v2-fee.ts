@@ -1,7 +1,10 @@
+import { config as loadEnv } from "dotenv";
 import { network } from "hardhat";
 import { ethers } from "ethers";
 
-const DEFAULT_FEE_PPM = 9000; // 0.9%
+loadEnv();
+
+const DEFAULT_TARGET_FEE_PPM = 9000; // 0.9%
 
 function envKeyForChain(
   chainId: number,
@@ -28,16 +31,14 @@ function envKeyForChain(
 async function main() {
   const { ethers: hardhatEthers } = await network.connect();
   const provider = hardhatEthers.provider;
+
   const adminPrivateKey = String(process.env.ADMIN_PRIVATE_KEY || "").trim();
   if (!adminPrivateKey) {
     throw new Error("No deployer account available. Set ADMIN_PRIVATE_KEY in .env");
   }
 
-  const deployer = new ethers.Wallet(adminPrivateKey, provider);
-  const ownerFromEnv = String(process.env.ADMIN_ADDRESS || "").trim();
-  const owner = ownerFromEnv || deployer.address;
-
-  const chainInfo = await deployer.provider.getNetwork();
+  const signer = new ethers.Wallet(adminPrivateKey, provider);
+  const chainInfo = await signer.provider.getNetwork();
   const chainId = Number(chainInfo.chainId);
   const argNetworkIndex = process.argv.findIndex((arg) => arg === "--network");
   const networkFromArgs =
@@ -48,54 +49,52 @@ async function main() {
   const chainName = networkFromArgs || networkFromEnv || `chain-${chainId}`;
 
   const escrowEnvKey = envKeyForChain(chainId, chainName, "ESCROW_ADDRESS");
-  const treasuryEnvKey = envKeyForChain(chainId, chainName, "TREASURY_ADDRESS");
   const feeEnvKey = envKeyForChain(chainId, chainName, "ESCROW_FEE_PPM");
 
-  const treasury =
-    String(process.env[treasuryEnvKey] || "").trim() ||
-    String(process.env.ONCHAIN_TREASURY_ADDRESS || "").trim() ||
-    owner;
-  if (!ethers.isAddress(treasury)) {
-    throw new Error(
-      `Invalid treasury address. Set ${treasuryEnvKey} or ONCHAIN_TREASURY_ADDRESS in .env`,
-    );
+  const escrowAddress = String(process.env[escrowEnvKey] || "").trim();
+  if (!ethers.isAddress(escrowAddress)) {
+    throw new Error(`Invalid escrow address. Set ${escrowEnvKey} in .env`);
   }
 
-  const feePpmRaw =
+  const targetFeeRaw =
     String(process.env[feeEnvKey] || "").trim() ||
     String(process.env.ONCHAIN_ESCROW_FEE_PPM || "").trim() ||
-    String(DEFAULT_FEE_PPM);
-  const feePpm = Number.parseInt(feePpmRaw, 10);
-  if (!Number.isInteger(feePpm) || feePpm < 0) {
+    String(DEFAULT_TARGET_FEE_PPM);
+  const targetFeePpm = Number.parseInt(targetFeeRaw, 10);
+  if (!Number.isInteger(targetFeePpm) || targetFeePpm < 0) {
     throw new Error(
       `Invalid fee ppm. Set ${feeEnvKey} or ONCHAIN_ESCROW_FEE_PPM to an integer value`,
     );
   }
 
-  console.log(`Deploying BantahEscrowV2 on ${chainName} (chainId=${chainId})`);
-  console.log(`Deployer: ${deployer.address}`);
-  console.log(`Owner: ${owner}`);
-  console.log(`Treasury: ${treasury}`);
-  console.log(`Fee (ppm): ${feePpm}`);
+  const escrow = await hardhatEthers.getContractAt("BantahEscrowV2", escrowAddress, signer);
+  const currentOwner = await escrow.owner();
+  const currentFeePpm = Number(await escrow.feePpm());
 
-  const EscrowFactory = await hardhatEthers.getContractFactory("BantahEscrowV2", deployer);
-  const escrow = await EscrowFactory.deploy(owner, treasury, feePpm);
-  await escrow.waitForDeployment();
+  console.log(`Updating BantahEscrowV2 fee on ${chainName} (chainId=${chainId})`);
+  console.log(`Escrow: ${escrowAddress}`);
+  console.log(`Signer: ${signer.address}`);
+  console.log(`Owner: ${currentOwner}`);
+  console.log(`Current fee ppm: ${currentFeePpm}`);
+  console.log(`Target fee ppm: ${targetFeePpm}`);
 
-  const escrowAddress = await escrow.getAddress();
-  const txHash = escrow.deploymentTransaction()?.hash;
+  if (currentOwner.toLowerCase() !== signer.address.toLowerCase()) {
+    throw new Error("Configured signer is not the escrow owner. Refusing to continue.");
+  }
 
-  console.log("===============================================");
-  console.log(`Escrow V2 deployed: ${escrowAddress}`);
-  console.log(`Deploy tx hash: ${txHash || "unknown"}`);
-  console.log("Set these envs for the corresponding chain:");
-  console.log(`${escrowEnvKey}=${escrowAddress}`);
-  console.log(`${treasuryEnvKey}=${treasury}`);
-  console.log(`${feeEnvKey}=${feePpm}`);
-  console.log("===============================================");
+  if (currentFeePpm === targetFeePpm) {
+    console.log("Fee is already set to the target value. No transaction needed.");
+    return;
+  }
+
+  const tx = await escrow.setFeePpm(targetFeePpm);
+  console.log(`Submitted tx: ${tx.hash}`);
+  const receipt = await tx.wait();
+  console.log(`Confirmed in block ${receipt?.blockNumber || "unknown"}`);
+  console.log("Fee updated successfully.");
 }
 
 main().catch((error) => {
-  console.error("Escrow V2 deployment failed:", error);
+  console.error("Escrow V2 fee update failed:", error);
   process.exitCode = 1;
 });

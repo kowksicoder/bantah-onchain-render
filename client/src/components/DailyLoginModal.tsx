@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import ConfettiExplosion from 'react-confetti-explosion';
+import { BANTCREDIT_DAILY_CHECKIN_REWARD } from '@shared/bantCredit';
 
 interface DailyLoginModalProps {
   isOpen: boolean;
@@ -24,16 +25,8 @@ export function DailyLoginModal({ isOpen, onClose, currentStreak, hasClaimedToda
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Calculate rewards based on streak
-  const getStreakReward = (streak: number) => {
-    const baseReward = 50;
-    const streakBonus = Math.min(streak * 10, 200); // Max bonus of 200
-    const weeklyBonus = Math.floor(streak / 7) * 100; // 100 bonus every 7 days
-    return baseReward + streakBonus + weeklyBonus;
-  };
-
-  const todaysReward = getStreakReward(currentStreak + 1);
-  const tomorrowsReward = getStreakReward(currentStreak + 2);
+  const todaysReward = BANTCREDIT_DAILY_CHECKIN_REWARD;
+  const tomorrowsReward = BANTCREDIT_DAILY_CHECKIN_REWARD;
 
   // Get week progress (0-6 for each day of the week)
   const getWeekProgress = () => {

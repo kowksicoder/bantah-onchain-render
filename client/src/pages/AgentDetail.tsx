@@ -59,6 +59,7 @@ import type {
   EligibleMarketsResponse,
   TradingReadinessResponse,
 } from "@shared/agentTrading";
+import { BANTCREDIT_AGENT_WIN_REWARD } from "@shared/bantCredit";
 
 const limeButtonClass =
   "border-0 bg-[#ccff00] text-slate-950 hover:bg-[#b8eb00] dark:bg-[#ccff00] dark:text-slate-950 dark:hover:bg-[#b8eb00]";
@@ -959,7 +960,7 @@ export default function AgentDetail() {
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900 sm:px-4 sm:py-3">
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
                     <Wallet className="h-4 w-4 text-[#7440ff]" />
-                    +100 BantCredit per agent win
+                    +{BANTCREDIT_AGENT_WIN_REWARD} BantCredit per agent win
                   </div>
                 </div>
               </CardContent>

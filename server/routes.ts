@@ -20,6 +20,7 @@ import { getOnchainIndexerHealthSnapshot } from "./onchainIndexer";
 import { DB_IDENTITY, db, pool } from "./db";
 import { insertEventSchema, insertChallengeSchema, insertNotificationSchema } from "@shared/schema";
 import {
+  BANTCREDIT_DAILY_CHECKIN_REWARD,
   BANTCREDIT_REFERRED_REWARD,
   BANTCREDIT_REFERRER_REWARD,
 } from "@shared/bantCredit";
@@ -8417,10 +8418,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         }
       }
 
-      // Calculate points to award (base 50 + streak bonus)
-      const basePoints = 50;
-      const streakBonus = Math.min(currentStreak * 10, 200); // Max 200 bonus
-      const pointsToAward = basePoints + streakBonus;
+      const pointsToAward = BANTCREDIT_DAILY_CHECKIN_REWARD;
 
       res.json({
         hasSignedInToday,

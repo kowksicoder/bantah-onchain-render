@@ -14,7 +14,7 @@ Set these in `Onchain/.env`:
 - `ADMIN_PRIVATE_KEY=0x...` (deployer wallet private key)
 - `ADMIN_ADDRESS=0x...` (optional owner override; defaults to deployer)
 - `ONCHAIN_TREASURY_ADDRESS=0x...` (fallback treasury for V2; can also be chain-specific)
-- `ONCHAIN_ESCROW_FEE_PPM=180` (`0.018%`; V2 only)
+- `ONCHAIN_ESCROW_FEE_PPM=9000` (`0.9%`; V2 only)
 - `ONCHAIN_BASE_SEPOLIA_RPC_URL=...`
 - `ONCHAIN_BSC_TESTNET_RPC_URL=...`
 - `ONCHAIN_ARBITRUM_SEPOLIA_RPC_URL=...`
@@ -24,9 +24,9 @@ Optional chain-specific treasury / fee overrides:
 - `ONCHAIN_BASE_SEPOLIA_TREASURY_ADDRESS=0x...`
 - `ONCHAIN_BSC_TESTNET_TREASURY_ADDRESS=0x...`
 - `ONCHAIN_ARBITRUM_SEPOLIA_TREASURY_ADDRESS=0x...`
-- `ONCHAIN_BASE_SEPOLIA_ESCROW_FEE_PPM=180`
-- `ONCHAIN_BSC_TESTNET_ESCROW_FEE_PPM=180`
-- `ONCHAIN_ARBITRUM_SEPOLIA_ESCROW_FEE_PPM=180`
+- `ONCHAIN_BASE_SEPOLIA_ESCROW_FEE_PPM=9000`
+- `ONCHAIN_BSC_TESTNET_ESCROW_FEE_PPM=9000`
+- `ONCHAIN_ARBITRUM_SEPOLIA_ESCROW_FEE_PPM=9000`
 
 ## 2) Compile
 
@@ -81,13 +81,22 @@ All four active mainnets:
 powershell -ExecutionPolicy Bypass -File scripts/deploy-escrow-v2-mainnets.ps1
 ```
 
+Update the fee on an already deployed V2 escrow:
+
+```bash
+npm run onchain:update:v2:fee:base-mainnet
+npm run onchain:update:v2:fee:bsc-mainnet
+npm run onchain:update:v2:fee:arb-mainnet
+npm run onchain:update:v2:fee:unichain-mainnet
+```
+
 `BantahEscrowV2` constructor args:
 
 - `owner`
 - `treasury`
 - `feePpm`
 
-Default `feePpm=180` means `0.018%`.
+Default `feePpm=9000` means `0.9%`.
 
 ## 5) Wire deployed addresses
 
@@ -119,7 +128,7 @@ For current frontend helper defaults:
 For V2 treasury-aware config:
 
 - `ONCHAIN_TREASURY_ADDRESS=0x...`
-- `ONCHAIN_ESCROW_FEE_PPM=180`
+- `ONCHAIN_ESCROW_FEE_PPM=9000`
 
 ## 6) Enable contract mode
 

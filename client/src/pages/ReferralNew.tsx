@@ -18,6 +18,7 @@ import {
 import { useLocation } from "wouter";
 import {
   BANTCREDIT_REFERRED_REWARD,
+  BANTCREDIT_REFERRAL_SHARE_PERCENT,
   BANTCREDIT_REFERRER_REWARD,
 } from "@shared/bantCredit";
 
@@ -184,6 +185,9 @@ export default function ReferralNew() {
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
                   Earn rewards when friends join using your link
+                </p>
+                <p className="mt-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                  Referral update: you receive {BANTCREDIT_REFERRAL_SHARE_PERCENT}% of your referred friends&apos; trading fees and {BANTCREDIT_REFERRAL_SHARE_PERCENT}% of their BantCredit.
                 </p>
               </div>
             </div>

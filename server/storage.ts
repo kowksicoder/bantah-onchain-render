@@ -78,13 +78,15 @@ import { getOnchainServerConfig } from "./onchainConfig";
 import { CHALLENGE_PLATFORM_FEE_RATE } from "@shared/feeConfig";
 import {
   BANTCREDIT_ACTIVITY_EXCLUDED_TRANSACTION_TYPES,
+  BANTCREDIT_AGENT_WIN_REWARD,
+  BANTCREDIT_DAILY_CHECKIN_REWARD,
   calculateChallengeCreationBantCredit,
   BANTCREDIT_SIGNUP_REWARD,
   type BantCreditChallengeRewardResult,
 } from "@shared/bantCredit";
 
 const ONCHAIN_CONFIG = getOnchainServerConfig();
-export const AGENT_WIN_BANTCREDIT_REWARD = 100;
+export const AGENT_WIN_BANTCREDIT_REWARD = BANTCREDIT_AGENT_WIN_REWARD;
 
 function clampCurrencyAmount(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -3962,7 +3964,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(transactions);
 
-    // Calculate platform revenue (0.018% of the losing side on matched challenges + 3% event creator fees)
+    // Calculate platform revenue (0.9% of the losing side on matched challenges + 3% event creator fees)
     const challengeVolume = parseFloat(challengeStats?.totalChallengeStaked || '0');
     const creatorFees = parseFloat(eventStats?.totalCreatorFees || '0');
     const estimatedChallengePlatformFees = (challengeVolume / 2) * CHALLENGE_PLATFORM_FEE_RATE;
@@ -4209,10 +4211,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    // Calculate points (base 50 + streak bonus, max 200 bonus)
-    const basePoints = 50;
-    const streakBonus = Math.min(currentStreak * 10, 200);
-    const pointsEarned = basePoints + streakBonus;
+    const pointsEarned = BANTCREDIT_DAILY_CHECKIN_REWARD;
 
     // Create today's login record
     const [newLogin] = await this.db
