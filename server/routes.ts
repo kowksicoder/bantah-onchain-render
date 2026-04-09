@@ -275,6 +275,17 @@ function normalizeCommunityCoverImageUrl(input: string): string | null {
   if (!trimmed) return null;
   if (trimmed.startsWith("/attached_assets/")) return trimmed;
   if (trimmed.startsWith("/api/media/")) return trimmed;
+  if (trimmed.startsWith("/assets/")) return trimmed;
+  if (trimmed.startsWith("data:image/")) return trimmed;
+  return normalizeSocialUrl(trimmed);
+}
+
+function normalizeChallengeCoverImageUrl(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("/attached_assets/")) return trimmed;
+  if (trimmed.startsWith("/api/media/")) return trimmed;
+  if (trimmed.startsWith("/assets/")) return trimmed;
   if (trimmed.startsWith("data:image/")) return trimmed;
   return normalizeSocialUrl(trimmed);
 }
@@ -9197,6 +9208,85 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   });
 
+  app.post('/api/admin/challenges/:id/repair-cover', adminAuth, async (req: AdminAuthRequest, res, next) => {
+    try {
+      if (!upload || typeof upload.single !== "function") {
+        return res.status(500).json({ message: "Upload middleware unavailable" });
+      }
+      return upload.single("coverImage")(req, res, next);
+    } catch (error) {
+      return next(error);
+    }
+  }, async (req: AdminAuthRequest, res) => {
+    try {
+      const challengeId = Number.parseInt(String(req.params.id || ""), 10);
+      if (!Number.isFinite(challengeId) || challengeId <= 0) {
+        return res.status(400).json({ message: "Invalid challenge ID" });
+      }
+
+      const challenge = await storage.getChallengeById(challengeId);
+      if (!challenge) {
+        return res.status(404).json({ message: "Challenge not found" });
+      }
+
+      const imageFile = (req as any).file as {
+        mimetype?: string;
+        size?: number;
+        originalname?: string;
+        buffer: Buffer;
+      } | undefined;
+
+      let repairedCoverImageUrl: string | null = null;
+
+      if (imageFile) {
+        const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
+        if (!allowedTypes.includes(String(imageFile.mimetype || "").toLowerCase())) {
+          return res.status(400).json({
+            message: "Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.",
+          });
+        }
+
+        const maxSize = 8 * 1024 * 1024;
+        if (Number(imageFile.size || 0) > maxSize) {
+          return res.status(400).json({ message: "File too large. Maximum size is 8MB." });
+        }
+
+        const stored = await storeUploadedImage(imageFile, {
+          userId: req.adminUser?.id || req.user?.id || null,
+          prefix: "challenge-cover",
+        });
+
+        repairedCoverImageUrl = stored.imageUrl;
+      } else if (typeof req.body?.coverImageUrl === "string") {
+        repairedCoverImageUrl = normalizeChallengeCoverImageUrl(req.body.coverImageUrl);
+        if (!repairedCoverImageUrl) {
+          return res.status(400).json({
+            message: "coverImageUrl must be a valid Bantah media path, asset path, data image, or public URL.",
+          });
+        }
+      } else {
+        return res.status(400).json({
+          message: "Provide a coverImage upload or a valid coverImageUrl to repair the challenge cover.",
+        });
+      }
+
+      const updatedChallenge = await storage.updateChallenge(challengeId, {
+        coverImageUrl: repairedCoverImageUrl,
+      });
+
+      return res.json({
+        success: true,
+        challengeId,
+        previousCoverImageUrl: challenge.coverImageUrl || null,
+        coverImageUrl: repairedCoverImageUrl,
+        challenge: updatedChallenge,
+      });
+    } catch (error) {
+      console.error("Error repairing challenge cover:", error);
+      return res.status(500).json({ message: "Failed to repair challenge cover" });
+    }
+  });
+
   // Toggle challenge visibility
   app.patch('/api/admin/challenges/:id/visibility', adminAuth, async (req: AdminAuthRequest, res) => {
     try {
@@ -9912,6 +10002,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       const html = renderShareRedirectPage(ogMeta, redirectPath, generateOGMetaTags(ogMeta));
 
       res.set("Content-Type", "text/html");
+      res.set("Cache-Control", "no-store, max-age=0");
       res.send(html);
     } catch (error) {
       console.error("Error generating challenge share page:", error);

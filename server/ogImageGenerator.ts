@@ -164,7 +164,10 @@ async function resolveImageDataUri(source: unknown, baseUrl: string): Promise<st
 
 async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl: string): Promise<string> {
   const logoDataUri = (await loadFileAsDataUri(BANTAH_BLUE_LOGO_PATH, "image/svg+xml")) || "";
-  const coverImageDataUri = await resolveImageDataUri(challenge.coverImageUrl, baseUrl);
+  const coverImageDataUri = await resolveImageDataUri(
+    challenge.coverImageUrl || challenge.coverImage || challenge.image || challenge.imageUrl,
+    baseUrl,
+  );
 
   const challengerAgent = challenge.challengerAgentId
     ? await storage.getAgentById(String(challenge.challengerAgentId))
@@ -189,91 +192,118 @@ async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl:
   const statusLabel = String(challenge.status || "open").toUpperCase();
   const deadlineLabel = formatDateLabel(challenge.dueDate);
   const chainLabel = resolveChainLabel(challenge.chainId);
-  const titleLines = wrapText(String(challenge.title || ""), 34, 2);
+  const titleLines = wrapText(String(challenge.title || ""), 36, 2);
   const participantLabel = challenge.challenged
     ? `${challengerSide} @${challengerName}  vs  ${challengedSide} @${challengedName}`
     : `${challengerSide} @${challengerName}  vs  OPEN`;
-  const agentLine = [challengerAgent?.name, challengedAgent?.name].filter(Boolean).join("  •  ");
-  const statusColor = challengedSide === "NO" ? "#ef4444" : "#22c55e";
-  const sideChipBg = challengedSide === "NO" ? "#fde7e7" : "#e8ffe0";
+  const agentLine = [challengerAgent?.name, challengedAgent?.name].filter(Boolean).join("  |  ");
+  const yesHolder = challengerSide === "YES"
+    ? challengerName
+    : challengedSide === "YES"
+      ? challengedName
+      : "Open";
+  const noHolder = challengerSide === "NO"
+    ? challengerName
+    : challengedSide === "NO"
+      ? challengedName
+      : "Open";
+  const normalizedStatus = statusLabel.toLowerCase();
+  const statusBg = normalizedStatus.includes("resolved")
+    ? "#e8fff4"
+    : normalizedStatus.includes("active")
+      ? "#eef4ff"
+      : normalizedStatus.includes("pending")
+        ? "#fff6e8"
+        : "#eef2ff";
+  const statusColor = normalizedStatus.includes("resolved")
+    ? "#0f9f68"
+    : normalizedStatus.includes("pending")
+      ? "#c77b1a"
+      : "#2453e6";
+  const yesHolderDisplay = yesHolder === "Open" ? "Open Slot" : `@${yesHolder}`;
+  const noHolderDisplay = noHolder === "Open" ? "Open Slot" : `@${noHolder}`;
 
   const coverMarkup = coverImageDataUri
-    ? `<image href="${coverImageDataUri}" x="128" y="163" width="88" height="88" preserveAspectRatio="xMidYMid slice" clip-path="url(#coverClip)" />`
+    ? `<image href="${coverImageDataUri}" x="108" y="148" width="132" height="132" preserveAspectRatio="xMidYMid slice" clip-path="url(#coverClip)" />`
     : `
-      <rect x="128" y="163" width="88" height="88" rx="20" fill="#e6ebf2" />
-      <rect x="128" y="163" width="44" height="88" fill="#7a93c5" />
-      <rect x="172" y="163" width="44" height="88" fill="#e78984" />
-      <rect x="128" y="225" width="88" height="26" fill="#dac482" />
+      <rect x="108" y="148" width="132" height="132" rx="24" fill="#e6ebf2" />
+      <rect x="108" y="148" width="66" height="132" fill="#7a93c5" />
+      <rect x="174" y="148" width="66" height="132" fill="#e78984" />
+      <rect x="108" y="240" width="132" height="40" fill="#dac482" />
     `;
 
   const agentTextMarkup = agentLine
-    ? `<text x="128" y="374" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="600" fill="#41506b">${escapeXml(agentLine)}</text>`
+    ? `<text x="108" y="458" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="600" fill="#41506b">${escapeXml(agentLine)}</text>`
     : "";
 
   const logoMarkup = logoDataUri
-    ? `<image href="${logoDataUri}" x="446" y="528" width="306" height="62" preserveAspectRatio="xMinYMin meet" />`
-    : `<text x="600" y="568" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" text-anchor="middle" fill="#ffffff">Bantah</text>`;
+    ? `<image href="${logoDataUri}" x="74" y="34" width="214" height="42" preserveAspectRatio="xMinYMin meet" />`
+    : `<text x="76" y="64" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#ffffff">Bantah</text>`;
 
   return `
     <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
-          <stop stop-color="#133fd0" />
-          <stop offset="1" stop-color="#0b1d57" />
+          <stop stop-color="#7440FF" />
+          <stop offset="0.58" stop-color="#8A5BFF" />
+          <stop offset="1" stop-color="#5A2FE2" />
         </linearGradient>
-        <linearGradient id="glow" x1="760" y1="530" x2="1060" y2="620" gradientUnits="userSpaceOnUse">
-          <stop stop-color="#24e6a3" stop-opacity="0.35" />
-          <stop offset="1" stop-color="#24e6a3" stop-opacity="0" />
-        </linearGradient>
+        <radialGradient id="limeGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(930 548) rotate(19) scale(305 176)">
+          <stop stop-color="#BEFF07" stop-opacity="0.38" />
+          <stop offset="1" stop-color="#BEFF07" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="softWhiteGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(210 88) rotate(32) scale(240 150)">
+          <stop stop-color="#FFFFFF" stop-opacity="0.16" />
+          <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+        </radialGradient>
         <clipPath id="coverClip">
-          <rect x="128" y="163" width="88" height="88" rx="20" />
+          <rect x="108" y="148" width="132" height="132" rx="24" />
         </clipPath>
       </defs>
 
       <rect width="1200" height="630" fill="url(#bg)" />
-      <ellipse cx="930" cy="565" rx="240" ry="160" fill="url(#glow)" />
+      <rect width="1200" height="630" fill="url(#softWhiteGlow)" />
+      <ellipse cx="930" cy="565" rx="255" ry="166" fill="url(#limeGlow)" />
 
-      ${Array.from({ length: 27 }).map((_, row) =>
-        Array.from({ length: 53 }).map((__, col) => {
-          const x = 18 + col * 22;
-          const y = 18 + row * 22;
-          return `<rect x="${x}" y="${y}" width="4" height="4" fill="rgba(255,255,255,${(row + col) % 2 === 0 ? 0.24 : 0.10})" />`;
-        }).join("")
-      ).join("")}
+      ${logoMarkup}
 
-      <rect x="465" y="16" width="273" height="46" rx="23" fill="rgba(9,30,95,0.88)" stroke="rgba(255,255,255,0.4)" />
-      <text x="602" y="45" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#ffffff">${escapeXml(`@${challengerName} vs @${challengedName}`)}</text>
+      <rect x="430" y="24" width="340" height="52" rx="26" fill="rgba(9,30,95,0.88)" stroke="rgba(255,255,255,0.32)" />
+      <text x="600" y="56" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#ffffff">${escapeXml(`@${challengerName} vs @${challengedName}`)}</text>
 
-      <rect x="96" y="130" width="1004" height="344" rx="26" fill="#fafcff" />
-      <rect x="592" y="121" width="16" height="28" rx="8" fill="#2961ff" />
+      <rect x="18" y="84" width="1164" height="506" rx="28" fill="#fafcff" />
+      <rect x="592" y="75" width="16" height="28" rx="8" fill="#2961ff" />
 
       ${coverMarkup}
 
       ${titleLines.map((line, index) => `
-        <text x="128" y="${index === 0 ? 314 : 354}" font-family="Arial, Helvetica, sans-serif" font-size="33" font-weight="700" fill="#141821">${escapeXml(line)}</text>
+        <text x="108" y="${index === 0 ? 336 : 376}" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#141821">${escapeXml(line)}</text>
       `).join("")}
 
-      <text x="128" y="408" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#56657f">${escapeXml(participantLabel)}</text>
+      <text x="108" y="424" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#56657f">${escapeXml(participantLabel)}</text>
       ${agentTextMarkup}
-      <text x="128" y="438" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#2b56de">Open on Bantah</text>
+      <text x="108" y="486" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#2b56de">Open on Bantah</text>
 
-      <line x1="682" y1="154" x2="682" y2="450" stroke="#d5dce7" stroke-width="2" stroke-dasharray="5 6" />
+      <line x1="690" y1="144" x2="690" y2="532" stroke="#d5dce7" stroke-width="2" stroke-dasharray="5 6" />
 
-      <rect x="758" y="178" width="132" height="54" rx="16" fill="${sideChipBg}" />
-      <text x="824" y="214" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" text-anchor="middle" fill="${statusColor}">${escapeXml(challengedSide)}</text>
+      <rect x="766" y="158" width="174" height="46" rx="16" fill="${statusBg}" />
+      <text x="853" y="188" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="${statusColor}">${escapeXml(statusLabel)}</text>
 
-      <text x="758" y="272" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#6c7688">Stake</text>
-      <text x="1048" y="272" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="end" fill="#151922">${escapeXml(stakeText)}</text>
+      <text x="766" y="244" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#1f9d61">YES</text>
+      <text x="1062" y="244" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600" text-anchor="end" fill="#151922">${escapeXml(yesHolderDisplay)}</text>
 
-      <text x="758" y="324" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#6c7688">Status</text>
-      <text x="1048" y="324" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="end" fill="#151922">${escapeXml(statusLabel)}</text>
+      <text x="766" y="292" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#e24a4a">NO</text>
+      <text x="1062" y="292" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600" text-anchor="end" fill="#151922">${escapeXml(noHolderDisplay)}</text>
 
-      <text x="758" y="376" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#6c7688">To win</text>
-      <text x="758" y="444" font-family="Arial, Helvetica, sans-serif" font-size="50" font-weight="700" fill="#151922">${escapeXml(payoutText)}</text>
+      <line x1="766" y1="320" x2="1062" y2="320" stroke="#dbe2ee" stroke-width="2" />
 
-      <text x="758" y="474" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#46566f">${escapeXml(`${chainLabel}  |  Ends ${deadlineLabel}`)}</text>
+      <text x="766" y="364" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#6c7688">Stake</text>
+      <text x="1062" y="364" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="end" fill="#151922">${escapeXml(stakeText)}</text>
 
-      ${logoMarkup}
+      <text x="766" y="412" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#6c7688">To win</text>
+      <text x="766" y="470" font-family="Arial, Helvetica, sans-serif" font-size="50" font-weight="700" fill="#151922">${escapeXml(payoutText)}</text>
+
+      <text x="766" y="532" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#46566f">${escapeXml(chainLabel)}</text>
+      <text x="1062" y="532" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="end" fill="#46566f">${escapeXml(`Ends ${deadlineLabel}`)}</text>
     </svg>
   `;
 }
@@ -317,7 +347,7 @@ export function setupOGImageRoutes(app: any, storage: IStorage) {
       const imageBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
 
       res.setHeader("Content-Type", "image/png");
-      res.setHeader("Cache-Control", "public, max-age=900");
+      res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60, stale-while-revalidate=300");
       res.send(imageBuffer);
     } catch (error) {
       console.error("Error generating challenge OG image:", error);

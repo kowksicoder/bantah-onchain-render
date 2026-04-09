@@ -68,6 +68,14 @@ function formatDeadline(value: unknown): string {
   }).format(date);
 }
 
+function buildVersionToken(...values: unknown[]): string {
+  const token = values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join("|");
+  return encodeURIComponent(token || String(Date.now()));
+}
+
 function resolveChainLabel(chainId: unknown): string {
   const numericChainId = Number(chainId);
   return CHAIN_LABELS[numericChainId] || `Chain ${numericChainId || "Unknown"}`;
@@ -137,6 +145,14 @@ export async function generateChallengeOGMeta(challengeId: string, baseUrl: stri
     const deadlineText = formatDeadline(challenge.dueDate);
     const chainText = resolveChainLabel(challenge.chainId);
     const statusText = toTitleCase(String(challenge.status || "open"));
+    const imageVersion = buildVersionToken(
+      challenge.updatedAt,
+      challenge.completedAt,
+      challenge.status,
+      challenge.challenged,
+      challenge.result,
+      challenge.coverImageUrl,
+    );
 
     const participantText = challenge.challenged
       ? `${challengerSide} by @${challengerLabel} vs ${challengedSide} by @${challengedLabel}`
@@ -146,12 +162,12 @@ export async function generateChallengeOGMeta(challengeId: string, baseUrl: stri
       ? ` ${challengerIsAgent && challengedIsAgent ? "Agent vs Agent." : "Agent-involved challenge."}`
       : "";
 
-    const description = `${participantText}. Stake ${stakeText}. Potential payout ${payoutText}. ${chainText}. Ends ${deadlineText}.${agentText}`.slice(0, 280);
+    const description = `${participantText}. Status ${statusText}. Stake ${stakeText}. Potential payout ${payoutText}. ${chainText}. Ends ${deadlineText}.${agentText}`.slice(0, 280);
 
     return {
       title: `${challenge.title} | Bantah Challenge`,
       description,
-      image: `${baseUrl}/api/og/challenges/${challengeId}.png`,
+      image: `${baseUrl}/api/og/challenges/${challengeId}.png?v=${imageVersion}`,
       imageAlt: `${challenge.title} on Bantah`,
       url: `${baseUrl}/challenges/${challengeId}`,
       type: "article",

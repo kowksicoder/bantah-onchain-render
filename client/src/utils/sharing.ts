@@ -7,6 +7,16 @@ interface ShareData {
   hashtags?: string[];
 }
 
+interface ChallengeShareOptions {
+  status?: string | null;
+  dueDate?: string | null;
+  challengerLabel?: string | null;
+  opponentLabel?: string | null;
+  payoutLabel?: string | null;
+  chainLabel?: string | null;
+  targetedWalletAddress?: string | null;
+}
+
 // Get the current domain for sharing URLs
 const getBaseUrl = () => {
   if (typeof window !== "undefined") {
@@ -36,27 +46,54 @@ export function shareChallenge(
   challengeId: string,
   challengeTitle: string,
   stakeAmount?: string,
-  targetedWalletAddress?: string,
+  options?: string | ChallengeShareOptions,
 ) {
   const baseUrl = getBaseUrl();
   const shareUrl = `${baseUrl}/share/challenges/${challengeId}`;
-  const normalizedTargetWallet = typeof targetedWalletAddress === "string"
-    ? targetedWalletAddress.trim().toLowerCase()
+  const normalizedOptions: ChallengeShareOptions =
+    typeof options === "string"
+      ? { targetedWalletAddress: options }
+      : (options || {});
+  const normalizedTargetWallet = typeof normalizedOptions.targetedWalletAddress === "string"
+    ? normalizedOptions.targetedWalletAddress.trim().toLowerCase()
     : "";
   const shortTargetWallet = /^0x[a-f0-9]{40}$/.test(normalizedTargetWallet)
     ? `${normalizedTargetWallet.slice(0, 6)}...${normalizedTargetWallet.slice(-4)}`
     : "";
 
-  const stakeLabel = stakeAmount ? `Stake: ${stakeAmount}.` : "";
+  const stakeLabel = stakeAmount ? `Stake ${stakeAmount}.` : "";
+  const payoutLabel = normalizedOptions.payoutLabel ? `To win ${normalizedOptions.payoutLabel}.` : "";
+  const participantLabel =
+    normalizedOptions.challengerLabel && normalizedOptions.opponentLabel
+      ? `${normalizedOptions.challengerLabel} vs ${normalizedOptions.opponentLabel}.`
+      : "";
+  const statusLabel = normalizedOptions.status ? `${normalizedOptions.status}.` : "";
+  const deadlineLabel = normalizedOptions.dueDate ? `Ends ${normalizedOptions.dueDate}.` : "";
+  const chainLabel = normalizedOptions.chainLabel ? `${normalizedOptions.chainLabel}.` : "";
   const targetLabel = shortTargetWallet
-    ? `Target wallet: ${shortTargetWallet}.`
-    : "First taker wins the slot.";
+    ? `Target wallet ${shortTargetWallet}.`
+    : "";
+  const description = [
+    challengeTitle,
+    participantLabel,
+    stakeLabel,
+    payoutLabel,
+    statusLabel,
+    deadlineLabel,
+    chainLabel,
+    targetLabel,
+    "Open on Bantah.",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   return {
     shareUrl,
     shareData: {
       title: `Bantah Challenge: ${challengeTitle}`,
-      description: `${challengeTitle}. ${stakeLabel} ${targetLabel} Open on Bantah.`,
+      description,
       url: shareUrl,
       hashtags: ["Bantah", "Challenge", "Onchain", "EVM"],
     },

@@ -1022,6 +1022,9 @@ export function ChallengeCard({
                   challengedSide: challenge.challengedSide,
                   challengerUser: challenge.challengerUser,
                   challengedUser: challenge.challengedUser,
+                  challengerAgent: (challenge as any).challengerAgent,
+                  challengedAgent: (challenge as any).challengedAgent,
+                  chainId: (challenge as any).chainId,
                   updatedAt: (challenge as any).updatedAt || challenge.createdAt,
                 }}
                 trigger={
