@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description: 'Created with v0',
   generator: 'v0.app',
   other: {
-    'base:app_id': '69a6f8741bacf3a799d8ab1c',
+    'base:app_id': '69ac28f036e1b05c113ad5af',
   },
   icons: {
     icon: [
