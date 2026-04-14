@@ -301,13 +301,13 @@ export const PolymarketTab: React.FC<PolymarketTabProps> = ({ onQuickBet, search
     <div className="space-y-3">
       {/* Markets Grid */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+        <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3 lg:[grid-template-columns:repeat(3,minmax(0,18.5rem))] lg:justify-center">
           {[...Array(6)].map((_, i) => (
             <PolymarketCardSkeleton key={i} />
           ))}
         </div>
       ) : filteredMarkets.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+        <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3 lg:[grid-template-columns:repeat(3,minmax(0,18.5rem))] lg:justify-center">
           {filteredMarkets.map((market) => (
             <PolymarketMarketCard key={market.id} market={market} onQuickBet={onQuickBet} />
           ))}

@@ -98,13 +98,13 @@ export default function Communities() {
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3 lg:[grid-template-columns:repeat(3,minmax(0,18.5rem))] lg:justify-center">
             {[...Array(6)].map((_, i) => (
               <CommunityChallengeSkeleton key={i} />
             ))}
           </div>
         ) : filteredChallenges.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3 lg:[grid-template-columns:repeat(3,minmax(0,18.5rem))] lg:justify-center">
             {filteredChallenges.map((challenge: any) => (
               <ChallengeCard
                 key={challenge.id}

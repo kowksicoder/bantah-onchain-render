@@ -910,13 +910,13 @@ export function ChallengeCard({
             )}
             <div className="min-w-0 flex-1">
               {isFinishedChallengeCard ? (
-                <span className="block font-bold text-xs md:text-sm text-slate-900 dark:text-slate-100 line-clamp-2 mb-0 text-left w-full max-h-10 md:max-h-12 overflow-hidden">
+                <span className="block font-bold text-xs md:text-[13px] text-slate-900 dark:text-slate-100 line-clamp-2 mb-0 text-left w-full max-h-10 md:max-h-12 overflow-hidden">
                   {String(challenge.title)}
                 </span>
               ) : (
                 <button
                   onClick={() => navigate(`/challenges/${challenge.id}/activity`)}
-                  className="font-bold text-xs md:text-sm text-slate-900 dark:text-slate-100 line-clamp-2 mb-0 hover:text-primary dark:hover:text-primary/80 transition-colors text-left w-full max-h-10 md:max-h-12 overflow-hidden"
+                  className="font-bold text-xs md:text-[13px] text-slate-900 dark:text-slate-100 line-clamp-2 mb-0 hover:text-primary dark:hover:text-primary/80 transition-colors text-left w-full max-h-10 md:max-h-12 overflow-hidden"
                   data-testid="link-challenge-detail"
                 >
                   {String(challenge.title)}
@@ -1308,6 +1308,5 @@ export function ChallengeCard({
     </Card>
   );
 }
-
 
 

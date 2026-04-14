@@ -15,6 +15,14 @@ const CHAIN_LABELS: Record<number, string> = {
 
 const BANTAH_BLUE_LOGO_PATH = path.resolve(process.cwd(), "client/public/assets/bantahblue.svg");
 
+type ChallengeSlot = {
+  key: string;
+  side: "YES" | "NO";
+  displayName: string;
+  avatarUrl: string | null;
+  isOpen: boolean;
+};
+
 function escapeXml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -24,23 +32,26 @@ function escapeXml(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+function normalizeSide(value: unknown): "YES" | "NO" | null {
+  const side = String(value || "").trim().toUpperCase();
+  return side === "YES" || side === "NO" ? side : null;
+}
+
 function formatTokenAmount(amount: unknown, tokenSymbol?: string | null): string {
   const numericAmount = Number(amount || 0);
   const safeAmount = Number.isFinite(numericAmount) ? numericAmount : 0;
-  const formattedAmount = Number.isInteger(safeAmount)
-    ? safeAmount.toString()
-    : safeAmount.toLocaleString(undefined, {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 4,
-      });
   const symbol = String(tokenSymbol || "").trim().toUpperCase() || "ETH";
+  const formattedAmount = safeAmount.toLocaleString(undefined, {
+    minimumFractionDigits: safeAmount >= 100 ? 0 : safeAmount >= 1 ? 0 : 2,
+    maximumFractionDigits: 4,
+  });
   return `${formattedAmount} ${symbol}`;
 }
 
 function formatPayout(amount: unknown, tokenSymbol?: string | null): string {
   const numericAmount = Number(amount || 0);
   const safeAmount = Number.isFinite(numericAmount) ? numericAmount : 0;
-  const payout = safeAmount * 2 - safeAmount * CHALLENGE_PLATFORM_FEE_RATE;
+  const payout = Math.max(0, safeAmount * (2 - CHALLENGE_PLATFORM_FEE_RATE));
   return formatTokenAmount(payout, tokenSymbol);
 }
 
@@ -57,7 +68,10 @@ function formatDateLabel(value: unknown): string {
 
 function resolveChainLabel(chainId: unknown): string {
   const numericChainId = Number(chainId);
-  return CHAIN_LABELS[numericChainId] || `Chain ${numericChainId || "Unknown"}`;
+  if (!Number.isFinite(numericChainId) || numericChainId <= 0) {
+    return "Onchain";
+  }
+  return CHAIN_LABELS[numericChainId] || `Chain ${numericChainId}`;
 }
 
 function wrapText(text: string, maxChars: number, maxLines: number): string[] {
@@ -73,8 +87,10 @@ function wrapText(text: string, maxChars: number, maxLines: number): string[] {
       current = next;
       continue;
     }
+
     lines.push(current);
     current = word;
+
     if (lines.length === maxLines - 1) break;
   }
 
@@ -162,6 +178,166 @@ async function resolveImageDataUri(source: unknown, baseUrl: string): Promise<st
   return null;
 }
 
+function getParticipantName(
+  user?: { username?: string | null; firstName?: string | null } | null,
+  agent?: { agentName?: string | null } | null,
+): string {
+  return String(agent?.agentName || user?.username || user?.firstName || "").trim();
+}
+
+function getParticipantHandle(value: string): string {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "Open slot";
+  return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+}
+
+function getInitials(value: string): string {
+  const clean = String(value || "").replace(/^@/, "").trim();
+  if (!clean) return "B";
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return clean.slice(0, 2).toUpperCase();
+  }
+  return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+}
+
+function truncate(value: string, maxChars: number): string {
+  const text = String(value || "").trim();
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+}
+
+function getStakeFontSize(value: string): number {
+  if (value.length > 14) return 58;
+  if (value.length > 11) return 66;
+  return 82;
+}
+
+function getPillWidth(value: string, minWidth: number): number {
+  return Math.max(minWidth, 18 * value.length + 42);
+}
+
+function buildOpenSlot(side: "YES" | "NO"): ChallengeSlot {
+  return {
+    key: `${side.toLowerCase()}-open`,
+    side,
+    displayName: "Open slot",
+    avatarUrl: null,
+    isOpen: true,
+  };
+}
+
+function buildChallengeSlots(challenge: any, challengerAgent: any, challengedAgent: any): {
+  yesSlot: ChallengeSlot;
+  noSlot: ChallengeSlot;
+  participantCount: number;
+} {
+  const slots: Record<"YES" | "NO", ChallengeSlot[]> = {
+    YES: [],
+    NO: [],
+  };
+  const seen = new Set<string>();
+
+  const addSlot = (sideRaw: unknown, key: string, displayName: string, avatarUrl: string | null) => {
+    const side = normalizeSide(sideRaw);
+    const label = String(displayName || "").trim();
+    if (!side || !label) return;
+    const dedupeKey = `${side}:${key || label.toLowerCase()}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    slots[side].push({
+      key: dedupeKey,
+      side,
+      displayName: label,
+      avatarUrl,
+      isOpen: false,
+    });
+  };
+
+  if (!challenge.adminCreated) {
+    addSlot(
+      challenge.challengerSide,
+      String(challenge.challenger || challenge.challengerAgentId || "challenger"),
+      getParticipantName(challenge.challengerUser, challengerAgent),
+      challenge.challengerUser?.profileImageUrl || null,
+    );
+
+    addSlot(
+      challenge.challengedSide,
+      String(challenge.challenged || challenge.challengedAgentId || "challenged"),
+      getParticipantName(challenge.challengedUser, challengedAgent),
+      challenge.challengedUser?.profileImageUrl || null,
+    );
+  }
+
+  for (const participant of Array.isArray(challenge.participantPreviewUsers) ? challenge.participantPreviewUsers : []) {
+    addSlot(
+      participant?.side,
+      String(participant?.id || participant?.username || participant?.firstName || ""),
+      String(participant?.username || participant?.firstName || "").trim(),
+      participant?.profileImageUrl || null,
+    );
+  }
+
+  const yesSlot = slots.YES[0] || buildOpenSlot("YES");
+  const noSlot = slots.NO[0] || buildOpenSlot("NO");
+
+  const participantCount = Math.max(
+    Number(challenge.participantCount || 0),
+    Number(challenge.challenger ? 1 : 0) + Number(challenge.challenged ? 1 : 0),
+    yesSlot.isOpen ? 0 : 1,
+    noSlot.isOpen ? 0 : 1,
+  );
+
+  return {
+    yesSlot,
+    noSlot,
+    participantCount,
+  };
+}
+
+function buildAvatarFallbackMarkup(
+  x: number,
+  y: number,
+  side: "YES" | "NO",
+  label: string,
+): string {
+  const fill = side === "YES" ? "#1D6B5A" : "#5A2456";
+  const stroke = side === "YES" ? "#BEFF07" : "#A487FF";
+  return `
+    <circle cx="${x}" cy="${y}" r="14" fill="${fill}" stroke="${stroke}" stroke-width="2" />
+    <text x="${x}" y="${y + 5}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="800" text-anchor="middle">${escapeXml(getInitials(label))}</text>
+  `;
+}
+
+function buildParticipantRowMarkup(
+  slot: ChallengeSlot,
+  avatarDataUri: string | null,
+  side: "YES" | "NO",
+  x: number,
+  y: number,
+  clipId: string,
+): string {
+  const sideColor = side === "YES" ? "#BEFF07" : "#A487FF";
+  const nameColor = slot.isOpen ? "#9EA7BE" : "#FFFFFF";
+  const displayName = slot.isOpen ? "Open slot" : truncate(getParticipantHandle(slot.displayName), 16);
+  const avatarCx = x + 96;
+  const avatarCy = y + 23;
+
+  return `
+    <g>
+      <rect x="${x}" y="${y}" width="348" height="46" rx="23" fill="#10131B" stroke="${sideColor}" stroke-opacity="0.22" />
+      <text x="${x + 24}" y="${y + 29}" fill="${sideColor}" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="800">${side}</text>
+      ${
+        avatarDataUri
+          ? `<image href="${avatarDataUri}" x="${avatarCx - 14}" y="${avatarCy - 14}" width="28" height="28" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})" />`
+          : buildAvatarFallbackMarkup(avatarCx, avatarCy, side, slot.displayName)
+      }
+      <text x="${x + 122}" y="${y + 29}" fill="${nameColor}" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">${escapeXml(displayName)}</text>
+    </g>
+  `;
+}
+
 async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl: string): Promise<string> {
   const logoDataUri = (await loadFileAsDataUri(BANTAH_BLUE_LOGO_PATH, "image/svg+xml")) || "";
   const coverImageDataUri = await resolveImageDataUri(
@@ -176,134 +352,175 @@ async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl:
     ? await storage.getAgentById(String(challenge.challengedAgentId))
     : undefined;
 
-  const challengerName = challengerAgent?.name
-    || challenge.challengerUser?.username
-    || challenge.challengerUser?.firstName
-    || "Open";
-  const challengedName = challengedAgent?.name
-    || challenge.challengedUser?.username
-    || challenge.challengedUser?.firstName
-    || "Open";
+  const { yesSlot, noSlot, participantCount } = buildChallengeSlots(challenge, challengerAgent, challengedAgent);
+  const [yesAvatarDataUri, noAvatarDataUri] = await Promise.all([
+    resolveImageDataUri(yesSlot.avatarUrl, baseUrl),
+    resolveImageDataUri(noSlot.avatarUrl, baseUrl),
+  ]);
 
-  const challengerSide = String(challenge.challengerSide || "").toUpperCase() || "OPEN";
-  const challengedSide = String(challenge.challengedSide || "").toUpperCase() || "OPEN";
+  const titleLines = wrapText(String(challenge.title || "Untitled challenge"), 24, 3);
   const stakeText = formatTokenAmount(challenge.amount, challenge.tokenSymbol);
   const payoutText = formatPayout(challenge.amount, challenge.tokenSymbol);
-  const statusLabel = String(challenge.status || "open").toUpperCase();
   const deadlineLabel = formatDateLabel(challenge.dueDate);
   const chainLabel = resolveChainLabel(challenge.chainId);
-  const titleLines = wrapText(String(challenge.title || ""), 36, 2);
-  const participantLabel = challenge.challenged
-    ? `${challengerSide} @${challengerName}  vs  ${challengedSide} @${challengedName}`
-    : `${challengerSide} @${challengerName}  vs  OPEN`;
-  const agentLine = [challengerAgent?.name, challengedAgent?.name].filter(Boolean).join("  |  ");
-  const yesHolder = challengerSide === "YES"
-    ? challengerName
-    : challengedSide === "YES"
-      ? challengedName
-      : "Open";
-  const noHolder = challengerSide === "NO"
-    ? challengerName
-    : challengedSide === "NO"
-      ? challengedName
-      : "Open";
-  const normalizedStatus = statusLabel.toLowerCase();
-  const statusBg = normalizedStatus.includes("resolved")
-    ? "#e8fff4"
-    : normalizedStatus.includes("active")
-      ? "#eef4ff"
-      : normalizedStatus.includes("pending")
-        ? "#fff6e8"
-        : "#eef2ff";
-  const statusColor = normalizedStatus.includes("resolved")
-    ? "#0f9f68"
-    : normalizedStatus.includes("pending")
-      ? "#c77b1a"
-      : "#2453e6";
-  const yesHolderDisplay = yesHolder === "Open" ? "Open Slot" : `@${yesHolder}`;
-  const noHolderDisplay = noHolder === "Open" ? "Open Slot" : `@${noHolder}`;
-
-  const coverMarkup = coverImageDataUri
-    ? `<image href="${coverImageDataUri}" x="108" y="148" width="132" height="132" preserveAspectRatio="xMidYMid slice" clip-path="url(#coverClip)" />`
-    : `
-      <rect x="108" y="148" width="132" height="132" rx="24" fill="#e6ebf2" />
-      <rect x="108" y="148" width="66" height="132" fill="#7a93c5" />
-      <rect x="174" y="148" width="66" height="132" fill="#e78984" />
-      <rect x="108" y="240" width="132" height="40" fill="#dac482" />
-    `;
-
-  const agentTextMarkup = agentLine
-    ? `<text x="108" y="458" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="600" fill="#41506b">${escapeXml(agentLine)}</text>`
-    : "";
+  const usersLabel = `${participantCount} ${participantCount === 1 ? "user" : "users"}`;
+  const statusLabel = String(challenge.status || "open").replace(/_/g, " ").toUpperCase();
+  const statusWidth = getPillWidth(statusLabel, 140);
+  const stakeFontSize = getStakeFontSize(stakeText);
+  const titleTop = 156;
+  const titleLineHeight = 46;
+  const titleBottom = titleTop + (titleLines.length - 1) * titleLineHeight;
+  const stakeLabelY = titleBottom + 56;
+  const stakeY = stakeLabelY + 66;
+  const winPillY = stakeY + 18;
+  const participantRow1Y = winPillY + 64;
+  const participantRow2Y = participantRow1Y + 54;
+  const statBoxY = participantRow2Y + 52;
 
   const logoMarkup = logoDataUri
-    ? `<image href="${logoDataUri}" x="74" y="34" width="214" height="42" preserveAspectRatio="xMinYMin meet" />`
-    : `<text x="76" y="64" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#ffffff">Bantah</text>`;
+    ? `<image href="${logoDataUri}" x="82" y="52" width="52" height="42" preserveAspectRatio="xMidYMid meet" />`
+    : `<circle cx="108" cy="73" r="22" fill="#7440FF" />`;
+
+  const coverMarkup = coverImageDataUri
+    ? `
+      <image href="${coverImageDataUri}" x="-154" y="-190" width="308" height="380" preserveAspectRatio="xMidYMid slice" clip-path="url(#coverClip)" />
+      <rect x="-154" y="-190" width="308" height="380" rx="34" fill="url(#coverShade)" />
+    `
+    : `
+      <rect x="-154" y="-190" width="308" height="380" rx="34" fill="url(#heroFallback)" />
+      <text x="0" y="-8" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" text-anchor="middle">${escapeXml(truncate(String(challenge.category || "Bantah").toUpperCase(), 12))}</text>
+      <text x="0" y="28" fill="#BEFF07" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle">CHALLENGE</text>
+    `;
 
   return `
     <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
-          <stop stop-color="#7440FF" />
-          <stop offset="0.58" stop-color="#8A5BFF" />
-          <stop offset="1" stop-color="#5A2FE2" />
+        <linearGradient id="canvasBg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#030306" />
+          <stop offset="1" stop-color="#090913" />
         </linearGradient>
-        <radialGradient id="limeGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(930 548) rotate(19) scale(305 176)">
-          <stop stop-color="#BEFF07" stop-opacity="0.38" />
+        <linearGradient id="cardBg" x1="30" y1="30" x2="1170" y2="600" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#06070B" />
+          <stop offset="0.42" stop-color="#0D0A18" />
+          <stop offset="1" stop-color="#171129" />
+        </linearGradient>
+        <radialGradient id="purpleGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(894 182) rotate(118.245) scale(474 502)">
+          <stop stop-color="#7440FF" stop-opacity="0.44" />
+          <stop offset="1" stop-color="#7440FF" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="limeGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1014 548) rotate(-165.473) scale(300 210)">
+          <stop stop-color="#BEFF07" stop-opacity="0.24" />
           <stop offset="1" stop-color="#BEFF07" stop-opacity="0" />
         </radialGradient>
-        <radialGradient id="softWhiteGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(210 88) rotate(32) scale(240 150)">
-          <stop stop-color="#FFFFFF" stop-opacity="0.16" />
-          <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
-        </radialGradient>
+        <linearGradient id="stakeFill" x1="80" y1="290" x2="470" y2="394" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#D4FF62" />
+          <stop offset="0.55" stop-color="#BEFF07" />
+          <stop offset="1" stop-color="#8ED000" />
+        </linearGradient>
+        <linearGradient id="heroFallback" x1="-154" y1="-190" x2="154" y2="190" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#1A1731" />
+          <stop offset="0.55" stop-color="#202449" />
+          <stop offset="1" stop-color="#11151F" />
+        </linearGradient>
+        <linearGradient id="coverShade" x1="-154" y1="-190" x2="154" y2="190" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#FFFFFF" stop-opacity="0.10" />
+          <stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0" />
+          <stop offset="1" stop-color="#000000" stop-opacity="0.34" />
+        </linearGradient>
+        <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+          <path d="M44 0H0V44" stroke="#A487FF" stroke-opacity="0.08" stroke-width="1" />
+        </pattern>
+        <clipPath id="cardClip">
+          <rect x="30" y="30" width="1140" height="570" rx="40" />
+        </clipPath>
         <clipPath id="coverClip">
-          <rect x="108" y="148" width="132" height="132" rx="24" />
+          <rect x="-154" y="-190" width="308" height="380" rx="34" />
+        </clipPath>
+        <clipPath id="yesAvatarClip">
+          <circle cx="176" cy="${participantRow1Y + 23}" r="14" />
+        </clipPath>
+        <clipPath id="noAvatarClip">
+          <circle cx="176" cy="${participantRow2Y + 23}" r="14" />
         </clipPath>
       </defs>
 
-      <rect width="1200" height="630" fill="url(#bg)" />
-      <rect width="1200" height="630" fill="url(#softWhiteGlow)" />
-      <ellipse cx="930" cy="565" rx="255" ry="166" fill="url(#limeGlow)" />
+      <rect width="1200" height="630" fill="url(#canvasBg)" />
+      <g clip-path="url(#cardClip)">
+        <rect x="30" y="30" width="1140" height="570" rx="40" fill="url(#cardBg)" />
+        <rect x="30" y="30" width="1140" height="570" rx="40" fill="url(#purpleGlow)" />
+        <rect x="30" y="30" width="1140" height="570" rx="40" fill="url(#limeGlow)" />
+        <rect x="30" y="30" width="1140" height="570" rx="40" fill="url(#grid)" />
 
-      ${logoMarkup}
+        <g opacity="0.14">
+          <line x1="712" y1="86" x2="712" y2="580" stroke="#BEFF07" stroke-width="2" />
+          <line x1="762" y1="126" x2="762" y2="580" stroke="#BEFF07" stroke-width="2" />
+          <line x1="814" y1="96" x2="814" y2="580" stroke="#BEFF07" stroke-width="2" />
+          <line x1="866" y1="148" x2="866" y2="580" stroke="#BEFF07" stroke-width="2" />
+          <line x1="918" y1="104" x2="918" y2="580" stroke="#BEFF07" stroke-width="2" />
+          <line x1="970" y1="168" x2="970" y2="580" stroke="#BEFF07" stroke-width="2" />
+          <line x1="1022" y1="126" x2="1022" y2="580" stroke="#BEFF07" stroke-width="2" />
+          <line x1="1074" y1="82" x2="1074" y2="580" stroke="#BEFF07" stroke-width="2" />
+        </g>
 
-      <rect x="430" y="24" width="340" height="52" rx="26" fill="rgba(9,30,95,0.88)" stroke="rgba(255,255,255,0.32)" />
-      <text x="600" y="56" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#ffffff">${escapeXml(`@${challengerName} vs @${challengedName}`)}</text>
+        <g opacity="0.18">
+          <rect x="782" y="116" width="52" height="132" rx="18" stroke="#8F70FF" stroke-width="2" />
+          <rect x="874" y="98" width="56" height="170" rx="18" stroke="#8F70FF" stroke-width="2" />
+          <rect x="972" y="152" width="52" height="122" rx="18" stroke="#8F70FF" stroke-width="2" />
+          <rect x="1064" y="114" width="58" height="184" rx="18" stroke="#8F70FF" stroke-width="2" />
+        </g>
 
-      <rect x="18" y="84" width="1164" height="506" rx="28" fill="#fafcff" />
-      <rect x="592" y="75" width="16" height="28" rx="8" fill="#2961ff" />
+        <g opacity="0.22">
+          <path d="M724 510L762 476L796 444L830 410L864 378L898 332L932 302L968 258L1004 220L1040 180" stroke="#BEFF07" stroke-width="4" stroke-linecap="round" />
+          <path d="M1024 172L1052 180L1043 154" stroke="#BEFF07" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        </g>
 
-      ${coverMarkup}
+        ${logoMarkup}
 
-      ${titleLines.map((line, index) => `
-        <text x="108" y="${index === 0 ? 336 : 376}" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#141821">${escapeXml(line)}</text>
-      `).join("")}
+        <rect x="${1092 - statusWidth}" y="54" width="${statusWidth}" height="42" rx="21" fill="#11131A" stroke="#A487FF" stroke-opacity="0.30" />
+        <text x="${1092 - statusWidth / 2}" y="81" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" text-anchor="middle">${escapeXml(statusLabel)}</text>
 
-      <text x="108" y="424" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#56657f">${escapeXml(participantLabel)}</text>
-      ${agentTextMarkup}
-      <text x="108" y="486" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#2b56de">Open on Bantah</text>
+        ${titleLines
+          .map(
+            (line, index) => `
+          <text x="80" y="${titleTop + index * titleLineHeight}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800">${escapeXml(line)}</text>`,
+          )
+          .join("")}
 
-      <line x1="690" y1="144" x2="690" y2="532" stroke="#d5dce7" stroke-width="2" stroke-dasharray="5 6" />
+        <text x="80" y="${stakeLabelY}" fill="#9891B7" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" letter-spacing="1.5">STAKE</text>
+        <text x="80" y="${stakeY}" fill="url(#stakeFill)" font-family="Arial, Helvetica, sans-serif" font-size="${stakeFontSize}" font-weight="900">${escapeXml(stakeText)}</text>
 
-      <rect x="766" y="158" width="174" height="46" rx="16" fill="${statusBg}" />
-      <text x="853" y="188" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="${statusColor}">${escapeXml(statusLabel)}</text>
+        <rect x="84" y="${winPillY}" width="${getPillWidth(`To win ${payoutText}`, 214)}" height="44" rx="22" fill="#12141E" stroke="#BEFF07" stroke-opacity="0.24" />
+        <text x="${84 + getPillWidth(`To win ${payoutText}`, 214) / 2}" y="${winPillY + 29}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="800" text-anchor="middle">${escapeXml(`To win ${payoutText}`)}</text>
 
-      <text x="766" y="244" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#1f9d61">YES</text>
-      <text x="1062" y="244" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600" text-anchor="end" fill="#151922">${escapeXml(yesHolderDisplay)}</text>
+        ${buildParticipantRowMarkup(yesSlot, yesAvatarDataUri, "YES", 80, participantRow1Y, "yesAvatarClip")}
+        ${buildParticipantRowMarkup(noSlot, noAvatarDataUri, "NO", 80, participantRow2Y, "noAvatarClip")}
 
-      <text x="766" y="292" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#e24a4a">NO</text>
-      <text x="1062" y="292" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600" text-anchor="end" fill="#151922">${escapeXml(noHolderDisplay)}</text>
+        <g>
+          <rect x="80" y="${statBoxY}" width="150" height="58" rx="18" fill="#11131A" stroke="#FFFFFF" stroke-opacity="0.08" />
+          <text x="102" y="${statBoxY + 21}" fill="#858FA9" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1">USERS</text>
+          <text x="102" y="${statBoxY + 43}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">${escapeXml(usersLabel)}</text>
+        </g>
 
-      <line x1="766" y1="320" x2="1062" y2="320" stroke="#dbe2ee" stroke-width="2" />
+        <g>
+          <rect x="246" y="${statBoxY}" width="150" height="58" rx="18" fill="#11131A" stroke="#FFFFFF" stroke-opacity="0.08" />
+          <text x="268" y="${statBoxY + 21}" fill="#858FA9" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1">CHAIN</text>
+          <text x="268" y="${statBoxY + 43}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">${escapeXml(chainLabel)}</text>
+        </g>
 
-      <text x="766" y="364" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#6c7688">Stake</text>
-      <text x="1062" y="364" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" text-anchor="end" fill="#151922">${escapeXml(stakeText)}</text>
+        <g>
+          <rect x="412" y="${statBoxY}" width="188" height="58" rx="18" fill="#11131A" stroke="#FFFFFF" stroke-opacity="0.08" />
+          <text x="434" y="${statBoxY + 21}" fill="#858FA9" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1">ENDS</text>
+          <text x="434" y="${statBoxY + 43}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">${escapeXml(deadlineLabel)}</text>
+        </g>
 
-      <text x="766" y="412" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#6c7688">To win</text>
-      <text x="766" y="470" font-family="Arial, Helvetica, sans-serif" font-size="50" font-weight="700" fill="#151922">${escapeXml(payoutText)}</text>
-
-      <text x="766" y="532" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#46566f">${escapeXml(chainLabel)}</text>
-      <text x="1062" y="532" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="end" fill="#46566f">${escapeXml(`Ends ${deadlineLabel}`)}</text>
+        <g transform="translate(944 310) rotate(-11)">
+          <rect x="-170" y="-206" width="340" height="412" rx="42" fill="#12141E" fill-opacity="0.76" />
+          <rect x="-154" y="-190" width="308" height="380" rx="34" fill="#131522" />
+          ${coverMarkup}
+          <rect x="-154" y="-190" width="308" height="380" rx="34" fill="none" stroke="#BEFF07" stroke-opacity="0.16" stroke-width="2" />
+          <rect x="-142" y="-178" width="284" height="356" rx="28" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="1.5" />
+        </g>
+      </g>
     </svg>
   `;
 }
@@ -323,7 +540,7 @@ async function generateEventSvg(event: any): Promise<string> {
         </linearGradient>
       </defs>
       <rect width="1200" height="630" fill="url(#bg)" />
-      <rect x="90" y="104" width="1020" height="422" rx="30" fill="rgba(255,255,255,0.96)" />
+      <rect x="90" y="104" width="1020" height="422" rx="30" fill="#FFFFFF" fill-opacity="0.96" />
       <text x="130" y="180" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#0f172a">Bantah Event</text>
       <text x="130" y="264" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" fill="#0f172a">${title}</text>
       <text x="130" y="342" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#475569">Category: ${category}</text>
@@ -344,7 +561,7 @@ export function setupOGImageRoutes(app: any, storage: IStorage) {
 
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const svg = await buildChallengeCardSvg(challenge, storage, baseUrl);
-      const imageBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
+      const imageBuffer = await sharp(Buffer.from(svg), { density: 144 }).png().toBuffer();
 
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60, stale-while-revalidate=300");

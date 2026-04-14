@@ -235,10 +235,21 @@ export default function Challenges() {
   const [agentAvatarPreview, setAgentAvatarPreview] = useState<string | null>(null);
   const [isAgentAvatarUploading, setIsAgentAvatarUploading] = useState(false);
   const [isPreparingChallenge, setIsPreparingChallenge] = useState(false);
+  const [createdChallengeSuccess, setCreatedChallengeSuccess] = useState<any | null>(null);
+  const [highlightedChallengeId, setHighlightedChallengeId] = useState<number | null>(null);
   const [headerChainId, setHeaderChainId] = useState<number | null>(null);
   const dueDatePickerRef = useRef<HTMLDivElement | null>(null);
+  const highlightedChallengeTimeoutRef = useRef<number | null>(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isClockOpen, setIsClockOpen] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (highlightedChallengeTimeoutRef.current !== null) {
+        window.clearTimeout(highlightedChallengeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const openImportAgentFlow = (mode: AgentImportMode = agentImportMode) => {
     if (!isAuthenticated || authLoading) {
@@ -812,12 +823,150 @@ export default function Challenges() {
     };
   }, [queryClient]);
 
+  const buildCreatedChallengeFeedItem = (result?: any) => {
+    const createdChallenge = result?.challenge || result;
+    const createdChallengeId = Number(createdChallenge?.id);
+    if (!createdChallenge || !Number.isFinite(createdChallengeId)) {
+      return null;
+    }
+
+    const resolveProfile = (candidateId: unknown, fallback?: Record<string, any> | null) => {
+      const normalizedId = String(candidateId ?? "").trim();
+      const matchedUser = normalizedId
+        ? (allUsers as any[]).find((entry: any) => String(entry?.id ?? "").trim() === normalizedId) || null
+        : null;
+      const source = matchedUser || fallback || null;
+
+      if (!source && !normalizedId) {
+        return null;
+      }
+
+      return {
+        id: String(source?.id ?? normalizedId),
+        firstName: source?.firstName ?? undefined,
+        lastName: source?.lastName ?? undefined,
+        username: source?.username ?? undefined,
+        walletAddress:
+          source?.walletAddress ??
+          source?.wallet_address ??
+          source?.primaryWalletAddress ??
+          undefined,
+        profileImageUrl:
+          source?.profileImageUrl ??
+          source?.profile_image_url ??
+          source?.avatarUrl ??
+          source?.avatar_url ??
+          undefined,
+      };
+    };
+
+    const challengerFallback =
+      String(user?.id ?? "").trim() === String(createdChallenge?.challenger ?? "").trim() ? (user as any) : null;
+    const challengedFallback =
+      String(preSelectedUser?.id ?? "").trim() === String(createdChallenge?.challenged ?? "").trim()
+        ? preSelectedUser
+        : null;
+
+    const challengerUser =
+      createdChallenge?.challengerUser ||
+      resolveProfile(createdChallenge?.challenger ?? createdChallenge?.challengerId, challengerFallback);
+    const challengedUser =
+      createdChallenge?.challengedUser ||
+      resolveProfile(createdChallenge?.challenged ?? createdChallenge?.challengedId, challengedFallback);
+
+    const participantPreviewUsers = [challengerUser, challengedUser]
+      .filter(Boolean)
+      .map((participant: any) => ({
+        id: String(participant.id),
+        username: participant.username ?? null,
+        firstName: participant.firstName ?? null,
+        profileImageUrl: participant.profileImageUrl ?? null,
+      }));
+
+    return {
+      ...createdChallenge,
+      id: createdChallengeId,
+      createdAt:
+        createdChallenge?.createdAt ||
+        createdChallenge?.created_at ||
+        new Date().toISOString(),
+      updatedAt:
+        createdChallenge?.updatedAt ||
+        createdChallenge?.updated_at ||
+        new Date().toISOString(),
+      challengerId: createdChallenge?.challengerId ?? createdChallenge?.challenger ?? challengerUser?.id ?? null,
+      challengedId: createdChallenge?.challengedId ?? createdChallenge?.challenged ?? challengedUser?.id ?? null,
+      creatorId: createdChallenge?.creatorId ?? createdChallenge?.challenger ?? challengerUser?.id ?? null,
+      challengedWalletAddress:
+        createdChallenge?.challengedWalletAddress ??
+        createdChallenge?.challenged_wallet_address ??
+        challengedUser?.walletAddress ??
+        null,
+      coverImageUrl:
+        createdChallenge?.coverImageUrl ??
+        createdChallenge?.cover_image_url ??
+        createdChallenge?.coverImage ??
+        null,
+      challengerUser,
+      challengedUser,
+      participantPreviewUsers,
+      participantCount:
+        createdChallenge?.participantCount ??
+        createdChallenge?.participant_count ??
+        participantPreviewUsers.length,
+      commentCount: createdChallenge?.commentCount ?? createdChallenge?.comment_count ?? 0,
+      community: createdChallenge?.community ?? null,
+      status: normalizeP2PStatus(createdChallenge),
+    };
+  };
+
+  const insertCreatedChallengeIntoFeed = (createdChallenge: any) => {
+    if (!createdChallenge?.id) return;
+
+    queryClient.setQueryData<any[]>(["/api/challenges"], (existing) => {
+      const nextChallenges = Array.isArray(existing) ? existing : [];
+      return [
+        createdChallenge,
+        ...nextChallenges.filter((challenge: any) => Number(challenge?.id) !== Number(createdChallenge.id)),
+      ];
+    });
+  };
+
+  const focusCreatedChallengeOnFeed = (challengeId: number) => {
+    setCreatedChallengeSuccess(null);
+    setChallengeStatusTab("all");
+    setSelectedCategory("all");
+    setSearchTerm("");
+    setVisibleChallengeCount((count) => Math.max(count, 12));
+
+    if (!Number.isFinite(challengeId)) {
+      return;
+    }
+
+    if (highlightedChallengeTimeoutRef.current !== null) {
+      window.clearTimeout(highlightedChallengeTimeoutRef.current);
+      highlightedChallengeTimeoutRef.current = null;
+    }
+
+    window.setTimeout(() => {
+      const cardElement = document.getElementById(`challenge-feed-card-${challengeId}`);
+      if (cardElement) {
+        cardElement.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+
+      setHighlightedChallengeId(challengeId);
+      highlightedChallengeTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedChallengeId((current) => (current === challengeId ? null : current));
+        highlightedChallengeTimeoutRef.current = null;
+      }, 3200);
+    }, 140);
+  };
+
   const createChallengeMutation = useMutation({
     mutationFn: async (challengeData: Record<string, any>) => {
       return await apiRequest("POST", "/api/challenges", challengeData);
-    },
-    onSuccess: (result: any) => {
-      handleChallengeCreateSuccess(result);
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -829,25 +978,19 @@ export default function Challenges() {
         setTimeout(() => {
           window.location.href = "/api/login";
         }, 500);
-        return;
       }
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
     },
   });
 
   const handleChallengeCreateSuccess = (result?: any) => {
-    const bantCreditReward = result?.bantCreditReward;
-    toast({
-      title: "Challenge Created",
-      description:
-        bantCreditReward?.pointsAwarded > 0
-          ? `Your challenge is live. +${bantCreditReward.pointsAwarded} BantCredit earned.`
-          : "Your challenge has been sent!",
-    });
+    const createdChallenge = buildCreatedChallengeFeedItem(result);
+    if (createdChallenge) {
+      insertCreatedChallengeIntoFeed(createdChallenge);
+      setCreatedChallengeSuccess(createdChallenge);
+    } else {
+      setCreatedChallengeSuccess(result?.challenge || result || {});
+    }
+
     queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
     queryClient.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
     queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
@@ -1239,8 +1382,8 @@ export default function Challenges() {
       return;
     }
       const normalizedAmount = normalizeAmountInput(data.amount);
-      const amount = parseFloat(normalizedAmount);
-      if (!Number.isFinite(amount) || amount <= 0) {
+      const parsedAmount = parseFloat(normalizedAmount);
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
         toast({
           title: "Invalid stake",
           description: "Enter a valid amount to create this challenge.",
@@ -1329,11 +1472,6 @@ export default function Challenges() {
           },
         );
 
-        toast({
-          title: "Escrow locked",
-          description: `${amount.toLocaleString()} ${selectedToken} secured in escrow.`,
-        });
-
         handleChallengeCreateSuccess(finalizedChallenge);
         return finalizedChallenge;
       }
@@ -1361,15 +1499,14 @@ export default function Challenges() {
 
         payload.escrowTxHash = escrowTx.escrowTxHash;
         payload.walletAddress = escrowTx.walletAddress;
-
-        toast({
-          title: "Escrow locked",
-          description: `${amount.toLocaleString()} ${selectedToken} secured in escrow.`,
-        });
       }
 
-      createChallengeMutation.mutate(payload);
+      const createdChallenge = await createChallengeMutation.mutateAsync(payload);
+      handleChallengeCreateSuccess(createdChallenge);
     } catch (error: any) {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
       toast({
         title: "Unable to create challenge",
         description: error?.message || "Please try again.",
@@ -1699,17 +1836,26 @@ export default function Challenges() {
     return (
       <>
         {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3 lg:[grid-template-columns:repeat(3,minmax(0,18.5rem))] lg:justify-center">
             {[...Array(6)].map((_, i) => (
               <ChallengeCardSkeleton key={i} />
             ))}
           </div>
         ) : sortedChallenges.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3 lg:[grid-template-columns:repeat(3,minmax(0,18.5rem))] lg:justify-center">
             {visibleChallenges.map((challenge, index) => (
               <div
                 key={challenge?.id ?? `challenge-${index}-${challenge?.createdAt ?? "unknown"}`}
-                className="relative"
+                id={
+                  Number.isFinite(Number(challenge?.id))
+                    ? `challenge-feed-card-${Number(challenge.id)}`
+                    : undefined
+                }
+                className={cn(
+                  "relative rounded-[20px] transition-all duration-300",
+                  highlightedChallengeId === Number(challenge?.id) &&
+                    "ring-2 ring-[#ccff00] ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-950",
+                )}
               >
                 {challengeStatusTab === "agents" &&
                   (() => {
@@ -2597,6 +2743,67 @@ export default function Challenges() {
           </DialogContent>
         </Dialog>
 
+        <Dialog open={isPreparingChallenge}>
+          <DialogContent
+            className="[&>button]:hidden w-[calc(100vw-2rem)] max-w-[22rem] rounded-[28px] border-0 bg-white p-6 text-center shadow-2xl dark:bg-slate-900"
+            onEscapeKeyDown={(event) => event.preventDefault()}
+            onPointerDownOutside={(event) => event.preventDefault()}
+          >
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#ccff00]/15 text-[#7fb000]">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+            <DialogHeader className="space-y-2 pt-3">
+              <DialogTitle className="text-lg font-semibold text-slate-900 dark:text-white">
+                Creating prediction
+              </DialogTitle>
+              <DialogDescription className="text-sm text-slate-500 dark:text-slate-400">
+                Listing it now.
+              </DialogDescription>
+            </DialogHeader>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={Boolean(createdChallengeSuccess)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setCreatedChallengeSuccess(null);
+            }
+          }}
+        >
+          <DialogContent className="[&>button]:hidden w-[calc(100vw-2rem)] max-w-[24rem] rounded-[28px] border-0 bg-white p-6 text-center shadow-2xl dark:bg-slate-900">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#ccff00]/15 text-[#6f9300]">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <DialogHeader className="space-y-2 pt-3">
+              <DialogTitle className="text-lg font-semibold text-slate-900 dark:text-white">
+                Prediction listed
+              </DialogTitle>
+              <DialogDescription className="text-sm text-slate-500 dark:text-slate-400">
+                Now live on the feed.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 rounded-xl border-slate-200 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                onClick={() => setCreatedChallengeSuccess(null)}
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                className="h-10 rounded-xl text-sm font-medium text-black hover:opacity-90"
+                style={{ backgroundColor: "#ccff00" }}
+                onClick={() => focusCreatedChallengeOnFeed(Number(createdChallengeSuccess?.id))}
+              >
+                See on Feed
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <AgentImportDialog
           open={isImportAgentDialogOpen}
           onOpenChange={setIsImportAgentDialogOpen}
@@ -2718,11 +2925,3 @@ export default function Challenges() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

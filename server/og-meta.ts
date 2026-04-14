@@ -78,7 +78,10 @@ function buildVersionToken(...values: unknown[]): string {
 
 function resolveChainLabel(chainId: unknown): string {
   const numericChainId = Number(chainId);
-  return CHAIN_LABELS[numericChainId] || `Chain ${numericChainId || "Unknown"}`;
+  if (!Number.isFinite(numericChainId) || numericChainId <= 0) {
+    return "Onchain";
+  }
+  return CHAIN_LABELS[numericChainId] || `Chain ${numericChainId}`;
 }
 
 async function resolveChallengeParticipantLabels(challenge: any) {
@@ -89,12 +92,12 @@ async function resolveChallengeParticipantLabels(challenge: any) {
     ? await storage.getAgentById(String(challenge.challengedAgentId))
     : undefined;
 
-  const challengerLabel = challengerAgent?.name
+  const challengerLabel = challengerAgent?.agentName
     || challenge.challengerUser?.username
     || challenge.challengerUser?.firstName
     || "Open";
 
-  const challengedLabel = challengedAgent?.name
+  const challengedLabel = challengedAgent?.agentName
     || challenge.challengedUser?.username
     || challenge.challengedUser?.firstName
     || "Open";
@@ -152,6 +155,20 @@ export async function generateChallengeOGMeta(challengeId: string, baseUrl: stri
       challenge.challenged,
       challenge.result,
       challenge.coverImageUrl,
+      challenge.participantCount,
+      ...(Array.isArray(challenge.participantPreviewUsers)
+        ? challenge.participantPreviewUsers.map((participant: any) =>
+            [
+              participant?.id,
+              participant?.username,
+              participant?.firstName,
+              participant?.side,
+              participant?.profileImageUrl,
+            ]
+              .filter(Boolean)
+              .join(":"),
+          )
+        : []),
     );
 
     const participantText = challenge.challenged

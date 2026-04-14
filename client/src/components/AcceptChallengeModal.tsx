@@ -173,7 +173,7 @@ export function AcceptChallengeModal({
         }
       }}
     >
-      <DialogContent className="sm:max-w-xs">
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-[420px] p-5 sm:p-6">
         <DialogHeader className="sr-only">
           <DialogTitle>Accept Challenge</DialogTitle>
           <DialogDescription>
@@ -181,8 +181,8 @@ export function AcceptChallengeModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
             <UserAvatar
               userId={challenger?.id}
               username={challenger?.username}
@@ -191,9 +191,11 @@ export function AcceptChallengeModal({
               size={40}
             />
             <div className="min-w-0 flex-1">
-              <p className="font-semibold text-sm truncate">{challenge.title}</p>
-              <p className="text-xs text-slate-500 flex items-center gap-2 min-w-0">
-                <span className="truncate">From {challengerName}</span>
+              <p className="pr-6 text-sm font-semibold leading-5 text-slate-950 break-words dark:text-slate-50">
+                {challenge.title}
+              </p>
+              <p className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="break-words">From {challengerName}</span>
                 {challengerSideBadge && (
                   <span
                     className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-bold ${
@@ -216,23 +218,27 @@ export function AcceptChallengeModal({
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex-1 flex items-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800">
-              <div className="flex-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="min-w-0 rounded-lg border border-emerald-100 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-900/10">
+              <div className="min-w-0">
                 <div className="text-[11px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold">Stake</div>
-                <div className="text-xl md:text-2xl font-extrabold text-emerald-700 dark:text-emerald-200">{stakeLabel}</div>
+                <div className="mt-1 break-words text-lg font-extrabold leading-tight text-emerald-700 dark:text-emerald-200 sm:text-xl">
+                  {stakeLabel}
+                </div>
               </div>
             </div>
 
-            <div className="flex-1 flex items-center p-2 rounded-lg bg-sky-50 dark:bg-sky-900/10 border border-sky-100 dark:border-sky-800">
-              <div className="flex-1 text-right">
+            <div className="min-w-0 rounded-lg border border-sky-100 bg-sky-50 p-3 dark:border-sky-800 dark:bg-sky-900/10">
+              <div className="min-w-0 text-right">
                 <div className="text-[11px] text-sky-600 dark:text-sky-400 uppercase font-semibold">Potential win</div>
-                <div className="text-xl md:text-2xl font-extrabold text-sky-700 dark:text-sky-200">{potentialWinLabel}</div>
+                <div className="mt-1 break-words text-lg font-extrabold leading-tight text-sky-700 dark:text-sky-200 sm:text-xl">
+                  {potentialWinLabel}
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="text-sm text-slate-600 dark:text-slate-400">
+          <div className="text-sm leading-6 text-slate-600 break-words dark:text-slate-400">
             <span className="font-medium">{stakeLabel}</span> will be held in escrow. You can upload proofs and vote after the match.
           </div>
 
@@ -242,14 +248,19 @@ export function AcceptChallengeModal({
             </div>
           )}
 
-          <DialogFooter className="flex gap-2">
-            <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:space-x-0">
+            <Button
+              variant="ghost"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="h-auto min-h-11 w-full whitespace-normal px-4 py-3 text-center"
+            >
               Cancel
             </Button>
             <Button
               onClick={handleConfirm}
               disabled={isSubmitting || onchainStakeUnavailable}
-              className="bg-[#7440ff] text-white hover:bg-[#7440ff]"
+              className="h-auto min-h-10 w-full whitespace-normal break-words bg-[#7440ff] px-3.5 py-2.5 text-center text-sm text-white hover:bg-[#7440ff]"
             >
               {isSubmitting ? 'Accepting...' : `Accept ${stakeLabel}`}
             </Button>
@@ -259,4 +270,3 @@ export function AcceptChallengeModal({
     </Dialog>
   );
 }
-

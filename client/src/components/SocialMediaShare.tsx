@@ -1,22 +1,23 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Share2, Copy, Send, ExternalLink, Check, Loader2 } from "lucide-react";
-import { SiX, SiWhatsapp, SiTelegram } from "react-icons/si";
+import { Share2, Copy, Send, ExternalLink, Check } from "lucide-react";
+import { SiTelegram, SiWhatsapp, SiX } from "react-icons/si";
 import {
+  copyToClipboard,
   getTelegramShareUrl,
   getTwitterShareUrl,
   getWhatsAppShareUrl,
   shareChallenge,
   shareNative,
-  copyToClipboard,
 } from "@/utils/sharing";
 
 interface SocialMediaShareProps {
-      challenge: {
-        id: number;
-        title: string;
+  challenge: {
+    id: number;
+    title: string;
     amount: string | number;
     tokenSymbol?: string | null;
     status: string;
@@ -33,14 +34,25 @@ interface SocialMediaShareProps {
     } | null;
     challengerAgent?: {
       name?: string | null;
+      agentName?: string | null;
     } | null;
     challengedAgent?: {
       name?: string | null;
+      agentName?: string | null;
     } | null;
+    coverImageUrl?: string | null;
+    participantCount?: number | null;
+    participantPreviewUsers?: Array<{
+      id?: string | null;
+      username?: string | null;
+      firstName?: string | null;
+      side?: string | null;
+      profileImageUrl?: string | null;
+    }> | null;
     updatedAt?: string | null;
     chainId?: number | null;
   };
-  trigger?: React.ReactNode;
+  trigger?: ReactNode;
 }
 
 function formatDeadlineLabel(value?: string | null) {
@@ -84,11 +96,35 @@ function formatPayoutLabel(amount: string | number, tokenSymbol?: string | null)
 function formatParticipant(
   side: string | null | undefined,
   user?: { username?: string | null; firstName?: string | null } | null,
-  agent?: { name?: string | null } | null,
+  agent?: { name?: string | null; agentName?: string | null } | null,
 ) {
-  const label = agent?.name || user?.username || user?.firstName || "Open";
+  const label = agent?.agentName || agent?.name || user?.username || user?.firstName || "Open";
   const cleanSide = side?.toUpperCase() === "YES" || side?.toUpperCase() === "NO" ? side.toUpperCase() : null;
   return cleanSide ? `${cleanSide} ${label}` : label;
+}
+
+function SharePreviewSkeleton() {
+  return (
+    <div className="absolute inset-0 flex aspect-[1.91/1] w-full flex-col justify-between bg-slate-100 p-3 dark:bg-slate-900">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-20 rounded-full bg-slate-200/90 dark:bg-slate-800" />
+          <Skeleton className="h-7 w-36 rounded-xl bg-slate-200/90 dark:bg-slate-800" />
+          <div className="flex gap-1.5">
+            <Skeleton className="h-5 w-12 rounded-full bg-slate-200/90 dark:bg-slate-800" />
+            <Skeleton className="h-5 w-16 rounded-full bg-slate-200/90 dark:bg-slate-800" />
+          </div>
+        </div>
+        <Skeleton className="h-16 w-16 rounded-2xl bg-slate-200/90 dark:bg-slate-800" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Skeleton className="h-10 rounded-2xl bg-slate-200/90 dark:bg-slate-800" />
+        <Skeleton className="h-10 rounded-2xl bg-slate-200/90 dark:bg-slate-800" />
+        <Skeleton className="h-10 rounded-2xl bg-slate-200/90 dark:bg-slate-800" />
+      </div>
+    </div>
+  );
 }
 
 export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) {
@@ -96,6 +132,7 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
   const [copied, setCopied] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [previewErrored, setPreviewErrored] = useState(false);
+  const [previewLoaded, setPreviewLoaded] = useState(false);
 
   const challengerLine = formatParticipant(challenge.challengerSide, challenge.challengerUser, challenge.challengerAgent);
   const opponentLine = formatParticipant(challenge.challengedSide, challenge.challengedUser, challenge.challengedAgent);
@@ -141,11 +178,29 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
       challenge.challengedSide,
       challenge.dueDate,
       challenge.amount,
+      challenge.coverImageUrl,
+      challenge.participantCount,
+      ...(challenge.participantPreviewUsers || []).map((participant) =>
+        [
+          participant?.id,
+          participant?.username,
+          participant?.firstName,
+          participant?.side,
+          participant?.profileImageUrl,
+        ]
+          .filter(Boolean)
+          .join(":"),
+      ),
     ]
       .filter(Boolean)
       .join("|") || String(challenge.id),
   );
   const previewImageUrl = `${origin}/api/og/challenges/${challenge.id}.png?v=${previewVersion}`;
+
+  useEffect(() => {
+    setPreviewLoaded(false);
+    setPreviewErrored(false);
+  }, [previewImageUrl, isOpen]);
 
   const shareOptions = [
     {
@@ -220,24 +275,24 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
         )}
       </DialogTrigger>
       <DialogContent className="w-[calc(100vw-1rem)] max-w-[320px] overflow-hidden rounded-[22px] border-0 bg-white p-0 shadow-2xl dark:bg-slate-950">
-        <div className="space-y-2.5 px-3.5 pt-3.5 pb-3.5">
-          <div className="overflow-hidden rounded-[18px] bg-slate-100 dark:bg-slate-900">
+        <div className="space-y-2.5 px-3.5 pb-3.5 pt-3.5">
+          <div className="relative aspect-[1.91/1] overflow-hidden rounded-[18px] bg-slate-100 dark:bg-slate-900">
             {!previewErrored ? (
               <img
                 src={previewImageUrl}
                 alt={`Share preview for ${challenge.title}`}
-                className="aspect-[1.91/1] max-h-[148px] w-full object-cover"
-                onError={() => setPreviewErrored(true)}
+                className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+                  previewLoaded ? "opacity-100" : "opacity-0"
+                }`}
+                onLoad={() => setPreviewLoaded(true)}
+                onError={() => {
+                  setPreviewErrored(true);
+                  setPreviewLoaded(false);
+                }}
               />
-            ) : (
-              <div className="flex min-h-[120px] flex-col items-center justify-center px-4 text-center">
-                <Loader2 className="mb-2 h-5 w-5 animate-spin text-slate-400" />
-                <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Preview is warming up.</p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  The share link is live already.
-                </p>
-              </div>
-            )}
+            ) : null}
+
+            {!previewLoaded || previewErrored ? <SharePreviewSkeleton /> : null}
           </div>
 
           <div className="rounded-[18px] bg-slate-50 p-2.5 dark:bg-slate-900">
@@ -253,7 +308,7 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
             </div>
 
             <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-              <span className="truncate">{statusLabel} · {chainLabel}</span>
+              <span className="truncate">{statusLabel} | {chainLabel}</span>
               <span className="truncate text-right">{deadlineLabel}</span>
             </div>
 
@@ -270,7 +325,10 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
                 </Button>
               ))}
 
-              <Button className="h-10 rounded-2xl border-0 bg-slate-200 px-2 text-slate-900 shadow-none hover:bg-slate-300 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800" onClick={() => handlePlatformShare("copy")}>
+              <Button
+                className="h-10 rounded-2xl border-0 bg-slate-200 px-2 text-slate-900 shadow-none hover:bg-slate-300 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
+                onClick={() => handlePlatformShare("copy")}
+              >
                 <div className="flex flex-col items-center gap-1">
                   {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
                   <span className="text-[10px] font-semibold leading-none">{copied ? "Copied" : "Copy"}</span>
@@ -280,7 +338,10 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
 
             <div className="mt-2 flex items-center justify-between gap-2">
               {typeof navigator !== "undefined" && navigator.share ? (
-                <Button className="h-9 rounded-full border-0 bg-white px-3 text-xs text-slate-900 shadow-none hover:bg-slate-200 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800" onClick={() => handlePlatformShare("native")}>
+                <Button
+                  className="h-9 rounded-full border-0 bg-white px-3 text-xs text-slate-900 shadow-none hover:bg-slate-200 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
+                  onClick={() => handlePlatformShare("native")}
+                >
                   <Send className="mr-1.5 h-3.5 w-3.5" />
                   More
                 </Button>
@@ -288,7 +349,10 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
                 <div />
               )}
 
-              <Button className="h-9 rounded-full border-0 bg-white px-3 text-xs text-slate-900 shadow-none hover:bg-slate-200 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800" onClick={() => window.open(openChallengeUrl, "_blank")}>
+              <Button
+                className="h-9 rounded-full border-0 bg-white px-3 text-xs text-slate-900 shadow-none hover:bg-slate-200 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
+                onClick={() => window.open(openChallengeUrl, "_blank")}
+              >
                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                 Open
               </Button>

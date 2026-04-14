@@ -348,6 +348,8 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   sessionStore: any;
   private db = db; // Alias db for internal use
+  private challengeSideColumnsAvailable: boolean | null = null;
+  private challengeSideColumnsWarningShown = false;
   private leaderboardCache: {
     expiresAt: number;
     limit: number;
@@ -377,6 +379,55 @@ export class DatabaseStorage implements IStorage {
     }
 
     return rawStatus || 'pending';
+  }
+
+  private async supportsChallengeSideColumns(): Promise<boolean> {
+    if (this.challengeSideColumnsAvailable !== null) {
+      return this.challengeSideColumnsAvailable;
+    }
+
+    try {
+      const result = await pool.query(
+        `
+          select count(*)::int as count
+          from information_schema.columns
+          where table_schema = 'public'
+            and table_name = 'challenges'
+            and column_name = any($1::text[])
+        `,
+        [["challenger_side", "challenged_side"]],
+      );
+
+      this.challengeSideColumnsAvailable = Number(result.rows[0]?.count || 0) >= 2;
+    } catch (error) {
+      console.error("[db] Failed to inspect challenge side columns:", error);
+      this.challengeSideColumnsAvailable = false;
+    }
+
+    if (!this.challengeSideColumnsAvailable && !this.challengeSideColumnsWarningShown) {
+      this.challengeSideColumnsWarningShown = true;
+      console.warn("[db] challenges table is missing challenger/challenged side columns; falling back to null side fields.");
+    }
+
+    return this.challengeSideColumnsAvailable;
+  }
+
+  private getChallengeSideSelects(includeSideColumns: boolean) {
+    return {
+      challengerSide: includeSideColumns ? challenges.challengerSide : sql<string | null>`null`,
+      challengedSide: includeSideColumns ? challenges.challengedSide : sql<string | null>`null`,
+    };
+  }
+
+  private async sanitizeChallengeSideFields<T extends Record<string, any>>(data: T): Promise<T> {
+    if (await this.supportsChallengeSideColumns()) {
+      return data;
+    }
+
+    const sanitized = { ...data };
+    delete sanitized.challengerSide;
+    delete sanitized.challengedSide;
+    return sanitized as T;
   }
 
   private async getChallengeCommentCount(challengeId: number): Promise<number> {
@@ -1770,6 +1821,7 @@ export class DatabaseStorage implements IStorage {
 
   // Challenge operations
   async getChallenges(userId: string, limit = 10): Promise<(Challenge & { challengerUser: User, challengedUser: User, participantCount: number })[]> {
+    const includeChallengeSideColumns = await this.supportsChallengeSideColumns();
     const dbUser = await this.getUser(userId);
     const ownedAgentRows = await this.db
       .select({ agentId: agents.agentId })
@@ -1824,8 +1876,7 @@ export class DatabaseStorage implements IStorage {
         description: challenges.description,
         category: challenges.category,
         amount: challenges.amount,
-        challengerSide: challenges.challengerSide,
-        challengedSide: challenges.challengedSide,
+        ...this.getChallengeSideSelects(includeChallengeSideColumns),
         status: challenges.status,
         evidence: challenges.evidence,
         result: challenges.result,
@@ -1910,6 +1961,7 @@ export class DatabaseStorage implements IStorage {
 
   // Get all challenges for public feed (no user filtering)
   async getAllChallengesFeed(limit = 100): Promise<(Challenge & { challengerUser: User, challengedUser: User, participantCount: number })[]> {
+    const includeChallengeSideColumns = await this.supportsChallengeSideColumns();
     const challengesList = await this.db
       .select({
         id: challenges.id,
@@ -1928,8 +1980,7 @@ export class DatabaseStorage implements IStorage {
         description: challenges.description,
         category: challenges.category,
         amount: challenges.amount,
-        challengerSide: challenges.challengerSide,
-        challengedSide: challenges.challengedSide,
+        ...this.getChallengeSideSelects(includeChallengeSideColumns),
         status: challenges.status,
         evidence: challenges.evidence,
         result: challenges.result,
@@ -2012,6 +2063,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getChallengeById(id: number): Promise<Challenge | undefined> {
+    const includeChallengeSideColumns = await this.supportsChallengeSideColumns();
     const [challenge] = await this.db
       .select({
         id: challenges.id,
@@ -2030,13 +2082,13 @@ export class DatabaseStorage implements IStorage {
         description: challenges.description,
         category: challenges.category,
         amount: challenges.amount,
-        challengerSide: challenges.challengerSide,
-        challengedSide: challenges.challengedSide,
+        ...this.getChallengeSideSelects(includeChallengeSideColumns),
         status: challenges.status,
         evidence: challenges.evidence,
         result: challenges.result,
         dueDate: challenges.dueDate,
         createdAt: challenges.createdAt,
+        updatedAt: sql<Date | null>`null`,
         completedAt: challenges.completedAt,
         adminCreated: challenges.adminCreated,
         settlementRail: challenges.settlementRail,
@@ -2130,11 +2182,12 @@ export class DatabaseStorage implements IStorage {
     }
 
     console.log('Balance check passed, creating challenge...');
-    // Create the challenge
-    const [newChallenge] = await this.db.insert(challenges).values({
+    const insertValues = await this.sanitizeChallengeSideFields({
       ...challenge,
-      adminCreated: false
-    }).returning();
+      adminCreated: false,
+    });
+    // Create the challenge
+    const [newChallenge] = await this.db.insert(challenges).values(insertValues).returning();
 
     console.log('Challenge insert successful, ID:', newChallenge.id);
 
@@ -2170,13 +2223,15 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Invalid challenge amount");
     }
 
+    const insertValues = await this.sanitizeChallengeSideFields({
+      ...challenge,
+      status: "draft",
+      adminCreated: false,
+    });
+
     const [draftChallenge] = await this.db
       .insert(challenges)
-      .values({
-        ...challenge,
-        status: "draft",
-        adminCreated: false,
-      })
+      .values(insertValues)
       .returning();
 
     return draftChallenge;
@@ -2185,7 +2240,7 @@ export class DatabaseStorage implements IStorage {
   // Create a challenge initiated by admin (no challenger required)
   async createAdminChallenge(challengeData: Partial<InsertChallenge>): Promise<Challenge> {
     try {
-      const insertValues: any = {
+      const insertValues = await this.sanitizeChallengeSideFields({
         challenger: challengeData.challenger || null,
         challenged: challengeData.challenged || null,
         challengerSide: challengeData.challengerSide || null,
@@ -2217,7 +2272,7 @@ export class DatabaseStorage implements IStorage {
         decimals: (challengeData as any).decimals || null,
         stakeAtomic: (challengeData as any).stakeAtomic || null,
         evidence: (challengeData as any).evidence || null,
-      };
+      } as any);
 
       console.log('Inserting challenge with values:', insertValues);
       const [created] = await this.db.insert(challenges).values(insertValues).returning();
@@ -2234,6 +2289,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPublicAdminChallenges(limit = 10): Promise<any[]> {
+    const includeChallengeSideColumns = await this.supportsChallengeSideColumns();
     const challengesList = await this.db
       .select({
         id: challenges.id,
@@ -2252,8 +2308,7 @@ export class DatabaseStorage implements IStorage {
         description: challenges.description,
         category: challenges.category,
         amount: challenges.amount,
-        challengerSide: challenges.challengerSide,
-        challengedSide: challenges.challengedSide,
+        ...this.getChallengeSideSelects(includeChallengeSideColumns),
         status: challenges.status,
         evidence: challenges.evidence,
         result: challenges.result,
@@ -2343,9 +2398,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateChallenge(id: number, updates: Partial<Challenge>): Promise<Challenge> {
+    const sanitizedUpdates = await this.sanitizeChallengeSideFields(updates as Record<string, any>);
     const [challenge] = await this.db
       .update(challenges)
-      .set(updates)
+      .set(sanitizedUpdates)
       .where(eq(challenges.id, id))
       .returning();
     return challenge;
@@ -2417,11 +2473,11 @@ export class DatabaseStorage implements IStorage {
 
       const [updatedChallenge] = await this.db
         .update(challenges)
-        .set({
+        .set(await this.sanitizeChallengeSideFields({
           challenged: userId,
           status: 'active',
           challengedSide,
-        })
+        }))
         .where(eq(challenges.id, challengeId))
         .returning();
 
@@ -2457,10 +2513,10 @@ export class DatabaseStorage implements IStorage {
 
       const [updatedChallenge] = await this.db
         .update(challenges)
-        .set({
+        .set(await this.sanitizeChallengeSideFields({
           status: 'active',
           challengedSide,
-        })
+        }))
         .where(eq(challenges.id, challengeId))
         .returning();
 
@@ -2497,6 +2553,7 @@ export class DatabaseStorage implements IStorage {
 
   // Admin challenge operations
   async getAllChallenges(limit = 50): Promise<(Challenge & { challengerUser?: User, challengedUser?: User })[]> {
+    const includeChallengeSideColumns = await this.supportsChallengeSideColumns();
     return await this.db
       .select({
         id: challenges.id,
@@ -2515,8 +2572,7 @@ export class DatabaseStorage implements IStorage {
         description: challenges.description,
         category: challenges.category,
         amount: challenges.amount,
-        challengerSide: challenges.challengerSide,
-        challengedSide: challenges.challengedSide,
+        ...this.getChallengeSideSelects(includeChallengeSideColumns),
         status: challenges.status,
         evidence: challenges.evidence,
         result: challenges.result,
@@ -2925,7 +2981,7 @@ export class DatabaseStorage implements IStorage {
 
       const [updatedChallenge] = await this.db
         .update(challenges)
-        .set(updateData)
+        .set(await this.sanitizeChallengeSideFields(updateData))
         .where(eq(challenges.id, challengeId))
         .returning();
 

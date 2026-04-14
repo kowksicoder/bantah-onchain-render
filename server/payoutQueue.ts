@@ -8,6 +8,7 @@ import { eq, and, lte } from 'drizzle-orm';
  */
 export class PayoutQueue {
   private static instance: PayoutQueue;
+  private payoutTablesAvailable = true;
 
   static getInstance(): PayoutQueue {
     if (!PayoutQueue.instance) {
@@ -215,6 +216,10 @@ export class PayoutQueue {
    * Get all pending jobs
    */
   async getPendingJobs() {
+    if (!this.payoutTablesAvailable) {
+      return [];
+    }
+
     try {
       const jobs = await db
         .select()
@@ -222,7 +227,13 @@ export class PayoutQueue {
         .where(eq(payoutJobs.status, 'queued'));
 
       return jobs;
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.code === '42P01') {
+        this.payoutTablesAvailable = false;
+        console.warn('[db] payout_jobs table is missing; payout worker will stay idle until migrations are applied.');
+        return [];
+      }
+
       console.error('Error getting pending jobs:', error);
       return [];
     }
