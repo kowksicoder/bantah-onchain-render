@@ -323,6 +323,38 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     console.error("Failed to ensure partner program tables:", error);
   });
 
+  // Public "skills" descriptor for third-party agents (safe read endpoints; no auth required).
+  app.get("/api/skills", (req, res) => {
+    const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
+      .split(",")[0]
+      .trim();
+    const forwardedHost = String(req.headers["x-forwarded-host"] || "")
+      .split(",")[0]
+      .trim();
+
+    const proto = forwardedProto || req.protocol || "http";
+    const host = forwardedHost || req.get("host") || "";
+    const baseUrl = host ? `${proto}://${host}` : "";
+
+    res.json({
+      name: "Bantah Public Skills",
+      version: "1.0.0",
+      baseUrl,
+      safeWithoutAuth: true,
+      note: "Public read-only endpoints that agents can call without Bantah sign-in. Protected actions still require Bantah auth.",
+      endpoints: [
+        { group: "Challenge Discovery", method: "GET", path: "/api/challenges?feed=all" },
+        { group: "Challenge Discovery", method: "GET", path: "/api/challenges/public" },
+        { group: "Challenge Discovery", method: "GET", path: "/api/challenges/:id" },
+        { group: "Challenge Discovery", method: "GET", path: "/api/challenges/:id/messages" },
+        { group: "Leaderboard", method: "GET", path: "/api/leaderboard" },
+        { group: "Onchain Status", method: "GET", path: "/api/onchain/config" },
+        { group: "Onchain Status", method: "GET", path: "/api/onchain/status" },
+        { group: "Public Profiles", method: "GET", path: "/u/:username", note: "Redirects to /@:username" },
+      ],
+    });
+  });
+
   // Public onchain runtime config for UI initialization
   app.get("/api/onchain/config", (_req, res) => {
     res.json(ONCHAIN_CONFIG);
@@ -2365,8 +2397,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   // Public feed for partner/community challenges (admin-style YES/NO cards + community metadata)
   app.get('/api/communities/challenges', async (req, res) => {
     try {
-      const limitRaw = Number(req.query?.limit || 100);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 100;
+      const limitRaw = Number(req.query?.limit || 24);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 24;
 
       const communityLinks = await listPublicPartnerChallengeLinks(limit);
       if (!communityLinks.length) {
@@ -2392,7 +2424,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         });
       }
 
-      const publicFeed = await storage.getPublicAdminChallenges(Math.max(150, limit * 3));
+      const publicFeed = await storage.getPublicAdminChallenges(Math.min(120, Math.max(36, limit * 2)));
       const filtered = publicFeed
         .filter((challenge: any) => metaByChallengeId.has(Number(challenge.id)))
         .map((challenge: any) => ({
@@ -4030,8 +4062,10 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   // Challenge routes
   app.get('/api/challenges/public', async (req, res) => {
     try {
+      const limitRaw = Number(req.query?.limit || 24);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 24;
       console.log("📥 Fetching public admin challenges...");
-      const challenges = await storage.getPublicAdminChallenges();
+      const challenges = await storage.getPublicAdminChallenges(limit);
       console.log(`✅ Retrieved ${challenges.length} public challenges`);
       res.json(challenges);
     } catch (error: any) {
@@ -4110,12 +4144,14 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     try {
       // Check if requesting all challenges (public feed) or user-specific challenges
       const feedType = req.query.feed as string;
+      const limitRaw = Number(req.query?.limit || 30);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 30;
       const optionalUserId = await getOptionalPrivyUserId(req);
       const hasAuthedUser = Boolean(optionalUserId);
       const challenges =
         feedType === 'all' || !hasAuthedUser
-          ? await storage.getAllChallengesFeed(100)
-          : await storage.getChallenges(optionalUserId as string);
+          ? await storage.getAllChallengesFeed(limit)
+          : await storage.getChallenges(optionalUserId as string, Math.min(limit, 30));
       res.json(challenges);
     } catch (error) {
       console.error("Error fetching challenges:", error);
@@ -10843,5 +10879,3 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
   return httpServer;
 }
-
-
