@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
 import fs from "fs/promises";
 import path from "path";
-import sharp from "sharp";
 import { fileURLToPath } from "url";
+import { Resvg } from "@resvg/resvg-js";
 import { CHALLENGE_PLATFORM_FEE_RATE } from "@shared/feeConfig";
 import type { IStorage } from "./storage";
 
@@ -49,6 +49,7 @@ const OG_FONT_FALLBACK_CANDIDATE_PATHS = [
 const OG_FONT_STACK = "BantahOG, Noto Sans, Arial, Helvetica, sans-serif";
 
 let ogFontDataUriCache: string | null | undefined;
+let resvgFontFilesCache: string[] | null = null;
 
 type ChallengeSlot = {
   key: string;
@@ -181,6 +182,47 @@ async function loadFirstAvailableFileAsDataUri(
     if (value) return value;
   }
   return null;
+}
+
+async function listExistingPaths(filePaths: string[]): Promise<string[]> {
+  const existing: string[] = [];
+  for (const filePath of filePaths) {
+    try {
+      await fs.access(filePath);
+      existing.push(filePath);
+    } catch {
+      // ignore
+    }
+  }
+  return existing;
+}
+
+async function getResvgFontFiles(): Promise<string[]> {
+  if (resvgFontFilesCache) {
+    return resvgFontFilesCache;
+  }
+
+  const candidates = [
+    ...OG_FONT_BUNDLED_CANDIDATE_PATHS,
+    ...OG_FONT_PRIMARY_CANDIDATE_PATHS,
+    ...OG_FONT_FALLBACK_CANDIDATE_PATHS,
+  ];
+  const existing = await listExistingPaths(candidates);
+  resvgFontFilesCache = Array.from(new Set(existing));
+  return resvgFontFilesCache;
+}
+
+async function renderSvgToPng(svg: string): Promise<Buffer> {
+  const fontFiles = await getResvgFontFiles();
+  const resvg = new Resvg(svg, {
+    font: {
+      fontFiles,
+      loadSystemFonts: true,
+    },
+  });
+
+  const pngData = resvg.render();
+  return Buffer.from(pngData.asPng());
 }
 
 async function loadRemoteAssetAsDataUri(url: string, mimeTypeHint?: string): Promise<string | null> {
@@ -670,7 +712,7 @@ export function setupOGImageRoutes(app: any, storage: IStorage) {
 
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const svg = await buildChallengeCardSvg(challenge, storage, baseUrl);
-      const imageBuffer = await sharp(Buffer.from(svg), { density: 144 }).png().toBuffer();
+      const imageBuffer = await renderSvgToPng(svg);
 
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60, stale-while-revalidate=300");
@@ -697,7 +739,7 @@ export function setupOGImageRoutes(app: any, storage: IStorage) {
 
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const svg = await generateEventSvg(event, baseUrl);
-      const imageBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
+      const imageBuffer = await renderSvgToPng(svg);
 
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "public, max-age=900");
