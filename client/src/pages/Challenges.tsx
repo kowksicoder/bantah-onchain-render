@@ -465,16 +465,31 @@ export default function Challenges() {
     queryKey: ["/api/challenges"],
     queryFn: async () => {
       try {
-        // Always fetch public admin challenges + community-linked challenge metadata
-        const [publicResp, communityResp] = await Promise.all([
-          fetch("/api/challenges/public", { credentials: "include" }),
-          fetch("/api/communities/challenges?limit=200", { credentials: "include" }),
+        // Fetch public admin challenges + community metadata with graceful fallback.
+        const [publicResult, communityResult] = await Promise.allSettled([
+          fetch("/api/challenges/public?limit=24", { credentials: "include" }),
+          fetch("/api/communities/challenges?limit=40", { credentials: "include" }),
         ]);
-        if (!publicResp.ok) {
-          throw new Error(`${publicResp.status}: ${await publicResp.json().then(e => e.message).catch(() => "Unknown error")}`);
+
+        let publicData: any[] = [];
+        if (publicResult.status === "fulfilled" && publicResult.value.ok) {
+          publicData = await publicResult.value.json();
+        } else {
+          console.warn("Public challenges endpoint failed, falling back to all-feed endpoint");
+          try {
+            const fallbackResp = await fetch("/api/challenges?feed=all&limit=40", { credentials: "include" });
+            if (fallbackResp.ok) {
+              publicData = await fallbackResp.json();
+            }
+          } catch (fallbackError) {
+            console.warn("Fallback challenges endpoint also failed:", fallbackError);
+          }
         }
-        const publicData = await publicResp.json();
-        const communityData = communityResp.ok ? await communityResp.json() : [];
+
+        let communityData: any[] = [];
+        if (communityResult.status === "fulfilled" && communityResult.value.ok) {
+          communityData = await communityResult.value.json();
+        }
         const communityByChallengeId = new Map<number, any>();
         (communityData || []).forEach((challenge: any) => {
           const challengeId = Number(challenge?.id);
@@ -488,7 +503,7 @@ export default function Challenges() {
         // If user is authenticated, also fetch the authenticated feed (includes P2P/open challenges)
         if (user) {
           try {
-            const authData = await apiRequest("GET", "/api/challenges?feed=all");
+            const authData = await apiRequest("GET", "/api/challenges?feed=all&limit=40");
             const map = new Map<number, any>();
 
             (publicData || []).forEach((c: any) => map.set(c.id, c));
@@ -557,7 +572,8 @@ export default function Challenges() {
           participantCount: challenge.participantCount ?? 0,
         }));
       } catch (error: any) {
-        throw error;
+        console.error("Failed to fetch challenges feed:", error);
+        return [];
       }
     },
     retry: false,
