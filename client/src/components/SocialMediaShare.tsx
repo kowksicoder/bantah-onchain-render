@@ -1,7 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Share2, Copy, Send, ExternalLink, Check } from "lucide-react";
 import { SiTelegram, SiWhatsapp, SiX } from "react-icons/si";
@@ -103,25 +102,52 @@ function formatParticipant(
   return cleanSide ? `${cleanSide} ${label}` : label;
 }
 
-function SharePreviewSkeleton() {
+type SharePreviewFallbackProps = {
+  title: string;
+  stakeLabel: string;
+  payoutLabel: string;
+  statusLabel: string;
+  chainLabel: string;
+  deadlineLabel: string;
+  challengerLine: string;
+  opponentLine: string;
+};
+
+function SharePreviewFallback({
+  title,
+  stakeLabel,
+  payoutLabel,
+  statusLabel,
+  chainLabel,
+  deadlineLabel,
+  challengerLine,
+  opponentLine,
+}: SharePreviewFallbackProps) {
   return (
-    <div className="absolute inset-0 flex aspect-[1.91/1] w-full flex-col justify-between bg-slate-100 p-3 dark:bg-slate-900">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-20 rounded-full bg-slate-200/90 dark:bg-slate-800" />
-          <Skeleton className="h-7 w-36 rounded-xl bg-slate-200/90 dark:bg-slate-800" />
-          <div className="flex gap-1.5">
-            <Skeleton className="h-5 w-12 rounded-full bg-slate-200/90 dark:bg-slate-800" />
-            <Skeleton className="h-5 w-16 rounded-full bg-slate-200/90 dark:bg-slate-800" />
+    <div className="absolute inset-0 flex aspect-[1.91/1] w-full flex-col justify-between bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-3 text-white">
+      <div className="space-y-2">
+        <div className="inline-flex w-fit items-center rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide">
+          {statusLabel} | {chainLabel}
+        </div>
+        <p className="line-clamp-2 text-sm font-semibold leading-tight">{title}</p>
+        <div className="grid grid-cols-2 gap-2 text-[10px]">
+          <div className="rounded-lg bg-black/25 px-2 py-1.5">
+            <span className="block text-white/60">Stake</span>
+            <span className="block truncate text-[11px] font-semibold">{stakeLabel}</span>
+          </div>
+          <div className="rounded-lg bg-black/25 px-2 py-1.5">
+            <span className="block text-white/60">To win</span>
+            <span className="block truncate text-[11px] font-semibold">{payoutLabel}</span>
           </div>
         </div>
-        <Skeleton className="h-16 w-16 rounded-2xl bg-slate-200/90 dark:bg-slate-800" />
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <Skeleton className="h-10 rounded-2xl bg-slate-200/90 dark:bg-slate-800" />
-        <Skeleton className="h-10 rounded-2xl bg-slate-200/90 dark:bg-slate-800" />
-        <Skeleton className="h-10 rounded-2xl bg-slate-200/90 dark:bg-slate-800" />
+      <div className="space-y-1 text-[10px]">
+        <div className="flex items-center justify-between gap-2 text-white/80">
+          <span className="truncate">{challengerLine}</span>
+          <span className="truncate text-right">{opponentLine}</span>
+        </div>
+        <div className="text-white/60">{deadlineLabel}</div>
       </div>
     </div>
   );
@@ -277,10 +303,23 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
       <DialogContent className="w-[calc(100vw-1rem)] max-w-[320px] overflow-hidden rounded-[22px] border-0 bg-white p-0 shadow-2xl dark:bg-slate-950">
         <div className="space-y-2.5 px-3.5 pb-3.5 pt-3.5">
           <div className="relative aspect-[1.91/1] overflow-hidden rounded-[18px] bg-slate-100 dark:bg-slate-900">
+            <SharePreviewFallback
+              title={challenge.title}
+              stakeLabel={stakeLabel}
+              payoutLabel={payoutLabel}
+              statusLabel={statusLabel}
+              chainLabel={chainLabel}
+              deadlineLabel={deadlineLabel}
+              challengerLine={challengerLine}
+              opponentLine={opponentLine}
+            />
+
             {!previewErrored ? (
               <img
                 src={previewImageUrl}
                 alt={`Share preview for ${challenge.title}`}
+                loading="eager"
+                decoding="async"
                 className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
                   previewLoaded ? "opacity-100" : "opacity-0"
                 }`}
@@ -292,7 +331,9 @@ export function SocialMediaShare({ challenge, trigger }: SocialMediaShareProps) 
               />
             ) : null}
 
-            {!previewLoaded || previewErrored ? <SharePreviewSkeleton /> : null}
+            {!previewLoaded && !previewErrored ? (
+              <div className="absolute inset-0 animate-pulse bg-slate-900/10 dark:bg-black/10" />
+            ) : null}
           </div>
 
           <div className="rounded-[18px] bg-slate-50 p-2.5 dark:bg-slate-900">
