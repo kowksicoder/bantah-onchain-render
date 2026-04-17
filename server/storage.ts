@@ -536,6 +536,201 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  private normalizeChallengeIds(challengeIds: Array<number | string | null | undefined>): number[] {
+    return Array.from(
+      new Set(
+        challengeIds
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value > 0),
+      ),
+    );
+  }
+
+  private async getPairQueueCountMap(challengeIds: number[]): Promise<Map<number, number>> {
+    const normalizedChallengeIds = this.normalizeChallengeIds(challengeIds);
+    const countMap = new Map<number, number>();
+    if (!normalizedChallengeIds.length) {
+      return countMap;
+    }
+
+    const rows = await this.db
+      .select({
+        challengeId: pairQueue.challengeId,
+        count: count(),
+      })
+      .from(pairQueue)
+      .where(inArray(pairQueue.challengeId, normalizedChallengeIds))
+      .groupBy(pairQueue.challengeId);
+
+    for (const row of rows) {
+      const challengeId = Number(row.challengeId);
+      if (!Number.isInteger(challengeId)) continue;
+      countMap.set(challengeId, Number(row.count || 0));
+    }
+
+    return countMap;
+  }
+
+  private async getChallengeCommentCountMap(challengeIds: number[]): Promise<Map<number, number>> {
+    const normalizedChallengeIds = this.normalizeChallengeIds(challengeIds);
+    const countMap = new Map<number, number>();
+    if (!normalizedChallengeIds.length) {
+      return countMap;
+    }
+
+    const rows = await this.db
+      .select({
+        challengeId: challengeMessages.challengeId,
+        count: count(),
+      })
+      .from(challengeMessages)
+      .where(inArray(challengeMessages.challengeId, normalizedChallengeIds))
+      .groupBy(challengeMessages.challengeId);
+
+    for (const row of rows) {
+      const challengeId = Number(row.challengeId);
+      if (!Number.isInteger(challengeId)) continue;
+      countMap.set(challengeId, Number(row.count || 0));
+    }
+
+    return countMap;
+  }
+
+  private async getAdminChallengeParticipantMetaMap(challengeIds: number[]): Promise<Map<number, {
+    participantCount: number;
+    participantPreviewUsers: Array<{
+      id: string;
+      username?: string | null;
+      firstName?: string | null;
+      profileImageUrl?: string | null;
+      side?: string | null;
+    }>;
+  }>> {
+    const normalizedChallengeIds = this.normalizeChallengeIds(challengeIds);
+    const participantMetaMap = new Map<number, {
+      participantCount: number;
+      participantPreviewUsers: Array<{
+        id: string;
+        username?: string | null;
+        firstName?: string | null;
+        profileImageUrl?: string | null;
+        side?: string | null;
+      }>;
+    }>();
+
+    if (!normalizedChallengeIds.length) {
+      return participantMetaMap;
+    }
+
+    const activeParticipantRows = await this.db
+      .select({
+        challengeId: pairQueue.challengeId,
+        count: sql<number>`count(distinct coalesce(${pairQueue.agentId}::text, ${pairQueue.userId}))`,
+      })
+      .from(pairQueue)
+      .where(
+        and(
+          inArray(pairQueue.challengeId, normalizedChallengeIds),
+          inArray(pairQueue.status, ["waiting", "matched"]),
+        ),
+      )
+      .groupBy(pairQueue.challengeId);
+
+    for (const row of activeParticipantRows) {
+      const challengeId = Number(row.challengeId);
+      if (!Number.isInteger(challengeId)) continue;
+      participantMetaMap.set(challengeId, {
+        participantCount: Number(row.count || 0),
+        participantPreviewUsers: [],
+      });
+    }
+
+    const queueRows = await this.db
+      .select({
+        challengeId: pairQueue.challengeId,
+        userId: pairQueue.userId,
+        participantType: pairQueue.participantType,
+        agentId: pairQueue.agentId,
+        side: pairQueue.side,
+        createdAt: pairQueue.createdAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          profileImageUrl: users.profileImageUrl,
+        },
+        agent: {
+          agentId: agents.agentId,
+          agentName: agents.agentName,
+        },
+      })
+      .from(pairQueue)
+      .leftJoin(users, eq(pairQueue.userId, users.id))
+      .leftJoin(agents, eq(pairQueue.agentId, agents.agentId))
+      .where(
+        and(
+          inArray(pairQueue.challengeId, normalizedChallengeIds),
+          inArray(pairQueue.status, ["waiting", "matched"]),
+        ),
+      )
+      .orderBy(asc(pairQueue.challengeId), desc(pairQueue.createdAt));
+
+    const seenByChallenge = new Map<number, Set<string>>();
+
+    for (const row of queueRows) {
+      const challengeId = Number(row.challengeId);
+      if (!Number.isInteger(challengeId)) continue;
+
+      if (!participantMetaMap.has(challengeId)) {
+        participantMetaMap.set(challengeId, {
+          participantCount: 0,
+          participantPreviewUsers: [],
+        });
+      }
+
+      const entry = participantMetaMap.get(challengeId)!;
+      if (entry.participantPreviewUsers.length >= 2) continue;
+
+      const participantType =
+        String(row.participantType || "").trim().toLowerCase() === "agent" && row.agentId
+          ? "agent"
+          : "human";
+      const participantId =
+        participantType === "agent"
+          ? String(row.agentId || "")
+          : String(row.userId || row.user?.id || "");
+      if (!participantId) continue;
+
+      let seen = seenByChallenge.get(challengeId);
+      if (!seen) {
+        seen = new Set<string>();
+        seenByChallenge.set(challengeId, seen);
+      }
+
+      const seenKey = `${participantType}:${participantId}`;
+      if (seen.has(seenKey)) continue;
+
+      seen.add(seenKey);
+      entry.participantPreviewUsers.push({
+        id: participantId,
+        username:
+          participantType === "agent"
+            ? row.agent?.agentName || null
+            : row.user?.username || null,
+        firstName: participantType === "agent" ? "Agent" : row.user?.firstName || null,
+        profileImageUrl: participantType === "agent" ? null : row.user?.profileImageUrl || null,
+        side: row.side || null,
+      });
+    }
+
+    for (const [challengeId, meta] of participantMetaMap.entries()) {
+      meta.participantCount = Math.max(meta.participantCount, meta.participantPreviewUsers.length);
+      participantMetaMap.set(challengeId, meta);
+    }
+
+    return participantMetaMap;
+  }
+
   // --- Offchain voting/escrow methods ---
   async reserveStake(challengeId: number, userId: string, amount: number, paymentMethod?: string): Promise<any> {
     // Ensure user has sufficient balance
@@ -1920,41 +2115,48 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(challenges.createdAt))
       .limit(limit) as any;
 
-    // Now get participant count for each challenge
-    const challengesWithParticipants = await Promise.all(
-      challengesList.map(async (challenge) => {
-        let participantCount = 0;
-        let participantPreviewUsers: any[] = [];
-        let commentCount = 0;
-        
-        if (challenge.adminCreated) {
-          const participantMeta = await this.getAdminChallengeParticipantMeta(challenge);
-          participantCount = participantMeta.participantCount;
-          participantPreviewUsers = participantMeta.participantPreviewUsers;
-          commentCount = await this.getChallengeCommentCount(challenge.id);
-        } else {
-          // Count pairQueue entries for regular challenges
-          const [participantResult] = await this.db
-            .select({ count: count() })
-            .from(pairQueue)
-            .where(eq(pairQueue.challengeId, challenge.id));
-          participantCount = Number(participantResult?.count || 0);
-        }
-
-        return {
-          ...challenge,
-          status: this.normalizeP2PChallengeStatus(
-            challenge.status,
-            challenge.adminCreated,
-            challenge.challenged,
-            (challenge as any).challengedWalletAddress,
-          ),
-          participantCount,
-          participantPreviewUsers,
-          commentCount,
-        };
-      })
+    const challengeIds = this.normalizeChallengeIds(challengesList.map((challenge: any) => challenge.id));
+    const adminChallengeIds = this.normalizeChallengeIds(
+      challengesList
+        .filter((challenge: any) => Boolean(challenge.adminCreated))
+        .map((challenge: any) => challenge.id),
     );
+    const regularChallengeIds = this.normalizeChallengeIds(
+      challengesList
+        .filter((challenge: any) => !challenge.adminCreated)
+        .map((challenge: any) => challenge.id),
+    );
+
+    const [regularParticipantCountMap, adminParticipantMetaMap, commentCountMap] = await Promise.all([
+      this.getPairQueueCountMap(regularChallengeIds),
+      this.getAdminChallengeParticipantMetaMap(adminChallengeIds),
+      this.getChallengeCommentCountMap(challengeIds),
+    ]);
+
+    const challengesWithParticipants = challengesList.map((challenge: any) => {
+      const challengeId = Number(challenge.id);
+      const adminMeta = adminParticipantMetaMap.get(challengeId);
+      const participantCount = challenge.adminCreated
+        ? Number(adminMeta?.participantCount || 0)
+        : Number(regularParticipantCountMap.get(challengeId) || 0);
+      const participantPreviewUsers = challenge.adminCreated
+        ? (adminMeta?.participantPreviewUsers || [])
+        : [];
+      const commentCount = Number(commentCountMap.get(challengeId) || 0);
+
+      return {
+        ...challenge,
+        status: this.normalizeP2PChallengeStatus(
+          challenge.status,
+          challenge.adminCreated,
+          challenge.challenged,
+          (challenge as any).challengedWalletAddress,
+        ),
+        participantCount,
+        participantPreviewUsers,
+        commentCount,
+      };
+    });
 
     return challengesWithParticipants;
   }
@@ -2024,40 +2226,48 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(challenges.createdAt))
       .limit(limit) as any;
 
-    // Get participant count for each challenge
-    const challengesWithParticipants = await Promise.all(
-      challengesList.map(async (challenge) => {
-        let participantCount = 0;
-        let participantPreviewUsers: any[] = [];
-        let commentCount = 0;
-        
-        if (challenge.adminCreated) {
-          const participantMeta = await this.getAdminChallengeParticipantMeta(challenge);
-          participantCount = participantMeta.participantCount;
-          participantPreviewUsers = participantMeta.participantPreviewUsers;
-          commentCount = await this.getChallengeCommentCount(challenge.id);
-        } else {
-          const [participantResult] = await this.db
-            .select({ count: count() })
-            .from(pairQueue)
-            .where(eq(pairQueue.challengeId, challenge.id));
-          participantCount = Number(participantResult?.count || 0);
-        }
-
-        return {
-          ...challenge,
-          status: this.normalizeP2PChallengeStatus(
-            challenge.status,
-            challenge.adminCreated,
-            challenge.challenged,
-            (challenge as any).challengedWalletAddress,
-          ),
-          participantCount,
-          participantPreviewUsers,
-          commentCount,
-        };
-      })
+    const challengeIds = this.normalizeChallengeIds(challengesList.map((challenge: any) => challenge.id));
+    const adminChallengeIds = this.normalizeChallengeIds(
+      challengesList
+        .filter((challenge: any) => Boolean(challenge.adminCreated))
+        .map((challenge: any) => challenge.id),
     );
+    const regularChallengeIds = this.normalizeChallengeIds(
+      challengesList
+        .filter((challenge: any) => !challenge.adminCreated)
+        .map((challenge: any) => challenge.id),
+    );
+
+    const [regularParticipantCountMap, adminParticipantMetaMap, commentCountMap] = await Promise.all([
+      this.getPairQueueCountMap(regularChallengeIds),
+      this.getAdminChallengeParticipantMetaMap(adminChallengeIds),
+      this.getChallengeCommentCountMap(challengeIds),
+    ]);
+
+    const challengesWithParticipants = challengesList.map((challenge: any) => {
+      const challengeId = Number(challenge.id);
+      const adminMeta = adminParticipantMetaMap.get(challengeId);
+      const participantCount = challenge.adminCreated
+        ? Number(adminMeta?.participantCount || 0)
+        : Number(regularParticipantCountMap.get(challengeId) || 0);
+      const participantPreviewUsers = challenge.adminCreated
+        ? (adminMeta?.participantPreviewUsers || [])
+        : [];
+      const commentCount = Number(commentCountMap.get(challengeId) || 0);
+
+      return {
+        ...challenge,
+        status: this.normalizeP2PChallengeStatus(
+          challenge.status,
+          challenge.adminCreated,
+          challenge.challenged,
+          (challenge as any).challengedWalletAddress,
+        ),
+        participantCount,
+        participantPreviewUsers,
+        commentCount,
+      };
+    });
 
     return challengesWithParticipants;
   }
@@ -2358,6 +2568,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(sql`users challenger_user`, eq(challenges.challenger, sql`challenger_user.id`))
       .leftJoin(sql`users challenged_user`, eq(challenges.challenged, sql`challenged_user.id`))
       .leftJoin(challengeMessages, eq(challenges.id, challengeMessages.challengeId))
+      .where(and(eq(challenges.adminCreated, true), ne(challenges.status, "draft")))
       .groupBy(
         challenges.id,
         sql`challenger_user.id`,
@@ -2374,25 +2585,26 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(challenges.isPinned), desc(challenges.createdAt))
       .limit(limit) as any;
 
-    // Attach participant count for each challenge by counting entries in pair_queue
-    const challengesWithCounts = await Promise.all(
-      challengesList.map(async (challenge: any) => {
-        const participantMeta = await this.getAdminChallengeParticipantMeta(challenge);
+    const challengeIds = this.normalizeChallengeIds(challengesList.map((challenge: any) => challenge.id));
+    const participantMetaMap = await this.getAdminChallengeParticipantMetaMap(challengeIds);
 
-        return {
-          ...challenge,
-          status: this.normalizeP2PChallengeStatus(
-            challenge.status,
-            challenge.adminCreated,
-            challenge.challenged,
-            (challenge as any).challengedWalletAddress,
-          ),
-          commentCount: Number(challenge.commentCount),
-          participantCount: participantMeta.participantCount,
-          participantPreviewUsers: participantMeta.participantPreviewUsers,
-        };
-      })
-    );
+    const challengesWithCounts = challengesList.map((challenge: any) => {
+      const challengeId = Number(challenge.id);
+      const participantMeta = participantMetaMap.get(challengeId);
+
+      return {
+        ...challenge,
+        status: this.normalizeP2PChallengeStatus(
+          challenge.status,
+          challenge.adminCreated,
+          challenge.challenged,
+          (challenge as any).challengedWalletAddress,
+        ),
+        commentCount: Number(challenge.commentCount || 0),
+        participantCount: Number(participantMeta?.participantCount || 0),
+        participantPreviewUsers: participantMeta?.participantPreviewUsers || [],
+      };
+    });
 
     return challengesWithCounts;
   }
