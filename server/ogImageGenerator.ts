@@ -14,6 +14,11 @@ const CHAIN_LABELS: Record<number, string> = {
 };
 
 const BANTAH_BLUE_LOGO_PATH = path.resolve(process.cwd(), "client/public/assets/bantahblue.svg");
+const OG_FONT_PRIMARY_PATH = path.resolve(process.cwd(), "client/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf");
+const OG_FONT_FALLBACK_PATH = path.resolve(process.cwd(), "client/public/fonts/PoppinsRounded-Rounded.ttf");
+const OG_FONT_STACK = "BantahOG, Arial, Helvetica, sans-serif";
+
+let ogFontDataUriCache: string | null | undefined;
 
 type ChallengeSlot = {
   key: string;
@@ -135,6 +140,18 @@ async function loadFileAsDataUri(filePath: string, mimeType = guessMimeType(file
   } catch {
     return null;
   }
+}
+
+async function getOgFontDataUri(): Promise<string | null> {
+  if (ogFontDataUriCache !== undefined) {
+    return ogFontDataUriCache;
+  }
+
+  ogFontDataUriCache = (await loadFileAsDataUri(OG_FONT_PRIMARY_PATH, "font/ttf"))
+    || (await loadFileAsDataUri(OG_FONT_FALLBACK_PATH, "font/ttf"))
+    || null;
+
+  return ogFontDataUriCache;
 }
 
 async function loadRemoteImageAsDataUri(url: string): Promise<string | null> {
@@ -306,7 +323,7 @@ function buildAvatarFallbackMarkup(
   const stroke = side === "YES" ? "#BEFF07" : "#A487FF";
   return `
     <circle cx="${x}" cy="${y}" r="14" fill="${fill}" stroke="${stroke}" stroke-width="2" />
-    <text x="${x}" y="${y + 5}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="800" text-anchor="middle">${escapeXml(getInitials(label))}</text>
+    <text x="${x}" y="${y + 5}" fill="#FFFFFF" font-family="${OG_FONT_STACK}" font-size="11" font-weight="800" text-anchor="middle">${escapeXml(getInitials(label))}</text>
   `;
 }
 
@@ -327,19 +344,20 @@ function buildParticipantRowMarkup(
   return `
     <g>
       <rect x="${x}" y="${y}" width="348" height="46" rx="23" fill="#10131B" stroke="${sideColor}" stroke-opacity="0.22" />
-      <text x="${x + 24}" y="${y + 29}" fill="${sideColor}" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="800">${side}</text>
+      <text x="${x + 24}" y="${y + 29}" fill="${sideColor}" font-family="${OG_FONT_STACK}" font-size="21" font-weight="800">${side}</text>
       ${
         avatarDataUri
           ? `<image href="${avatarDataUri}" x="${avatarCx - 14}" y="${avatarCy - 14}" width="28" height="28" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})" />`
           : buildAvatarFallbackMarkup(avatarCx, avatarCy, side, slot.displayName)
       }
-      <text x="${x + 122}" y="${y + 29}" fill="${nameColor}" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">${escapeXml(displayName)}</text>
+      <text x="${x + 122}" y="${y + 29}" fill="${nameColor}" font-family="${OG_FONT_STACK}" font-size="20" font-weight="700">${escapeXml(displayName)}</text>
     </g>
   `;
 }
 
 async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl: string): Promise<string> {
   const logoDataUri = (await loadFileAsDataUri(BANTAH_BLUE_LOGO_PATH, "image/svg+xml")) || "";
+  const ogFontDataUri = await getOgFontDataUri();
   const coverImageDataUri = await resolveImageDataUri(
     challenge.coverImageUrl || challenge.coverImage || challenge.image || challenge.imageUrl,
     baseUrl,
@@ -388,13 +406,26 @@ async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl:
     `
     : `
       <rect x="-154" y="-190" width="308" height="380" rx="34" fill="url(#heroFallback)" />
-      <text x="0" y="-8" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" text-anchor="middle">${escapeXml(truncate(String(challenge.category || "Bantah").toUpperCase(), 12))}</text>
-      <text x="0" y="28" fill="#BEFF07" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle">CHALLENGE</text>
+      <text x="0" y="-8" fill="#FFFFFF" font-family="${OG_FONT_STACK}" font-size="26" font-weight="700" text-anchor="middle">${escapeXml(truncate(String(challenge.category || "Bantah").toUpperCase(), 12))}</text>
+      <text x="0" y="28" fill="#BEFF07" font-family="${OG_FONT_STACK}" font-size="18" font-weight="700" text-anchor="middle">CHALLENGE</text>
     `;
+  const fontFaceMarkup = ogFontDataUri
+    ? `
+        <style>
+          @font-face {
+            font-family: "BantahOG";
+            src: url("${ogFontDataUri}") format("truetype");
+            font-weight: 100 900;
+            font-style: normal;
+          }
+        </style>
+      `
+    : "";
 
   return `
     <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
       <defs>
+        ${fontFaceMarkup}
         <linearGradient id="canvasBg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
           <stop stop-color="#030306" />
           <stop offset="1" stop-color="#090913" />
@@ -477,40 +508,40 @@ async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl:
         ${logoMarkup}
 
         <rect x="${1092 - statusWidth}" y="54" width="${statusWidth}" height="42" rx="21" fill="#11131A" stroke="#A487FF" stroke-opacity="0.30" />
-        <text x="${1092 - statusWidth / 2}" y="81" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" text-anchor="middle">${escapeXml(statusLabel)}</text>
+        <text x="${1092 - statusWidth / 2}" y="81" fill="#FFFFFF" font-family="${OG_FONT_STACK}" font-size="18" font-weight="800" text-anchor="middle">${escapeXml(statusLabel)}</text>
 
         ${titleLines
           .map(
             (line, index) => `
-          <text x="80" y="${titleTop + index * titleLineHeight}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800">${escapeXml(line)}</text>`,
+          <text x="80" y="${titleTop + index * titleLineHeight}" fill="#FFFFFF" font-family="${OG_FONT_STACK}" font-size="44" font-weight="800">${escapeXml(line)}</text>`,
           )
           .join("")}
 
-        <text x="80" y="${stakeLabelY}" fill="#9891B7" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" letter-spacing="1.5">STAKE</text>
-        <text x="80" y="${stakeY}" fill="url(#stakeFill)" font-family="Arial, Helvetica, sans-serif" font-size="${stakeFontSize}" font-weight="900">${escapeXml(stakeText)}</text>
+        <text x="80" y="${stakeLabelY}" fill="#9891B7" font-family="${OG_FONT_STACK}" font-size="18" font-weight="800" letter-spacing="1.5">STAKE</text>
+        <text x="80" y="${stakeY}" fill="url(#stakeFill)" font-family="${OG_FONT_STACK}" font-size="${stakeFontSize}" font-weight="900">${escapeXml(stakeText)}</text>
 
         <rect x="84" y="${winPillY}" width="${getPillWidth(`To win ${payoutText}`, 214)}" height="44" rx="22" fill="#12141E" stroke="#BEFF07" stroke-opacity="0.24" />
-        <text x="${84 + getPillWidth(`To win ${payoutText}`, 214) / 2}" y="${winPillY + 29}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="800" text-anchor="middle">${escapeXml(`To win ${payoutText}`)}</text>
+        <text x="${84 + getPillWidth(`To win ${payoutText}`, 214) / 2}" y="${winPillY + 29}" fill="#FFFFFF" font-family="${OG_FONT_STACK}" font-size="21" font-weight="800" text-anchor="middle">${escapeXml(`To win ${payoutText}`)}</text>
 
         ${buildParticipantRowMarkup(yesSlot, yesAvatarDataUri, "YES", 80, participantRow1Y, "yesAvatarClip")}
         ${buildParticipantRowMarkup(noSlot, noAvatarDataUri, "NO", 80, participantRow2Y, "noAvatarClip")}
 
         <g>
           <rect x="80" y="${statBoxY}" width="150" height="58" rx="18" fill="#11131A" stroke="#FFFFFF" stroke-opacity="0.08" />
-          <text x="102" y="${statBoxY + 21}" fill="#858FA9" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1">USERS</text>
-          <text x="102" y="${statBoxY + 43}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">${escapeXml(usersLabel)}</text>
+          <text x="102" y="${statBoxY + 21}" fill="#858FA9" font-family="${OG_FONT_STACK}" font-size="13" font-weight="700" letter-spacing="1">USERS</text>
+          <text x="102" y="${statBoxY + 43}" fill="#FFFFFF" font-family="${OG_FONT_STACK}" font-size="20" font-weight="800">${escapeXml(usersLabel)}</text>
         </g>
 
         <g>
           <rect x="246" y="${statBoxY}" width="150" height="58" rx="18" fill="#11131A" stroke="#FFFFFF" stroke-opacity="0.08" />
-          <text x="268" y="${statBoxY + 21}" fill="#858FA9" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1">CHAIN</text>
-          <text x="268" y="${statBoxY + 43}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">${escapeXml(chainLabel)}</text>
+          <text x="268" y="${statBoxY + 21}" fill="#858FA9" font-family="${OG_FONT_STACK}" font-size="13" font-weight="700" letter-spacing="1">CHAIN</text>
+          <text x="268" y="${statBoxY + 43}" fill="#FFFFFF" font-family="${OG_FONT_STACK}" font-size="20" font-weight="800">${escapeXml(chainLabel)}</text>
         </g>
 
         <g>
           <rect x="412" y="${statBoxY}" width="188" height="58" rx="18" fill="#11131A" stroke="#FFFFFF" stroke-opacity="0.08" />
-          <text x="434" y="${statBoxY + 21}" fill="#858FA9" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1">ENDS</text>
-          <text x="434" y="${statBoxY + 43}" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">${escapeXml(deadlineLabel)}</text>
+          <text x="434" y="${statBoxY + 21}" fill="#858FA9" font-family="${OG_FONT_STACK}" font-size="13" font-weight="700" letter-spacing="1">ENDS</text>
+          <text x="434" y="${statBoxY + 43}" fill="#FFFFFF" font-family="${OG_FONT_STACK}" font-size="20" font-weight="800">${escapeXml(deadlineLabel)}</text>
         </g>
 
         <g transform="translate(944 310) rotate(-11)">
@@ -526,14 +557,28 @@ async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl:
 }
 
 async function generateEventSvg(event: any): Promise<string> {
+  const ogFontDataUri = await getOgFontDataUri();
   const title = escapeXml(String(event.title || "Bantah event"));
   const category = escapeXml(String(event.category || "general").toUpperCase());
   const participantCount = Number(event.participantCount || 0);
   const entryFee = escapeXml(String(event.entryFee || "0"));
+  const fontFaceMarkup = ogFontDataUri
+    ? `
+        <style>
+          @font-face {
+            font-family: "BantahOG";
+            src: url("${ogFontDataUri}") format("truetype");
+            font-weight: 100 900;
+            font-style: normal;
+          }
+        </style>
+      `
+    : "";
 
   return `
     <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
       <defs>
+        ${fontFaceMarkup}
         <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
           <stop stop-color="#0f8b6f" />
           <stop offset="1" stop-color="#0a5d4d" />
@@ -541,11 +586,11 @@ async function generateEventSvg(event: any): Promise<string> {
       </defs>
       <rect width="1200" height="630" fill="url(#bg)" />
       <rect x="90" y="104" width="1020" height="422" rx="30" fill="#FFFFFF" fill-opacity="0.96" />
-      <text x="130" y="180" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#0f172a">Bantah Event</text>
-      <text x="130" y="264" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" fill="#0f172a">${title}</text>
-      <text x="130" y="342" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#475569">Category: ${category}</text>
-      <text x="130" y="386" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#475569">Entry fee: ${entryFee}</text>
-      <text x="130" y="430" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#475569">Participants: ${participantCount}</text>
+      <text x="130" y="180" font-family="${OG_FONT_STACK}" font-size="34" font-weight="700" fill="#0f172a">Bantah Event</text>
+      <text x="130" y="264" font-family="${OG_FONT_STACK}" font-size="42" font-weight="700" fill="#0f172a">${title}</text>
+      <text x="130" y="342" font-family="${OG_FONT_STACK}" font-size="24" fill="#475569">Category: ${category}</text>
+      <text x="130" y="386" font-family="${OG_FONT_STACK}" font-size="24" fill="#475569">Entry fee: ${entryFee}</text>
+      <text x="130" y="430" font-family="${OG_FONT_STACK}" font-size="24" fill="#475569">Participants: ${participantCount}</text>
     </svg>
   `;
 }
