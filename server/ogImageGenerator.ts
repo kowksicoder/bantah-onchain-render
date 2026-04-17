@@ -142,16 +142,17 @@ async function loadFileAsDataUri(filePath: string, mimeType = guessMimeType(file
   }
 }
 
-async function getOgFontDataUri(): Promise<string | null> {
-  if (ogFontDataUriCache !== undefined) {
-    return ogFontDataUriCache;
+async function loadRemoteAssetAsDataUri(url: string, mimeTypeHint?: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const responseType = String(response.headers.get("content-type") || "").split(";")[0].trim();
+    const mimeType = responseType || mimeTypeHint || "application/octet-stream";
+    const arrayBuffer = await response.arrayBuffer();
+    return toDataUri(Buffer.from(arrayBuffer), mimeType);
+  } catch {
+    return null;
   }
-
-  ogFontDataUriCache = (await loadFileAsDataUri(OG_FONT_PRIMARY_PATH, "font/ttf"))
-    || (await loadFileAsDataUri(OG_FONT_FALLBACK_PATH, "font/ttf"))
-    || null;
-
-  return ogFontDataUriCache;
 }
 
 async function loadRemoteImageAsDataUri(url: string): Promise<string | null> {
@@ -165,6 +166,25 @@ async function loadRemoteImageAsDataUri(url: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function getOgFontDataUri(baseUrl?: string): Promise<string | null> {
+  if (ogFontDataUriCache !== undefined) {
+    return ogFontDataUriCache;
+  }
+
+  ogFontDataUriCache = (await loadFileAsDataUri(OG_FONT_PRIMARY_PATH, "font/ttf"))
+    || (await loadFileAsDataUri(OG_FONT_FALLBACK_PATH, "font/ttf"))
+    || null;
+
+  if (!ogFontDataUriCache && baseUrl) {
+    ogFontDataUriCache =
+      (await loadRemoteAssetAsDataUri(`${baseUrl}/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf`, "font/ttf"))
+      || (await loadRemoteAssetAsDataUri(`${baseUrl}/fonts/PoppinsRounded-Rounded.ttf`, "font/ttf"))
+      || null;
+  }
+
+  return ogFontDataUriCache;
 }
 
 async function resolveImageDataUri(source: unknown, baseUrl: string): Promise<string | null> {
@@ -356,8 +376,10 @@ function buildParticipantRowMarkup(
 }
 
 async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl: string): Promise<string> {
-  const logoDataUri = (await loadFileAsDataUri(BANTAH_BLUE_LOGO_PATH, "image/svg+xml")) || "";
-  const ogFontDataUri = await getOgFontDataUri();
+  const logoDataUri = (await loadFileAsDataUri(BANTAH_BLUE_LOGO_PATH, "image/svg+xml"))
+    || (await resolveImageDataUri("/assets/bantahblue.svg", baseUrl))
+    || "";
+  const ogFontDataUri = await getOgFontDataUri(baseUrl);
   const coverImageDataUri = await resolveImageDataUri(
     challenge.coverImageUrl || challenge.coverImage || challenge.image || challenge.imageUrl,
     baseUrl,
@@ -556,8 +578,8 @@ async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl:
   `;
 }
 
-async function generateEventSvg(event: any): Promise<string> {
-  const ogFontDataUri = await getOgFontDataUri();
+async function generateEventSvg(event: any, baseUrl?: string): Promise<string> {
+  const ogFontDataUri = await getOgFontDataUri(baseUrl);
   const title = escapeXml(String(event.title || "Bantah event"));
   const category = escapeXml(String(event.category || "general").toUpperCase());
   const participantCount = Number(event.participantCount || 0);
@@ -631,7 +653,8 @@ export function setupOGImageRoutes(app: any, storage: IStorage) {
         return res.status(404).json({ error: "Event not found" });
       }
 
-      const svg = await generateEventSvg(event);
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const svg = await generateEventSvg(event, baseUrl);
       const imageBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
 
       res.setHeader("Content-Type", "image/png");
