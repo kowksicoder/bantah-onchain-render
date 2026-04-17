@@ -10,6 +10,19 @@ if (!process.env.DATABASE_URL) {
 
 const isProd = process.env.NODE_ENV === 'production';
 const databaseUrl = String(process.env.DATABASE_URL || "").trim();
+const rejectUnauthorizedRaw = String(process.env.DB_SSL_REJECT_UNAUTHORIZED || "").trim().toLowerCase();
+const rejectUnauthorized =
+  rejectUnauthorizedRaw === "true"
+    ? true
+    : rejectUnauthorizedRaw === "false"
+      ? false
+      : false;
+const poolMaxRaw = Number(process.env.DB_POOL_MAX || "");
+const poolMax = Number.isFinite(poolMaxRaw)
+  ? Math.max(1, Math.min(20, Math.floor(poolMaxRaw)))
+  : isProd
+    ? 10
+    : 5;
 
 type DatabaseIdentity = {
   host: string;
@@ -50,10 +63,11 @@ if (requireRemoteDb && DB_IDENTITY.isLocal) {
 export const pool = new Pool({
   connectionString: databaseUrl,
   ssl: {
-    rejectUnauthorized: isProd ? true : false,
+    rejectUnauthorized,
   },
-  // Session pooler requires max: 1 connection per session
-  max: 1,
+  // Keep bounded but allow concurrency; max=1 can bottleneck challenge feed queries.
+  max: poolMax,
+  connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 0,
 });
 
