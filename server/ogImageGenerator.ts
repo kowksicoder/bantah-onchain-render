@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import fs from "fs/promises";
 import path from "path";
 import sharp from "sharp";
+import { fileURLToPath } from "url";
 import { CHALLENGE_PLATFORM_FEE_RATE } from "@shared/feeConfig";
 import type { IStorage } from "./storage";
 
@@ -13,9 +14,27 @@ const CHAIN_LABELS: Record<number, string> = {
   1: "Ethereum",
 };
 
-const BANTAH_BLUE_LOGO_PATH = path.resolve(process.cwd(), "client/public/assets/bantahblue.svg");
-const OG_FONT_PRIMARY_PATH = path.resolve(process.cwd(), "client/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf");
-const OG_FONT_FALLBACK_PATH = path.resolve(process.cwd(), "client/public/fonts/PoppinsRounded-Rounded.ttf");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const BANTAH_BLUE_LOGO_CANDIDATE_PATHS = [
+  path.resolve(process.cwd(), "client/public/assets/bantahblue.svg"),
+  path.resolve(__dirname, "../client/public/assets/bantahblue.svg"),
+  path.resolve(__dirname, "../../client/public/assets/bantahblue.svg"),
+  path.resolve(process.cwd(), "public/assets/bantahblue.svg"),
+];
+const OG_FONT_PRIMARY_CANDIDATE_PATHS = [
+  path.resolve(process.cwd(), "client/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
+  path.resolve(__dirname, "../client/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
+  path.resolve(__dirname, "../../client/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
+  path.resolve(process.cwd(), "public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
+];
+const OG_FONT_FALLBACK_CANDIDATE_PATHS = [
+  path.resolve(process.cwd(), "client/public/fonts/PoppinsRounded-Rounded.ttf"),
+  path.resolve(__dirname, "../client/public/fonts/PoppinsRounded-Rounded.ttf"),
+  path.resolve(__dirname, "../../client/public/fonts/PoppinsRounded-Rounded.ttf"),
+  path.resolve(process.cwd(), "public/fonts/PoppinsRounded-Rounded.ttf"),
+];
 const OG_FONT_STACK = "BantahOG, Arial, Helvetica, sans-serif";
 
 let ogFontDataUriCache: string | null | undefined;
@@ -142,6 +161,17 @@ async function loadFileAsDataUri(filePath: string, mimeType = guessMimeType(file
   }
 }
 
+async function loadFirstAvailableFileAsDataUri(
+  filePaths: string[],
+  mimeType: string,
+): Promise<string | null> {
+  for (const filePath of filePaths) {
+    const value = await loadFileAsDataUri(filePath, mimeType);
+    if (value) return value;
+  }
+  return null;
+}
+
 async function loadRemoteAssetAsDataUri(url: string, mimeTypeHint?: string): Promise<string | null> {
   try {
     const response = await fetch(url);
@@ -173,8 +203,8 @@ async function getOgFontDataUri(baseUrl?: string): Promise<string | null> {
     return ogFontDataUriCache;
   }
 
-  ogFontDataUriCache = (await loadFileAsDataUri(OG_FONT_PRIMARY_PATH, "font/ttf"))
-    || (await loadFileAsDataUri(OG_FONT_FALLBACK_PATH, "font/ttf"))
+  ogFontDataUriCache = (await loadFirstAvailableFileAsDataUri(OG_FONT_PRIMARY_CANDIDATE_PATHS, "font/ttf"))
+    || (await loadFirstAvailableFileAsDataUri(OG_FONT_FALLBACK_CANDIDATE_PATHS, "font/ttf"))
     || null;
 
   if (!ogFontDataUriCache && baseUrl) {
@@ -376,7 +406,7 @@ function buildParticipantRowMarkup(
 }
 
 async function buildChallengeCardSvg(challenge: any, storage: IStorage, baseUrl: string): Promise<string> {
-  const logoDataUri = (await loadFileAsDataUri(BANTAH_BLUE_LOGO_PATH, "image/svg+xml"))
+  const logoDataUri = (await loadFirstAvailableFileAsDataUri(BANTAH_BLUE_LOGO_CANDIDATE_PATHS, "image/svg+xml"))
     || (await resolveImageDataUri("/assets/bantahblue.svg", baseUrl))
     || "";
   const ogFontDataUri = await getOgFontDataUri(baseUrl);
