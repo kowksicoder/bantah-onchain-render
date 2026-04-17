@@ -25,6 +25,11 @@ const BANTAH_BLUE_LOGO_CANDIDATE_PATHS = [
   path.resolve(__dirname, "../../client/public/assets/bantahblue.svg"),
   path.resolve(process.cwd(), "public/assets/bantahblue.svg"),
 ];
+const OG_FONT_BUNDLED_CANDIDATE_PATHS = [
+  path.resolve(process.cwd(), "server/assets/NotoSans-Regular.ttf"),
+  path.resolve(__dirname, "assets/NotoSans-Regular.ttf"),
+  path.resolve(__dirname, "../server/assets/NotoSans-Regular.ttf"),
+];
 const OG_FONT_PRIMARY_CANDIDATE_PATHS = [
   path.resolve(process.cwd(), "dist/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
   path.resolve(__dirname, "public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
@@ -41,7 +46,7 @@ const OG_FONT_FALLBACK_CANDIDATE_PATHS = [
   path.resolve(__dirname, "../../client/public/fonts/PoppinsRounded-Rounded.ttf"),
   path.resolve(process.cwd(), "public/fonts/PoppinsRounded-Rounded.ttf"),
 ];
-const OG_FONT_STACK = "BantahOG, Arial, Helvetica, sans-serif";
+const OG_FONT_STACK = "BantahOG, Noto Sans, Arial, Helvetica, sans-serif";
 
 let ogFontDataUriCache: string | null | undefined;
 
@@ -209,7 +214,8 @@ async function getOgFontDataUri(baseUrl?: string): Promise<string | null> {
     return ogFontDataUriCache;
   }
 
-  ogFontDataUriCache = (await loadFirstAvailableFileAsDataUri(OG_FONT_PRIMARY_CANDIDATE_PATHS, "font/ttf"))
+  ogFontDataUriCache = (await loadFirstAvailableFileAsDataUri(OG_FONT_BUNDLED_CANDIDATE_PATHS, "font/ttf"))
+    || (await loadFirstAvailableFileAsDataUri(OG_FONT_PRIMARY_CANDIDATE_PATHS, "font/ttf"))
     || (await loadFirstAvailableFileAsDataUri(OG_FONT_FALLBACK_CANDIDATE_PATHS, "font/ttf"))
     || null;
 
