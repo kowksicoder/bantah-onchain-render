@@ -18,18 +18,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const BANTAH_BLUE_LOGO_CANDIDATE_PATHS = [
+  path.resolve(process.cwd(), "dist/public/assets/bantahblue.svg"),
+  path.resolve(__dirname, "public/assets/bantahblue.svg"),
   path.resolve(process.cwd(), "client/public/assets/bantahblue.svg"),
   path.resolve(__dirname, "../client/public/assets/bantahblue.svg"),
   path.resolve(__dirname, "../../client/public/assets/bantahblue.svg"),
   path.resolve(process.cwd(), "public/assets/bantahblue.svg"),
 ];
 const OG_FONT_PRIMARY_CANDIDATE_PATHS = [
+  path.resolve(process.cwd(), "dist/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
+  path.resolve(__dirname, "public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
   path.resolve(process.cwd(), "client/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
   path.resolve(__dirname, "../client/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
   path.resolve(__dirname, "../../client/public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
   path.resolve(process.cwd(), "public/fonts/sf-pro-rounded/SF-Pro-Rounded.ttf"),
 ];
 const OG_FONT_FALLBACK_CANDIDATE_PATHS = [
+  path.resolve(process.cwd(), "dist/public/fonts/PoppinsRounded-Rounded.ttf"),
+  path.resolve(__dirname, "public/fonts/PoppinsRounded-Rounded.ttf"),
   path.resolve(process.cwd(), "client/public/fonts/PoppinsRounded-Rounded.ttf"),
   path.resolve(__dirname, "../client/public/fonts/PoppinsRounded-Rounded.ttf"),
   path.resolve(__dirname, "../../client/public/fonts/PoppinsRounded-Rounded.ttf"),
