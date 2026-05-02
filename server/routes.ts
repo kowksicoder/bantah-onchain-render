@@ -2398,7 +2398,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   app.get('/api/communities/challenges', async (req, res) => {
     try {
       const limitRaw = Number(req.query?.limit || 60);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 60;
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 60;
 
       const communityLinks = await listPublicPartnerChallengeLinks(limit);
       if (!communityLinks.length) {
@@ -2424,7 +2424,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
         });
       }
 
-      const publicFeed = await storage.getPublicAdminChallenges(Math.min(120, Math.max(36, limit * 2)));
+      const publicFeed = await storage.getPublicAdminChallenges(Math.min(1000, Math.max(36, limit * 2)));
       const filtered = publicFeed
         .filter((challenge: any) => metaByChallengeId.has(Number(challenge.id)))
         .map((challenge: any) => ({
@@ -4063,7 +4063,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   app.get('/api/challenges/public', async (req, res) => {
     try {
       const limitRaw = Number(req.query?.limit || 60);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 60;
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 60;
       console.log("📥 Fetching public admin challenges...");
       const challenges = await storage.getPublicAdminChallenges(limit);
       console.log(`✅ Retrieved ${challenges.length} public challenges`);
@@ -4145,13 +4145,13 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
       // Check if requesting all challenges (public feed) or user-specific challenges
       const feedType = req.query.feed as string;
       const limitRaw = Number(req.query?.limit || 60);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 60;
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 60;
       const optionalUserId = await getOptionalPrivyUserId(req);
       const hasAuthedUser = Boolean(optionalUserId);
       const challenges =
         feedType === 'all' || !hasAuthedUser
           ? await storage.getAllChallengesFeed(limit)
-          : await storage.getChallenges(optionalUserId as string, Math.min(limit, 30));
+          : await storage.getChallenges(optionalUserId as string, limit);
       res.json(challenges);
     } catch (error) {
       console.error("Error fetching challenges:", error);

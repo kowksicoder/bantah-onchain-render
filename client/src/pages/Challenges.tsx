@@ -157,7 +157,7 @@ const tokenVisuals: Record<OnchainTokenSymbol, { src: string; alt: string }> = {
   BNB: { src: "/assets/token-bnb.svg", alt: "BNB logo" },
 };
 
-const CHALLENGE_FEED_LIMIT = 120;
+const CHALLENGE_FEED_LIMIT = 1000;
 const INITIAL_VISIBLE_CHALLENGE_COUNT = 60;
 
 function TokenMark({ token }: { token: OnchainTokenSymbol }) {
@@ -472,7 +472,7 @@ export default function Challenges() {
         const [allFeedResult, publicResult, communityResult] = await Promise.allSettled([
           fetch(`/api/challenges?feed=all&limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
           fetch(`/api/challenges/public?limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
-          fetch("/api/communities/challenges?limit=40", { credentials: "include" }),
+          fetch(`/api/communities/challenges?limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
         ]);
 
         let allFeedData: any[] = [];
