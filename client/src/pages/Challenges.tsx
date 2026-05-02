@@ -157,6 +157,9 @@ const tokenVisuals: Record<OnchainTokenSymbol, { src: string; alt: string }> = {
   BNB: { src: "/assets/token-bnb.svg", alt: "BNB logo" },
 };
 
+const CHALLENGE_FEED_LIMIT = 120;
+const INITIAL_VISIBLE_CHALLENGE_COUNT = 60;
+
 function TokenMark({ token }: { token: OnchainTokenSymbol }) {
   const visual = tokenVisuals[token];
 
@@ -189,7 +192,7 @@ export default function Challenges() {
   const [challengeStatusTab, setChallengeStatusTab] = useState<'all' | 'polymarket' | 'p2p' | 'open' | 'updown' | 'communities' | 'agents' | 'active' | 'pending' | 'finished'>('all');
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [preSelectedUser, setPreSelectedUser] = useState<any>(null);
-  const [visibleChallengeCount, setVisibleChallengeCount] = useState(12);
+  const [visibleChallengeCount, setVisibleChallengeCount] = useState(INITIAL_VISIBLE_CHALLENGE_COUNT);
   const [showPolymarketBetModal, setShowPolymarketBetModal] = useState(false);
   const [polymarketBet, setPolymarketBet] = useState<{
     market: PolymarketMarket;
@@ -465,25 +468,23 @@ export default function Challenges() {
     queryKey: ["/api/challenges"],
     queryFn: async () => {
       try {
-        // Fetch public admin challenges + community metadata with graceful fallback.
-        const [publicResult, communityResult] = await Promise.allSettled([
-          fetch("/api/challenges/public?limit=24", { credentials: "include" }),
+        // Fetch the full public challenge feed, then merge admin metadata as a fallback.
+        const [allFeedResult, publicResult, communityResult] = await Promise.allSettled([
+          fetch(`/api/challenges?feed=all&limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
+          fetch(`/api/challenges/public?limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
           fetch("/api/communities/challenges?limit=40", { credentials: "include" }),
         ]);
+
+        let allFeedData: any[] = [];
+        if (allFeedResult.status === "fulfilled" && allFeedResult.value.ok) {
+          allFeedData = await allFeedResult.value.json();
+        }
 
         let publicData: any[] = [];
         if (publicResult.status === "fulfilled" && publicResult.value.ok) {
           publicData = await publicResult.value.json();
         } else {
-          console.warn("Public challenges endpoint failed, falling back to all-feed endpoint");
-          try {
-            const fallbackResp = await fetch("/api/challenges?feed=all&limit=40", { credentials: "include" });
-            if (fallbackResp.ok) {
-              publicData = await fallbackResp.json();
-            }
-          } catch (fallbackError) {
-            console.warn("Fallback challenges endpoint also failed:", fallbackError);
-          }
+          console.warn("Public challenges endpoint failed; continuing with all-feed data");
         }
 
         let communityData: any[] = [];
@@ -498,71 +499,45 @@ export default function Challenges() {
           }
         });
 
-        let merged: any[] = publicData || [];
-
-        // If user is authenticated, also fetch the authenticated feed (includes P2P/open challenges)
-        if (user) {
-          try {
-            const authData = await apiRequest("GET", "/api/challenges?feed=all&limit=40");
-            const map = new Map<number, any>();
-
-            (publicData || []).forEach((c: any) => map.set(c.id, c));
-            (authData || []).forEach((c: any) => {
-              const existing = map.get(c.id);
-              if (!existing) {
-                map.set(c.id, c);
-                return;
-              }
-
-              const isAdminChallenge = Boolean(c.adminCreated ?? existing.adminCreated);
-              if (!isAdminChallenge) {
-                map.set(c.id, {
-                  ...existing,
-                  ...c,
-                  coverImageUrl:
-                    c.coverImageUrl ??
-                    (c as any).cover_image_url ??
-                    existing.coverImageUrl ??
-                    (existing as any).cover_image_url ??
-                    null,
-                });
-                return;
-              }
-
-              const existingPreviewUsers = Array.isArray(existing.participantPreviewUsers)
-                ? existing.participantPreviewUsers
-                : [];
-              const nextPreviewUsers = Array.isArray(c.participantPreviewUsers)
-                ? c.participantPreviewUsers
-                : [];
-
-              map.set(c.id, {
-                ...existing,
-                ...c,
-                coverImageUrl:
-                  c.coverImageUrl ??
-                  (c as any).cover_image_url ??
-                  existing.coverImageUrl ??
-                  (existing as any).cover_image_url ??
-                  null,
-                participantCount: Math.max(
-                  Number(existing.participantCount || 0),
-                  Number(c.participantCount || 0),
-                ),
-                commentCount: Math.max(
-                  Number(existing.commentCount || 0),
-                  Number(c.commentCount || 0),
-                ),
-                participantPreviewUsers:
-                  nextPreviewUsers.length > 0 ? nextPreviewUsers : existingPreviewUsers,
-              });
-            });
-            merged = Array.from(map.values());
-          } catch (err) {
-            // ignore auth fetch errors and fall back to public data
-            console.warn('Failed to fetch authenticated challenges feed:', err);
+        const map = new Map<number, any>();
+        (allFeedData || []).forEach((c: any) => map.set(c.id, c));
+        (publicData || []).forEach((c: any) => {
+          const existing = map.get(c.id);
+          if (!existing) {
+            map.set(c.id, c);
+            return;
           }
-        }
+
+          const existingPreviewUsers = Array.isArray(existing.participantPreviewUsers)
+            ? existing.participantPreviewUsers
+            : [];
+          const nextPreviewUsers = Array.isArray(c.participantPreviewUsers)
+            ? c.participantPreviewUsers
+            : [];
+
+          map.set(c.id, {
+            ...existing,
+            ...c,
+            coverImageUrl:
+              c.coverImageUrl ??
+              (c as any).cover_image_url ??
+              existing.coverImageUrl ??
+              (existing as any).cover_image_url ??
+              null,
+            participantCount: Math.max(
+              Number(existing.participantCount || 0),
+              Number(c.participantCount || 0),
+            ),
+            commentCount: Math.max(
+              Number(existing.commentCount || 0),
+              Number(c.commentCount || 0),
+            ),
+            participantPreviewUsers:
+              nextPreviewUsers.length > 0 ? nextPreviewUsers : existingPreviewUsers,
+          });
+        });
+
+        const merged = Array.from(map.values());
 
         return merged.map((challenge: any) => ({
           ...challenge,
@@ -1746,7 +1721,7 @@ export default function Challenges() {
   }
 
   useEffect(() => {
-    setVisibleChallengeCount(12);
+    setVisibleChallengeCount(INITIAL_VISIBLE_CHALLENGE_COUNT);
   }, [searchTerm, selectedCategory, challengeStatusTab]);
 
   const sortedChallenges = useMemo(() => {
@@ -1922,7 +1897,7 @@ export default function Challenges() {
               type="button"
               variant="outline"
               className="h-8 px-4 text-xs"
-              onClick={() => setVisibleChallengeCount((count) => count + 12)}
+              onClick={() => setVisibleChallengeCount((count) => count + INITIAL_VISIBLE_CHALLENGE_COUNT)}
             >
               Load more challenges
             </Button>

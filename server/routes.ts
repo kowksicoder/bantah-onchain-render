@@ -2397,8 +2397,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   // Public feed for partner/community challenges (admin-style YES/NO cards + community metadata)
   app.get('/api/communities/challenges', async (req, res) => {
     try {
-      const limitRaw = Number(req.query?.limit || 24);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 24;
+      const limitRaw = Number(req.query?.limit || 60);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 60;
 
       const communityLinks = await listPublicPartnerChallengeLinks(limit);
       if (!communityLinks.length) {
@@ -4062,8 +4062,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   // Challenge routes
   app.get('/api/challenges/public', async (req, res) => {
     try {
-      const limitRaw = Number(req.query?.limit || 24);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 24;
+      const limitRaw = Number(req.query?.limit || 60);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 60;
       console.log("📥 Fetching public admin challenges...");
       const challenges = await storage.getPublicAdminChallenges(limit);
       console.log(`✅ Retrieved ${challenges.length} public challenges`);
@@ -4144,8 +4144,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     try {
       // Check if requesting all challenges (public feed) or user-specific challenges
       const feedType = req.query.feed as string;
-      const limitRaw = Number(req.query?.limit || 30);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 30;
+      const limitRaw = Number(req.query?.limit || 60);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 60;
       const optionalUserId = await getOptionalPrivyUserId(req);
       const hasAuthedUser = Boolean(optionalUserId);
       const challenges =
