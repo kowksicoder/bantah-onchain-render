@@ -297,6 +297,33 @@ export class TelegramBotService {
     return null;
   }
 
+  private resolveBantahBroMarketAlertBannerPath(): string | null {
+    const configured = String(process.env.BANTAHBRO_TELEGRAM_MARKET_BANNER_PATH || '').trim();
+    const candidates = [
+      configured,
+      path.resolve(process.cwd(), 'dist', 'public', 'bantahbro', 'market-banner.jpg'),
+      path.resolve(process.cwd(), 'dist', 'public', 'bantahbro', 'market-banner.png'),
+      path.resolve(process.cwd(), 'public', 'bantahbro', 'market-banner.jpg'),
+      path.resolve(process.cwd(), 'public', 'bantahbro', 'market-banner.png'),
+      path.resolve(process.cwd(), 'client', 'public', 'bantahbro', 'market-banner.jpg'),
+      path.resolve(process.cwd(), 'client', 'public', 'bantahbro', 'market-banner.png'),
+      path.resolve(process.cwd(), 'client', 'public', 'assets', 'bantahbro-market-banner.jpg'),
+      path.resolve(process.cwd(), 'client', 'public', 'assets', 'bantahbro-market-banner.png'),
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private isBantahBroMarketAlert(alert: BantahBroAlert): boolean {
+    return alert.type === 'market_live' || alert.type === 'boost_live' || Boolean(alert.market?.url);
+  }
+
   private buildBantahBroStartReplyMarkup() {
     return buildBantahBroTelegramStartReplyMarkup();
   }
@@ -944,12 +971,21 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
     const rows: Array<Array<Record<string, unknown>>> = [];
     const marketMode = alert.type === 'runner_alert' ? 'runner' : 'rug';
 
-    rows.push([
-      {
-        text: alert.type === 'runner_alert' ? '🚀 Open runner market' : '⚠️ Open rug market',
-        callback_data: `bb|market|${alert.id}|${marketMode}`,
-      },
-    ]);
+    if (alert.market?.url) {
+      rows.push([
+        {
+          text: '🏟 View market',
+          url: alert.market.url,
+        },
+      ]);
+    } else {
+      rows.push([
+        {
+          text: alert.type === 'runner_alert' ? '🚀 Open runner market' : '⚠️ Open rug market',
+          callback_data: `bb|market|${alert.id}|${marketMode}`,
+        },
+      ]);
+    }
 
     const secondaryRow: Array<Record<string, unknown>> = [];
     secondaryRow.push({
@@ -980,7 +1016,9 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
     try {
       const { text } = buildBantahBroTelegramAlertMessage(alert, analysis);
       const replyMarkup = this.buildBantahBroAlertReplyMarkup(alert, analysis);
-      const alertBannerPath = this.resolveBantahBroAlertBannerPath();
+      const alertBannerPath = this.isBantahBroMarketAlert(alert)
+        ? this.resolveBantahBroMarketAlertBannerPath() || this.resolveBantahBroAlertBannerPath()
+        : this.resolveBantahBroAlertBannerPath();
 
       if (alertBannerPath) {
         if (text.length <= 1000) {
@@ -989,7 +1027,9 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
         } else {
           const sentPhoto = await this.sendPhotoPathToChannel(
             alertBannerPath,
-            '🚨 BantahBro alert incoming. Full scan below.',
+            this.isBantahBroMarketAlert(alert)
+              ? '🏟 BantahBro market alert incoming. Full market card below.'
+              : '🚨 BantahBro alert incoming. Full scan below.',
           );
           if (sentPhoto) {
             return await this.sendToChannel(text, replyMarkup);
