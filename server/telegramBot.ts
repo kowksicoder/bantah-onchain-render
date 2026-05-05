@@ -255,8 +255,12 @@ export class TelegramBotService {
     const configured = String(process.env.BANTAHBRO_TELEGRAM_BANNER_PATH || '').trim();
     const candidates = [
       configured,
+      path.resolve(process.cwd(), 'dist', 'public', 'bantahbro', 'telegram-banner.jpg'),
+      path.resolve(process.cwd(), 'dist', 'public', 'bantahbro', 'telegram-banner.png'),
       path.resolve(process.cwd(), 'public', 'bantahbro', 'telegram-banner.jpg'),
       path.resolve(process.cwd(), 'public', 'bantahbro', 'telegram-banner.png'),
+      path.resolve(process.cwd(), 'client', 'public', 'bantahbro', 'telegram-banner.jpg'),
+      path.resolve(process.cwd(), 'client', 'public', 'bantahbro', 'telegram-banner.png'),
       path.resolve(process.cwd(), 'client', 'public', 'assets', 'bantahbro-telegram-banner.jpg'),
       path.resolve(process.cwd(), 'client', 'public', 'assets', 'bantahbro-telegram-banner.png'),
     ].filter(Boolean);
@@ -274,8 +278,12 @@ export class TelegramBotService {
     const configured = String(process.env.BANTAHBRO_TELEGRAM_ALERT_BANNER_PATH || '').trim();
     const candidates = [
       configured,
+      path.resolve(process.cwd(), 'dist', 'public', 'bantahbro', 'alert-banner.png'),
+      path.resolve(process.cwd(), 'dist', 'public', 'bantahbro', 'alert-banner.jpg'),
       path.resolve(process.cwd(), 'public', 'bantahbro', 'alert-banner.png'),
       path.resolve(process.cwd(), 'public', 'bantahbro', 'alert-banner.jpg'),
+      path.resolve(process.cwd(), 'client', 'public', 'bantahbro', 'alert-banner.png'),
+      path.resolve(process.cwd(), 'client', 'public', 'bantahbro', 'alert-banner.jpg'),
       path.resolve(process.cwd(), 'client', 'public', 'assets', 'bantahbro-alert-banner.png'),
       path.resolve(process.cwd(), 'client', 'public', 'assets', 'bantahbro-alert-banner.jpg'),
     ].filter(Boolean);
