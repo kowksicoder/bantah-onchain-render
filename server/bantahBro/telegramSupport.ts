@@ -90,59 +90,61 @@ export function buildBantahBroTelegramAlertMessage(
   const chain = chainLabel(alert.chainId);
   const price = formatUsd(analysis?.primaryPair?.priceUsd ?? alert.referencePriceUsd ?? null);
   const chartUrl = analysis?.primaryPair?.url || null;
+  const scanUrl = buildBantahBroTokenScanUrl(alert.chainId, alert.tokenAddress);
   const lines = [
     alert.type === "rug_alert"
-      ? "BANTAH ALERT"
+      ? "🚨 BANTAH ALERT"
       : alert.type === "runner_alert"
-        ? "BANTAH RUNNER"
+        ? "🚀 BANTAH RUNNER"
         : alert.type === "market_live"
-          ? "BANTAH MARKET"
-          : "BANTAH WATCH",
+          ? "🎯 BANTAH MARKET"
+          : "👀 BANTAH WATCH",
     "",
-    `${symbol} on ${chain}`,
-    `Price: ${price}`,
-    `Rug Score: ${alert.rugScore ?? "n/a"}/100`,
-    `Momentum: ${alert.momentumScore ?? "n/a"}/100`,
+    `🪙 ${symbol} on ${chain}`,
+    `💵 Price: ${price}`,
+    `⚠️ Rug Score: ${alert.rugScore ?? "n/a"}/100`,
+    `🚀 Momentum: ${alert.momentumScore ?? "n/a"}/100`,
     "",
     alert.body,
   ];
 
   if (analysis?.primaryPair?.liquidityUsd) {
-    lines.splice(4, 0, `Liquidity: $${Math.round(analysis.primaryPair.liquidityUsd).toLocaleString()}`);
+    lines.splice(4, 0, `💧 Liquidity: $${Math.round(analysis.primaryPair.liquidityUsd).toLocaleString()}`);
   }
 
   if (alert.market?.url) {
-    lines.push("", `Market: ${alert.market.url}`);
+    lines.push("", `🎯 Market: ${alert.market.url}`);
   }
 
   return {
     text: lines.join("\n"),
     chartUrl,
+    scanUrl,
   };
 }
 
 export function buildBantahBroTelegramReceiptMessage(receipt: BantahBroReceipt) {
   const symbol = receipt.tokenSymbol ? `$${receipt.tokenSymbol}` : "This token";
   return [
-    receipt.status === "top_signal" ? "BANTAH RECEIPT: 10X" : "BANTAH RECEIPT",
+    receipt.status === "top_signal" ? "🏆 BANTAH RECEIPT: 10X" : "🧾 BANTAH RECEIPT",
     "",
-    `${symbol}`,
-    `Entry: ${formatUsd(receipt.entryPriceUsd)}`,
-    `Latest: ${formatUsd(receipt.latestPriceUsd)}`,
-    `Multiple: ${receipt.multiple.toFixed(2)}x`,
+    `🪙 ${symbol}`,
+    `📍 Entry: ${formatUsd(receipt.entryPriceUsd)}`,
+    `💵 Latest: ${formatUsd(receipt.latestPriceUsd)}`,
+    `📈 Multiple: ${receipt.multiple.toFixed(2)}x`,
     "",
     receipt.body,
-    ...(receipt.market?.url ? ["", `Market: ${receipt.market.url}`] : []),
+    ...(receipt.market?.url ? ["", `🎯 Market: ${receipt.market.url}`] : []),
   ].join("\n");
 }
 
 export function buildBantahBroTelegramAlertsDigest(alerts: BantahBroAlert[]) {
   if (alerts.length === 0) {
-    return "No BantahBro alerts yet. Use /analyze <token> to start the chaos.";
+    return "📭 No BantahBro alerts yet.\n\nUse /analyze <token> to start the chaos.";
   }
 
   return [
-    "BantahBro live alerts",
+    "📣 BantahBro live alerts",
     "",
     ...alerts.map((alert, index) => {
       const symbol = alert.tokenSymbol ? `$${alert.tokenSymbol}` : alert.tokenAddress.slice(0, 8);
@@ -154,7 +156,7 @@ export function buildBantahBroTelegramAlertsDigest(alerts: BantahBroAlert[]) {
             : alert.type === "market_live"
               ? "MARKET"
               : "WATCH";
-      return `${index + 1}. ${symbol} | ${type} | rug ${alert.rugScore ?? "n/a"} | momentum ${alert.momentumScore ?? "n/a"}`;
+      return `${index + 1}. ${symbol} | ${type} | ⚠️ rug ${alert.rugScore ?? "n/a"} | 🚀 momentum ${alert.momentumScore ?? "n/a"}`;
     }),
   ].join("\n");
 }
@@ -162,11 +164,11 @@ export function buildBantahBroTelegramAlertsDigest(alerts: BantahBroAlert[]) {
 export function buildBantahBroTelegramMarketsDigest(alerts: BantahBroAlert[]) {
   const liveMarkets = alerts.filter((alert) => Boolean(alert.market?.url));
   if (liveMarkets.length === 0) {
-    return "No live BantahBro markets yet. Use /analyze and open one.";
+    return "🏟 No live BantahBro markets yet.\n\nUse /analyze and open one.";
   }
 
   return [
-    "BantahBro live markets",
+    "🏟 BantahBro live markets",
     "",
     ...liveMarkets.map((alert, index) => {
       const symbol = alert.tokenSymbol ? `$${alert.tokenSymbol}` : alert.tokenAddress.slice(0, 8);
@@ -187,18 +189,18 @@ export function buildBantahBroTelegramLeaderboardMessage(
   }>,
 ) {
   if (entries.length === 0) {
-    return "Leaderboard is empty right now.";
+    return "🏆 Leaderboard is empty right now.";
   }
 
   return [
-    "Bantah leaderboard",
+    "🏆 Bantah leaderboard",
     "",
     ...entries.map((entry) => {
       const name = entry.username ? `@${entry.username}` : entry.firstName || "User";
       const wins = (entry.challengesWon || 0) + (entry.eventsWon || 0);
       const score = entry.coins ?? entry.points ?? 0;
       const scoreLabel = entry.coins != null ? "coins" : "pts";
-      return `#${entry.rank} ${name} | ${score} ${scoreLabel} | ${wins} wins`;
+      return `#${entry.rank} ${name} | 🪙 ${score} ${scoreLabel} | 🏁 ${wins} wins`;
     }),
   ].join("\n");
 }
@@ -211,11 +213,11 @@ export function buildBantahBroTelegramFriendsMessage(
   }>,
 ) {
   if (friends.length === 0) {
-    return "No friends linked yet.\n\nAdd people on Bantah and this list will start filling up.";
+    return "👥 No friends linked yet.\n\nAdd people on Bantah and this list will start filling up.";
   }
 
   return [
-    "Bantah friends",
+    "👥 Bantah friends",
     "",
     ...friends.slice(0, 10).map((friend, index) => {
       const name = friend.username ? `@${friend.username}` : friend.firstName || "Friend";
@@ -227,38 +229,38 @@ export function buildBantahBroTelegramFriendsMessage(
 
 export function buildBantahBroTelegramBxbtMessage(status: BantahBroBxbtStatus) {
   return [
-    "BantahBro BXBT",
+    "🪙 BantahBro BXBT",
     "",
-    `Chain: ${chainLabel(String(status.chainId))}`,
-    `Token: ${status.tokenAddress || "not set"}`,
-    `Treasury: ${status.treasuryAddress || "not set"}`,
-    `Market cost: ${status.marketCreationCost} BXBT`,
-    `Boost unit: ${status.boostUnitCost} BXBT`,
-    `Reward: ${status.rewardAmount} BXBT`,
+    `⛓ Chain: ${chainLabel(String(status.chainId))}`,
+    `🪙 Token: ${status.tokenAddress || "not set"}`,
+    `🏦 Treasury: ${status.treasuryAddress || "not set"}`,
+    `🎯 Market cost: ${status.marketCreationCost} BXBT`,
+    `📣 Boost unit: ${status.boostUnitCost} BXBT`,
+    `🎁 Reward: ${status.rewardAmount} BXBT`,
     "",
     status.balance.available
-      ? `Wallet balance: ${status.balance.amountFormatted || "0"} BXBT`
-      : `Wallet status: ${status.balance.error || "unavailable"}`,
+      ? `👛 Wallet balance: ${status.balance.amountFormatted || "0"} BXBT`
+      : `👛 Wallet status: ${status.balance.error || "unavailable"}`,
   ].join("\n");
 }
 
 export function buildBantahBroTelegramHelp() {
   return [
-    "BantahBro commands",
+    "😎 BantahBro commands",
     "",
-    "/analyze <token> or /analyze <chain> <token>  - full token scan",
-    "/rug <token>  - rug risk score",
-    "/runner <token>  - runner momentum score",
-    "/alerts  - latest BantahBro calls",
-    "/markets  - live Bantah conviction markets",
-    "/create <token>  - open a market from a signal",
-    "/leaderboard  - live Bantah rankings",
-    "/friends  - your Bantah circle",
-    "/bxbt  - BXBT costs, treasury, and balance",
+    "🔎 /analyze <token> or /analyze <chain> <token>  - full token scan",
+    "⚠️ /rug <token>  - rug risk score",
+    "🚀 /runner <token>  - runner momentum score",
+    "📣 /alerts  - latest BantahBro calls",
+    "🏟 /markets  - live Bantah conviction markets",
+    "🎯 /create <token>  - open a market from a signal",
+    "🏆 /leaderboard  - live Bantah rankings",
+    "👥 /friends  - your Bantah circle",
+    "🪙 /bxbt  - BXBT costs, treasury, and balance",
     "",
-    "You can also ask plain text like: price of bitcoin",
+    "💬 You can also ask plain text like: price of bitcoin",
     "",
-    "Supported chain shortcuts: solana, base, arbitrum, bsc",
+    "⛓ Supported chain shortcuts: solana, base, arbitrum, bsc",
   ].join("\n");
 }
 
@@ -266,50 +268,50 @@ export function buildBantahBroTelegramWelcomeMessage(firstName?: string | null) 
   const safeFirstName = String(firstName || "there").trim() || "there";
 
   return [
-    `Welcome to BantahBro, ${safeFirstName}.`,
+    `😎 Welcome to BantahBro, ${safeFirstName}.`,
     "",
-    "Your degen command center for token scans, live prices, rug scores, runner calls, BXBT, and Bantah conviction markets.",
+    "⚡ Your degen command center for token scans, live prices, rug scores, runner calls, BXBT, and Bantah conviction markets.",
     "",
-    "Tap a button below or try:",
-    "/analyze <token>",
-    "/rug <token>",
-    "/runner <token>",
-    "/alerts",
-    "/markets",
-    "/leaderboard",
-    "/friends",
-    "/bxbt",
+    "👇 Tap a button below or try:",
+    "🔎 /analyze <token>",
+    "⚠️ /rug <token>",
+    "🚀 /runner <token>",
+    "📣 /alerts",
+    "🏟 /markets",
+    "🏆 /leaderboard",
+    "👥 /friends",
+    "🪙 /bxbt",
     "",
-    "Or just ask:",
+    "💬 Or just ask:",
     "price of bitcoin",
   ].join("\n");
 }
 
 export function buildBantahBroTelegramBotShortDescription() {
-  return "Scan tokens, score rugs and runners, watch alerts, open markets, and run BXBT-backed chaos.";
+  return "🔎 Scan tokens. ⚠️ Score rugs. 🚀 Call runners. 🏟 Open markets. 🪙 Powered by BXBT.";
 }
 
 export function buildBantahBroTelegramBotDescription() {
   return [
-    "BantahBro is your degen command center on Telegram.",
-    "Scan tokens, ask live price questions, score rug risk and runner momentum, track alerts, check live Bantah markets, read leaderboard and friends, and open conviction markets backed by BXBT.",
+    "😎 BantahBro is your degen command center on Telegram.",
+    "🔎 Scan tokens, 💬 ask live price questions, ⚠️ score rug risk, 🚀 track runner momentum, 📣 watch alerts, 🏟 open markets, 🏆 read leaderboards, and 🪙 use BXBT-backed conviction.",
   ].join(" ");
 }
 
 export function buildBantahBroTelegramCommandMenu() {
   return [
-    { command: "start", description: "Open BantahBro and quick actions" },
-    { command: "help", description: "Show BantahBro commands and examples" },
-    { command: "analyze", description: "Scan any token on Solana, Base, Arbitrum, or BSC" },
-    { command: "rug", description: "Score the rug risk on a token" },
-    { command: "runner", description: "Score the runner momentum on a token" },
-    { command: "alerts", description: "See BantahBro's latest alerts" },
-    { command: "markets", description: "View live Bantah conviction markets" },
-    { command: "create", description: "Create a market from a token signal" },
-    { command: "leaderboard", description: "View the live Bantah leaderboard" },
-    { command: "friends", description: "See your Bantah friends" },
-    { command: "bxbt", description: "Check BXBT costs, treasury, and balance" },
-    { command: "wallet", description: "Open your wallet and account links" },
+    { command: "start", description: "😎 Open BantahBro and quick actions" },
+    { command: "help", description: "📚 Show BantahBro commands and examples" },
+    { command: "analyze", description: "🔎 Scan any token on Solana, Base, Arbitrum, or BSC" },
+    { command: "rug", description: "⚠️ Score the rug risk on a token" },
+    { command: "runner", description: "🚀 Score the runner momentum on a token" },
+    { command: "alerts", description: "📣 See BantahBro's latest alerts" },
+    { command: "markets", description: "🏟 View live Bantah conviction markets" },
+    { command: "create", description: "🎯 Create a market from a token signal" },
+    { command: "leaderboard", description: "🏆 View the live Bantah leaderboard" },
+    { command: "friends", description: "👥 See your Bantah friends" },
+    { command: "bxbt", description: "🪙 Check BXBT costs, treasury, and balance" },
+    { command: "wallet", description: "👛 Open your wallet and account links" },
   ] as const;
 }
 
@@ -377,7 +379,7 @@ export function buildBantahBroTelegramStartButtonPrompt(
 ) {
   if (action === "analyze") {
     return [
-      "Send me a token and I will scan it.",
+      "🔎 Send me a token and I will scan it.",
       "",
       "Examples:",
       "/analyze solana So11111111111111111111111111111111111111112",
@@ -387,7 +389,7 @@ export function buildBantahBroTelegramStartButtonPrompt(
 
   if (action === "rug") {
     return [
-      "Send me a token and I will score the rug risk.",
+      "⚠️ Send me a token and I will score the rug risk.",
       "",
       "Examples:",
       "/rug solana So11111111111111111111111111111111111111112",
@@ -397,7 +399,7 @@ export function buildBantahBroTelegramStartButtonPrompt(
 
   if (action === "runner") {
     return [
-      "Send me a token and I will score the runner momentum.",
+      "🚀 Send me a token and I will score the runner momentum.",
       "",
       "Examples:",
       "/runner solana So11111111111111111111111111111111111111112",
@@ -418,23 +420,37 @@ export function buildBantahBroTelegramStartButtonPrompt(
 
 export function getBantahBroWebBaseUrl() {
   return (
-    String(process.env.FRONTEND_URL || "").trim() ||
+    String(process.env.FRONTEND_URL || "").trim().replace(/\/bantahbro\/?$/, "") ||
     String(process.env.RENDER_EXTERNAL_URL || "").trim() ||
     "http://localhost:5000"
   );
 }
 
+export function buildBantahBroHomeUrl() {
+  const configured = String(process.env.BANT_A_BRO_WEB_URL || "").trim();
+  if (configured) return configured;
+  return new URL("/bantahbro", getBantahBroWebBaseUrl()).toString();
+}
+
 export function buildBantahBroAgentsUrl() {
-  return new URL("/agents", getBantahBroWebBaseUrl()).toString();
+  return buildBantahBroHomeUrl();
 }
 
 export function buildBantahBroTelegramStartUrl() {
-  return new URL("/agents", getBantahBroWebBaseUrl()).toString();
+  return buildBantahBroHomeUrl();
 }
 
 export function buildBantahBroAgentUrl(agentId?: string | null) {
-  if (!agentId) return buildBantahBroAgentsUrl();
-  return new URL(`/agents/${agentId}`, getBantahBroWebBaseUrl()).toString();
+  const url = new URL(buildBantahBroHomeUrl());
+  if (agentId) url.searchParams.set("agent", agentId);
+  return url.toString();
+}
+
+export function buildBantahBroTokenScanUrl(chainId: string, tokenAddress: string) {
+  const url = new URL(buildBantahBroHomeUrl());
+  url.searchParams.set("chain", normalizeBantahBroTelegramChainId(chainId));
+  url.searchParams.set("token", tokenAddress);
+  return url.toString();
 }
 
 export function defaultBantahBroMarketCurrency(chainId: string) {

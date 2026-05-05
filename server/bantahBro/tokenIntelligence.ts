@@ -405,14 +405,14 @@ function buildRugPost(pair: BantahBroPairSnapshot | null, rug: BantahBroRugScore
   const symbol = pair.baseToken.symbol ? `$${pair.baseToken.symbol}` : "This token";
   const reason = rug.reasons[0]?.label || "Risk signals are stacking.";
   return [
-    "BANTAH ALERT",
+    "🚨 BANTAH ALERT",
     "",
-    `${symbol}`,
-    `Rug Score: ${rug.score}/100`,
+    `🪙 ${symbol}`,
+    `⚠️ Rug Score: ${rug.score}/100`,
     "",
     reason,
     "",
-    "Verdict: risky. Market candidate: will this dump 70% in 6h?",
+    "💀 Verdict: risky. 🎯 Market candidate: will this dump 70% in 6h?",
   ].join("\n");
 }
 
@@ -424,14 +424,14 @@ function buildRunnerPost(
   const symbol = pair.baseToken.symbol ? `$${pair.baseToken.symbol}` : "This token";
   const reason = momentum.reasons[0]?.label || "Momentum is waking up.";
   return [
-    `${symbol} looks alive.`,
+    `🚀 ${symbol} looks alive.`,
     "",
     reason,
-    `Momentum Score: ${momentum.score}/100`,
+    `📈 Momentum Score: ${momentum.score}/100`,
     "",
     momentum.momentumLevel === "hot"
-      ? "This might run. Market candidate: will it 2x in 24h?"
-      : "Watching before the loud call.",
+      ? "🔥 This might run. 🎯 Market candidate: will it 2x in 24h?"
+      : "👀 Watching before the loud call.",
   ].join("\n");
 }
 

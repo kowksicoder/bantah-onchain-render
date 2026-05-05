@@ -35,25 +35,25 @@ function buildWatchBody(analysis: BantahBroTokenAnalysis) {
   const price = formatPriceUsd(analysis.primaryPair?.priceUsd ?? null);
   const liquidity = analysis.primaryPair?.liquidityUsd || 0;
   return [
-    `${symbol} is on watch.`,
+    `👀 ${symbol} is on watch.`,
     "",
-    `Price: ${price}`,
-    `Liquidity: $${Math.round(liquidity).toLocaleString()}`,
-    `Rug score: ${analysis.rug.score}/100`,
-    `Momentum: ${analysis.momentum.score}/100`,
+    `💵 Price: ${price}`,
+    `💧 Liquidity: $${Math.round(liquidity).toLocaleString()}`,
+    `⚠️ Rug score: ${analysis.rug.score}/100`,
+    `🚀 Momentum: ${analysis.momentum.score}/100`,
   ].join("\n");
 }
 
 export function buildHeadline(analysis: BantahBroTokenAnalysis, type: BantahBroAlert["type"]) {
   const symbol = analysis.tokenSymbol ? `$${analysis.tokenSymbol}` : "This token";
-  if (type === "rug_alert") return `${symbol} looks shaky.`;
-  if (type === "runner_alert") return `${symbol} looks alive.`;
-  if (type === "market_live") return `${symbol} market is live.`;
-  if (type === "boost_live") return `${symbol} market boost is live.`;
-  if (type === "receipt") return `${symbol} receipt logged.`;
-  if (type === "aftermath") return `${symbol} aftermath is in.`;
-  if (type === "wallet_status") return `BantahBro wallet status updated.`;
-  return `${symbol} is on watch.`;
+  if (type === "rug_alert") return `⚠️ ${symbol} looks shaky.`;
+  if (type === "runner_alert") return `🚀 ${symbol} looks alive.`;
+  if (type === "market_live") return `🎯 ${symbol} market is live.`;
+  if (type === "boost_live") return `📣 ${symbol} market boost is live.`;
+  if (type === "receipt") return `🧾 ${symbol} receipt logged.`;
+  if (type === "aftermath") return `📉 ${symbol} aftermath is in.`;
+  if (type === "wallet_status") return `👛 BantahBro wallet status updated.`;
+  return `👀 ${symbol} is on watch.`;
 }
 
 function buildBody(
@@ -148,20 +148,20 @@ export function buildReceiptFromAlert(
   const now = new Date().toISOString();
   const headline =
     status === "top_signal"
-      ? `${symbol} went 10x.`
+      ? `🏆 ${symbol} went 10x.`
       : status === "printed"
-        ? `${symbol} printed.`
+        ? `📈 ${symbol} printed.`
         : status === "rekt"
-          ? `${symbol} got smoked.`
-          : `${symbol} is still moving.`;
+          ? `📉 ${symbol} got smoked.`
+          : `👀 ${symbol} is still moving.`;
   const body =
     status === "top_signal"
-      ? `Called at ${formatPriceUsd(entryPriceUsd)}. Now ${formatPriceUsd(latestPriceUsd)}.\n\n${multiple.toFixed(2)}x receipt logged.`
+      ? `📍 Called at ${formatPriceUsd(entryPriceUsd)}. 💵 Now ${formatPriceUsd(latestPriceUsd)}.\n\n🏆 ${multiple.toFixed(2)}x receipt logged.`
       : status === "printed"
-        ? `Called at ${formatPriceUsd(entryPriceUsd)}. Now ${formatPriceUsd(latestPriceUsd)}.\n\n${multiple.toFixed(2)}x and counting.`
+        ? `📍 Called at ${formatPriceUsd(entryPriceUsd)}. 💵 Now ${formatPriceUsd(latestPriceUsd)}.\n\n📈 ${multiple.toFixed(2)}x and counting.`
         : status === "rekt"
-          ? `Called at ${formatPriceUsd(entryPriceUsd)}. Now ${formatPriceUsd(latestPriceUsd)}.\n\nReceipts stay honest.`
-          : `Called at ${formatPriceUsd(entryPriceUsd)}. Now ${formatPriceUsd(latestPriceUsd)}.\n\nStill watching.`;
+          ? `📍 Called at ${formatPriceUsd(entryPriceUsd)}. 💵 Now ${formatPriceUsd(latestPriceUsd)}.\n\n🧾 Receipts stay honest.`
+          : `📍 Called at ${formatPriceUsd(entryPriceUsd)}. 💵 Now ${formatPriceUsd(latestPriceUsd)}.\n\n👀 Still watching.`;
 
   return bantahBroReceiptSchema.parse({
     id: `bb_receipt_${nanoid(12)}`,

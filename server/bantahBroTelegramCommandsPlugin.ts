@@ -291,7 +291,7 @@ async function handleAnalyzeLikeCommand(
     const action = mode === "auto" ? "analyze" : mode;
     setPendingState(payload.ctx?.chat?.id, payload.ctx?.from?.id, action);
     await sendTelegramText(payload, buildBantahBroTelegramStartButtonPrompt(action), [
-      [callbackButton("Cancel", "bb:state:clear"), callbackButton("Main Menu", "bb:menu:main")],
+      [callbackButton("❌ Cancel", "bb:state:clear"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   }
@@ -299,32 +299,33 @@ async function handleAnalyzeLikeCommand(
   try {
     const analysis = await withTimeout(analyzeToken(tokenRef), "Token analysis");
     const alert = publishBantahBroAlert(buildAlertFromAnalysis(analysis, mode));
-    const { text: messageText, chartUrl } = buildBantahBroTelegramAlertMessage(alert, analysis);
+    const { text: messageText, chartUrl, scanUrl } = buildBantahBroTelegramAlertMessage(alert, analysis);
     const systemAgent = await withTimeout(
       getBantahBroSystemAgentStatus(),
       "System agent lookup",
     ).catch(() => null);
-    const marketInstruction = `\n\nNext: /create ${tokenRef.chainId} ${tokenRef.tokenAddress}`;
+    const marketInstruction = `\n\n🎯 Next: /create ${tokenRef.chainId} ${tokenRef.tokenAddress}`;
 
     await sendTelegramText(payload, `${messageText}${marketInstruction}`, [
       [
         callbackButton(
-          alert.type === "runner_alert" ? "Open Runner Market" : "Open Rug Market",
+          alert.type === "runner_alert" ? "🚀 Open Runner Market" : "⚠️ Open Rug Market",
           `bb:market:${alert.id}:${alert.type === "runner_alert" ? "runner" : "rug"}`,
         ),
       ],
       [
-        callbackButton("Receipt Check", `bb:receipt:${alert.id}`),
-        ...[urlButton("View Chart", chartUrl)].filter(Boolean) as TelegramInlineButton[],
+        callbackButton("🧾 Receipt Check", `bb:receipt:${alert.id}`),
+        urlButton("🔎 Open Scan", scanUrl) as TelegramInlineButton,
+        ...[urlButton("📊 View Chart", chartUrl)].filter(Boolean) as TelegramInlineButton[],
       ],
       [
-        urlButton("Open BantahBro", buildBantahBroAgentUrl(systemAgent?.agentId)) as TelegramInlineButton,
+        urlButton("😎 Open BantahBro", buildBantahBroAgentUrl(systemAgent?.agentId)) as TelegramInlineButton,
       ],
     ]);
     return true;
   } catch (error) {
     const message =
-      error instanceof Error ? `Analyze failed.\n\n${error.message}` : "Analyze failed.";
+      error instanceof Error ? `⚠️ Analyze failed.\n\n${error.message}` : "⚠️ Analyze failed.";
     await sendTelegramText(payload, message);
     return true;
   }
@@ -332,14 +333,14 @@ async function handleAnalyzeLikeCommand(
 
 async function handleAlertsCommand(payload: TelegramMessageEventPayload) {
   await sendTelegramText(payload, buildBantahBroTelegramAlertsDigest(listBantahBroAlerts(5)), [
-    [callbackButton("Refresh Alerts", "bb:run:alerts"), callbackButton("Main Menu", "bb:menu:main")],
+    [callbackButton("🔄 Refresh Alerts", "bb:run:alerts"), callbackButton("😎 Main Menu", "bb:menu:main")],
   ]);
   return true;
 }
 
 async function handleMarketsCommand(payload: TelegramMessageEventPayload) {
   await sendTelegramText(payload, buildBantahBroTelegramMarketsDigest(listBantahBroAlerts(10)), [
-    [callbackButton("Refresh Markets", "bb:run:markets"), callbackButton("Main Menu", "bb:menu:main")],
+    [callbackButton("🔄 Refresh Markets", "bb:run:markets"), callbackButton("😎 Main Menu", "bb:menu:main")],
   ]);
   return true;
 }
@@ -348,8 +349,8 @@ async function handleCreateCommand(payload: TelegramMessageEventPayload, text: s
   const tokenRef = parseBantahBroTelegramTokenCommand(text);
   if (!tokenRef) {
     setPendingState(payload.ctx?.chat?.id, payload.ctx?.from?.id, "create");
-    await sendTelegramText(payload, "Usage:\n/create <token>\n/create <chain> <token>", [
-      [callbackButton("Cancel", "bb:state:clear"), callbackButton("Main Menu", "bb:menu:main")],
+    await sendTelegramText(payload, "🎯 Usage:\n/create <token>\n/create <chain> <token>", [
+      [callbackButton("❌ Cancel", "bb:state:clear"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   }
@@ -370,17 +371,17 @@ async function handleCreateCommand(payload: TelegramMessageEventPayload, text: s
       "Market creation",
     );
 
-    await sendTelegramText(payload, `Market live.\n\n${result.market.url}`, [
+    await sendTelegramText(payload, `🎯 Market live.\n\n${result.market.url}`, [
       [
-        urlButton("View Market", result.market.url) as TelegramInlineButton,
-        urlButton("Open BantahBro", buildBantahBroAgentUrl(result.systemAgent.agentId)) as TelegramInlineButton,
+        urlButton("🏟 View Market", result.market.url) as TelegramInlineButton,
+        urlButton("😎 Open BantahBro", buildBantahBroAgentUrl(result.systemAgent.agentId)) as TelegramInlineButton,
       ],
-      [callbackButton("Live Markets", "bb:run:markets"), callbackButton("Main Menu", "bb:menu:main")],
+      [callbackButton("🏟 Live Markets", "bb:run:markets"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   } catch (error) {
     const message =
-      error instanceof Error ? `Create failed.\n\n${error.message}` : "Create failed.";
+      error instanceof Error ? `⚠️ Create failed.\n\n${error.message}` : "⚠️ Create failed.";
     await sendTelegramText(payload, message);
     return true;
   }
@@ -393,14 +394,14 @@ async function handleLeaderboardCommand(payload: TelegramMessageEventPayload) {
       "Leaderboard fetch",
     );
     await sendTelegramText(payload, buildBantahBroTelegramLeaderboardMessage(leaderboard.entries), [
-      [callbackButton("Refresh Leaderboard", "bb:run:leaderboard"), callbackButton("Main Menu", "bb:menu:main")],
+      [callbackButton("🔄 Refresh Leaderboard", "bb:run:leaderboard"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   } catch (error) {
     const message =
       error instanceof Error
-        ? `Leaderboard fetch failed.\n\n${error.message}`
-        : "Leaderboard fetch failed.";
+        ? `⚠️ Leaderboard fetch failed.\n\n${error.message}`
+        : "⚠️ Leaderboard fetch failed.";
     await sendTelegramText(payload, message);
     return true;
   }
@@ -413,7 +414,7 @@ async function handleFriendsCommand(
   if (!telegramId) {
     await sendTelegramText(
       payload,
-      "Link your Telegram account first from Bantah, then /friends will show your circle.",
+      "👥 Link your Telegram account first from Bantah, then /friends will show your circle.",
     );
     return true;
   }
@@ -423,7 +424,7 @@ async function handleFriendsCommand(
     if (!user) {
       await sendTelegramText(
         payload,
-        "Link your Telegram account first from Bantah, then /friends will show your circle.",
+        "👥 Link your Telegram account first from Bantah, then /friends will show your circle.",
       );
       return true;
     }
@@ -440,12 +441,12 @@ async function handleFriendsCommand(
     });
 
     await sendTelegramText(payload, buildBantahBroTelegramFriendsMessage(normalizedFriends), [
-      [callbackButton("Main Menu", "bb:menu:main")],
+      [callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   } catch (error) {
     const message =
-      error instanceof Error ? `Friends fetch failed.\n\n${error.message}` : "Friends fetch failed.";
+      error instanceof Error ? `⚠️ Friends fetch failed.\n\n${error.message}` : "⚠️ Friends fetch failed.";
     await sendTelegramText(payload, message);
     return true;
   }
@@ -455,12 +456,12 @@ async function handleBxbtCommand(payload: TelegramMessageEventPayload) {
   try {
     const status = await withTimeout(getBantahBroBxbtStatus(), "BXBT status check");
     await sendTelegramText(payload, buildBantahBroTelegramBxbtMessage(status), [
-      [callbackButton("Refresh BXBT", "bb:run:bxbt"), callbackButton("Main Menu", "bb:menu:main")],
+      [callbackButton("🔄 Refresh BXBT", "bb:run:bxbt"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   } catch (error) {
     const message =
-      error instanceof Error ? `BXBT check failed.\n\n${error.message}` : "BXBT check failed.";
+      error instanceof Error ? `⚠️ BXBT check failed.\n\n${error.message}` : "⚠️ BXBT check failed.";
     await sendTelegramText(payload, message);
     return true;
   }
@@ -484,7 +485,7 @@ async function handleReceiptCommand(
   if (!existingAlert) {
     await sendTelegramText(
       payload,
-      "No existing BantahBro alert for that token yet.\n\nRun /analyze first, then ask for the receipt.",
+      "🧾 No existing BantahBro alert for that token yet.\n\nRun /analyze first, then ask for the receipt.",
     );
     return true;
   }
@@ -501,12 +502,12 @@ async function handleReceiptCommand(
       getBantahBroReceiptBySourceAlert(existingAlert.id) ||
       publishBantahBroReceipt(buildReceiptFromAlert(existingAlert, analysis));
     await sendTelegramText(payload, buildBantahBroTelegramReceiptMessage(receipt), [
-      [callbackButton("Live Alerts", "bb:run:alerts"), callbackButton("Main Menu", "bb:menu:main")],
+      [callbackButton("📣 Live Alerts", "bb:run:alerts"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   } catch (error) {
     const message =
-      error instanceof Error ? `Receipt check failed.\n\n${error.message}` : "Receipt check failed.";
+      error instanceof Error ? `⚠️ Receipt check failed.\n\n${error.message}` : "⚠️ Receipt check failed.";
     await sendTelegramText(payload, message);
     return true;
   }
@@ -515,7 +516,7 @@ async function handleReceiptCommand(
 async function handleReceiptForAlert(payload: TelegramMessageEventPayload, alertId: string) {
   const alert = listBantahBroAlerts(50).find((candidate) => candidate.id === alertId);
   if (!alert) {
-    await sendTelegramText(payload, "Alert not found. Run /alerts and try from a fresh card.");
+    await sendTelegramText(payload, "📭 Alert not found. Run /alerts and try from a fresh card.");
     return true;
   }
 
@@ -531,12 +532,12 @@ async function handleReceiptForAlert(payload: TelegramMessageEventPayload, alert
       getBantahBroReceiptBySourceAlert(alert.id) ||
       publishBantahBroReceipt(buildReceiptFromAlert(alert, analysis));
     await sendTelegramText(payload, buildBantahBroTelegramReceiptMessage(receipt), [
-      [callbackButton("Live Alerts", "bb:run:alerts"), callbackButton("Main Menu", "bb:menu:main")],
+      [callbackButton("📣 Live Alerts", "bb:run:alerts"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   } catch (error) {
     const message =
-      error instanceof Error ? `Receipt check failed.\n\n${error.message}` : "Receipt check failed.";
+      error instanceof Error ? `⚠️ Receipt check failed.\n\n${error.message}` : "⚠️ Receipt check failed.";
     await sendTelegramText(payload, message);
     return true;
   }
@@ -549,7 +550,7 @@ async function handleMarketForAlert(
 ) {
   const alert = listBantahBroAlerts(50).find((candidate) => candidate.id === alertId);
   if (!alert) {
-    await sendTelegramText(payload, "Alert not found. Run /alerts and try from a fresh card.");
+    await sendTelegramText(payload, "📭 Alert not found. Run /alerts and try from a fresh card.");
     return true;
   }
 
@@ -568,14 +569,14 @@ async function handleMarketForAlert(
       "Market creation",
     );
 
-    await sendTelegramText(payload, `Market live.\n\n${result.market.url}`, [
-      [urlButton("View Market", result.market.url) as TelegramInlineButton],
-      [callbackButton("Live Markets", "bb:run:markets"), callbackButton("Main Menu", "bb:menu:main")],
+    await sendTelegramText(payload, `🎯 Market live.\n\n${result.market.url}`, [
+      [urlButton("🏟 View Market", result.market.url) as TelegramInlineButton],
+      [callbackButton("🏟 Live Markets", "bb:run:markets"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   } catch (error) {
     const message =
-      error instanceof Error ? `Market failed.\n\n${error.message}` : "Market failed.";
+      error instanceof Error ? `⚠️ Market failed.\n\n${error.message}` : "⚠️ Market failed.";
     await sendTelegramText(payload, message);
     return true;
   }
@@ -664,7 +665,7 @@ export async function handleBantahBroTelegramCommandEvent(
   if (startButtonAction === "analyze" || startButtonAction === "rug" || startButtonAction === "runner") {
     setPendingState(payload.ctx?.chat?.id, payload.ctx?.from?.id, startButtonAction);
     await sendTelegramText(payload, buildBantahBroTelegramStartButtonPrompt(startButtonAction), [
-      [callbackButton("Cancel", "bb:state:clear"), callbackButton("Main Menu", "bb:menu:main")],
+      [callbackButton("❌ Cancel", "bb:state:clear"), callbackButton("😎 Main Menu", "bb:menu:main")],
     ]);
     return true;
   }
@@ -712,11 +713,11 @@ async function handleCallbackAction(ctx: any, runtime: IAgentRuntime) {
   };
 
   const [, family, actionOrId, maybeMode] = data.split(":");
-  await answerCallback(ctx, "BantahBro is on it.");
+  await answerCallback(ctx, "😎 BantahBro is on it.");
 
   if (family === "menu") {
     if (actionOrId === "main") {
-      await sendTelegramText(payload, "BantahBro command center.", buildMainMenuButtons());
+      await sendTelegramText(payload, "😎 BantahBro command center.", buildMainMenuButtons());
       return;
     }
     if (actionOrId === "analyze" || actionOrId === "rug" || actionOrId === "runner" || actionOrId === "create") {
@@ -726,7 +727,7 @@ async function handleCallbackAction(ctx: any, runtime: IAgentRuntime) {
           ? "Paste a token to open a market from its current signal.\n\nExample:\n/create solana So11111111111111111111111111111111111111112"
           : buildBantahBroTelegramStartButtonPrompt(actionOrId);
       await sendTelegramText(payload, prompt, [
-        [callbackButton("Cancel", "bb:state:clear"), callbackButton("Main Menu", "bb:menu:main")],
+        [callbackButton("❌ Cancel", "bb:state:clear"), callbackButton("😎 Main Menu", "bb:menu:main")],
       ]);
       return;
     }
@@ -764,7 +765,7 @@ async function handleCallbackAction(ctx: any, runtime: IAgentRuntime) {
   if (family === "state" && actionOrId === "clear") {
     const key = getStateKey(query?.message?.chat?.id, query?.from?.id);
     if (key) telegramCommandStates.delete(key);
-    await sendTelegramText(payload, "Cleared. Pick the next move.", buildMainMenuButtons());
+    await sendTelegramText(payload, "🧹 Cleared. Pick the next move.", buildMainMenuButtons());
   }
 }
 
@@ -781,12 +782,12 @@ async function attachCallbackBridge(runtime: IAgentRuntime) {
       try {
         await handleCallbackAction(ctx, runtime);
       } catch (error) {
-        await answerCallback(ctx, "That action failed. Try again.", true).catch(() => null);
+        await answerCallback(ctx, "⚠️ That action failed. Try again.", true).catch(() => null);
         const chatId = ctx?.callbackQuery?.message?.chat?.id;
         if (chatId && typeof ctx?.telegram?.sendMessage === "function") {
           await ctx.telegram.sendMessage(
             chatId,
-            error instanceof Error ? `Action failed.\n\n${error.message}` : "Action failed.",
+            error instanceof Error ? `⚠️ Action failed.\n\n${error.message}` : "⚠️ Action failed.",
           );
         }
       }
