@@ -1,23 +1,33 @@
 import { PrivyClient } from '@privy-io/server-auth';
 import { normalizeEvmAddress, parseWalletAddresses } from '@shared/onchainConfig';
 import { getDelegatedAgentAuth, isAgentToken } from './agentAuth';
+import { storage } from './storage';
 
-const PRIVY_APP_ID = process.env.PRIVY_APP_ID || 'cmc9a12oh01lnky0m1agzgdoc';
-const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || 'HkeiV3uHt5F9uJhJGFjUSbsAFujpjTQFQGzhbMVa9X2aMFaeU3xuSBycAxogfLYM39jjeZVDyUTGv6zSMZ42YbR';
-
-if (!process.env.PRIVY_APP_ID) {
-  console.warn('⚠️ PRIVY_APP_ID not set in environment variables, using default');
+function requirePrivyEnv(name: "PRIVY_APP_ID" | "PRIVY_APP_SECRET") {
+  const value = String(process.env[name] || '').trim();
+  if (!value) {
+    throw new Error(`${name} is required for Privy authentication.`);
+  }
+  return value;
 }
 
-if (!process.env.PRIVY_APP_SECRET) {
-  console.warn('⚠️ PRIVY_APP_SECRET not set in environment variables, using default (ROTATE THIS SECRET!)');
-}
+let cachedPrivyClient: PrivyClient | null = null;
 
-export const privyClient = new PrivyClient(PRIVY_APP_ID, PRIVY_APP_SECRET);
+export function getPrivyClient() {
+  if (cachedPrivyClient) {
+    return cachedPrivyClient;
+  }
+
+  cachedPrivyClient = new PrivyClient(
+    requirePrivyEnv("PRIVY_APP_ID"),
+    requirePrivyEnv("PRIVY_APP_SECRET"),
+  );
+  return cachedPrivyClient;
+}
 
 export async function verifyPrivyToken(token: string) {
   try {
-    const verifiedClaims = await privyClient.verifyAuthToken(token);
+    const verifiedClaims = await getPrivyClient().verifyAuthToken(token);
     return verifiedClaims;
   } catch (error) {
     console.error('Privy token verification failed:', error);
@@ -28,7 +38,6 @@ export async function verifyPrivyToken(token: string) {
 function getInitialsFromEmail(email?: string) {
   if (!email || typeof email !== 'string') return '';
   const local = email.split('@')[0] || '';
-  // split on non-alphanumeric characters
   const parts = local.split(/[^a-z0-9]+/i).filter(Boolean);
   if (parts.length >= 2) {
     return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -39,8 +48,6 @@ function getInitialsFromEmail(email?: string) {
   }
   return '';
 }
-
-import { storage } from './storage';
 
 function extractWalletAddressesFromClaims(verifiedClaims: any): string[] {
   const found = new Set<string>();
@@ -74,9 +81,7 @@ function extractWalletAddressesFromClaims(verifiedClaims: any): string[] {
 
 async function getUserFromDb(userId: string) {
   try {
-    // Fetch user from actual database
-    const user = await storage.getUser(userId);
-    return user;
+    return await storage.getUser(userId);
   } catch (error) {
     console.error('Error fetching user from database:', error);
     return null;
@@ -87,53 +92,48 @@ async function upsertPrivyUser(verifiedClaims: any) {
   try {
     const userId = verifiedClaims.userId || verifiedClaims.sub;
     let dbUser = await getUserFromDb(userId);
-    
+
     if (!dbUser) {
       const email = verifiedClaims.email || `${userId}@privy.user`;
-
       const existingByEmail = await storage.getUserByEmail(email);
       if (existingByEmail) {
         return existingByEmail;
       }
 
       const username = verifiedClaims.email?.split('@')[0] || `user_${userId.slice(-8)}`;
-
       const fallbackFirstName = getInitialsFromEmail(verifiedClaims.email) || 'User';
 
       dbUser = await storage.upsertUser({
         id: userId,
-        email: email,
+        email,
         password: 'PRIVY_AUTH_USER',
         firstName: verifiedClaims.given_name || verifiedClaims.name || fallbackFirstName,
         lastName: verifiedClaims.family_name || 'User',
-        username: username,
+        username,
         profileImageUrl: verifiedClaims.picture,
       });
     }
-    
-    // Extract Telegram data from Privy linkedAccounts if user signed in with Telegram
+
     if (verifiedClaims.linkedAccounts) {
-      const telegramAccount = verifiedClaims.linkedAccounts.find((account: any) => account.type === 'telegram');
-      if (telegramAccount && telegramAccount.telegramUserId) {
-        console.log(`🔗 Telegram account detected in Privy claims: ${telegramAccount.telegramUserId}`);
-        
-        // Update user with Telegram ID if not already set
-        if (!dbUser.telegramId) {
-          await storage.updateUserTelegramInfo(userId, {
-            telegramId: telegramAccount.telegramUserId.toString(),
-            telegramUsername: telegramAccount.telegramUsername || `tg_${telegramAccount.telegramUserId}`,
-            isTelegramUser: true,
-          });
-          const refreshedUser = await storage.getUser(userId);
-          if (refreshedUser) {
-            dbUser = refreshedUser;
-          }
-          console.log(`✅ User ${userId} linked with Telegram ID ${telegramAccount.telegramUserId}`);
+      const telegramAccount = verifiedClaims.linkedAccounts.find(
+        (account: any) => account.type === 'telegram',
+      );
+      if (telegramAccount && telegramAccount.telegramUserId && !dbUser.telegramId) {
+        console.log(`Telegram account detected in Privy claims: ${telegramAccount.telegramUserId}`);
+        await storage.updateUserTelegramInfo(userId, {
+          telegramId: telegramAccount.telegramUserId.toString(),
+          telegramUsername:
+            telegramAccount.telegramUsername || `tg_${telegramAccount.telegramUserId}`,
+          isTelegramUser: true,
+        });
+        const refreshedUser = await storage.getUser(userId);
+        if (refreshedUser) {
+          dbUser = refreshedUser;
         }
+        console.log(`User ${userId} linked with Telegram ID ${telegramAccount.telegramUserId}`);
       }
     }
 
-    // Persist linked EVM wallets from Privy claims
     const walletsFromClaims = extractWalletAddressesFromClaims(verifiedClaims);
     if (walletsFromClaims.length > 0) {
       const currentPrimary = normalizeEvmAddress((dbUser as any)?.primaryWalletAddress);
@@ -141,17 +141,14 @@ async function upsertPrivyUser(verifiedClaims: any) {
       const mergedWallets = Array.from(new Set([...existingWallets, ...walletsFromClaims]));
       const nextPrimary = walletsFromClaims[0] || currentPrimary;
 
-      if (
-        nextPrimary !== currentPrimary ||
-        mergedWallets.length !== existingWallets.length
-      ) {
+      if (nextPrimary !== currentPrimary || mergedWallets.length !== existingWallets.length) {
         dbUser = await storage.updateUserProfile(dbUser.id, {
           primaryWalletAddress: nextPrimary,
           walletAddresses: mergedWallets,
         } as any);
       }
     }
-    
+
     return dbUser;
   } catch (error) {
     console.error('Error upserting Privy user:', error);
@@ -176,16 +173,14 @@ function toAuthenticatedUser(dbUser: any) {
       email: dbUser.email,
       first_name: dbUser.firstName,
       last_name: dbUser.lastName,
-    }
+    },
   };
 }
 
 export async function PrivyAuthMiddleware(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
 
-  // Allow Passport session as fallback if no Privy token provided
   if (!authHeader && req.isAuthenticated && req.isAuthenticated()) {
-    // If a session is active, attach the user cartaints (existing user object) and proceed
     try {
       const sessionUser = req.user;
       if (sessionUser) {
@@ -194,7 +189,6 @@ export async function PrivyAuthMiddleware(req: any, res: any, next: any) {
       }
     } catch (err) {
       console.error('Error using session-based auth fallback:', err);
-      // fallthrough to token-based verification
     }
   }
 
@@ -222,25 +216,20 @@ export async function PrivyAuthMiddleware(req: any, res: any, next: any) {
     }
 
     const verifiedClaims = await verifyPrivyToken(token);
-
     const userId = verifiedClaims?.userId || verifiedClaims?.sub;
     if (!verifiedClaims || !userId) {
       return res.status(401).json({ message: 'Invalid token or user ID not found' });
     }
 
     const dbUser = await upsertPrivyUser(verifiedClaims);
-
     if (!dbUser) {
       return res.status(500).json({ message: 'Failed to create or retrieve user' });
     }
 
-    // Attach user to request with proper structure for routes
-    // Privy auth structure - set both id and claims for compatibility
     req.user = toAuthenticatedUser(dbUser);
-
-    next();
+    return next();
   } catch (error) {
     console.error('Authentication error:', error);
-    res.status(500).json({ message: 'Internal server error during authentication' });
+    return res.status(500).json({ message: 'Internal server error during authentication' });
   }
 }

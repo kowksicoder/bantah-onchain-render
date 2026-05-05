@@ -1,16 +1,62 @@
 import axios from 'axios';
 import TelegramBot from 'node-telegram-bot-api';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { db } from './db';
 import * as schema from '../shared/schema';
 import { eq, or, desc, and } from 'drizzle-orm';
 import { storage } from './storage';
 import { TelegramLinkingService } from './telegramLinking';
+import { analyzeToken } from './bantahBro/tokenIntelligence';
+import {
+  buildAlertFromAnalysis,
+  buildReceiptFromAlert,
+} from './bantahBro/contentEngine';
+import {
+  getBantahBroAlert,
+  getBantahBroReceiptBySourceAlert,
+  listBantahBroAlerts,
+  publishBantahBroAlert,
+  publishBantahBroReceipt,
+} from './bantahBro/alertFeed';
+import { createBantahBroMarketFromSignal } from './bantahBro/marketService';
+import { getBantahBroBxbtStatus } from './bantahBro/bxbtUtility';
+import { getBantahBroSystemAgentStatus } from './bantahBro/systemAgent';
+import {
+  buildBantahBroAgentUrl,
+  buildBantahBroAgentsUrl,
+  buildBantahBroTelegramAlertMessage,
+  buildBantahBroTelegramAlertsDigest,
+  buildBantahBroTelegramBxbtMessage,
+  buildBantahBroTelegramBotDescription,
+  buildBantahBroTelegramBotShortDescription,
+  buildBantahBroTelegramCommandMenu,
+  buildBantahBroTelegramFriendsMessage,
+  buildBantahBroTelegramHelp,
+  buildBantahBroTelegramLeaderboardMessage,
+  buildBantahBroTelegramMarketsDigest,
+  buildBantahBroTelegramReceiptMessage,
+  buildBantahBroTelegramStartButtonPrompt,
+  buildBantahBroTelegramStartReplyMarkup,
+  buildBantahBroTelegramWelcomeMessage,
+  defaultBantahBroMarketCurrency,
+  parseBantahBroTelegramStartButton,
+  parseBantahBroTelegramTokenCommand,
+} from './bantahBro/telegramSupport';
+import { getBantahBroLeaderboard } from './bantahBro/communityService';
+import type {
+  BantahBroAlert,
+  BantahBroReceipt,
+  BantahBroTokenAnalysis,
+} from '@shared/bantahBro';
 
 
 interface TelegramBotConfig {
   token: string;
   channelId: string;
+  username?: string | null;
+  label?: string;
 }
 
 interface EventBroadcast {
@@ -156,10 +202,14 @@ export class TelegramBotService {
   private baseUrl: string;
   private webhookUrl: string | null = null;
   private bot: TelegramBot; // Add TelegramBot instance
+  private username: string | null;
+  private label: string;
 
   constructor(config: TelegramBotConfig) {
     this.token = config.token;
     this.channelId = config.channelId;
+    this.username = config.username?.trim() || null;
+    this.label = config.label?.trim() || "Telegram";
     this.baseUrl = `https://api.telegram.org/bot${this.token}`;
     this.bot = new TelegramBot(config.token, { polling: false }); // Initialize bot instance, polling disabled as we handle it manually
   }
@@ -198,6 +248,75 @@ export class TelegramBotService {
       return rawDisplay.trim();
     }
     return this.formatAmount(value, tokenLike);
+  }
+
+  private resolveBantahBroBannerPath(): string | null {
+    const configured = String(process.env.BANTAHBRO_TELEGRAM_BANNER_PATH || '').trim();
+    const candidates = [
+      configured,
+      path.resolve(process.cwd(), 'public', 'bantahbro', 'telegram-banner.jpg'),
+      path.resolve(process.cwd(), 'public', 'bantahbro', 'telegram-banner.png'),
+      path.resolve(process.cwd(), 'client', 'public', 'assets', 'bantahbro-telegram-banner.jpg'),
+      path.resolve(process.cwd(), 'client', 'public', 'assets', 'bantahbro-telegram-banner.png'),
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private buildBantahBroStartReplyMarkup() {
+    return buildBantahBroTelegramStartReplyMarkup();
+  }
+
+  private isBantahBroBot() {
+    return this.label.trim().toLowerCase() === 'bantahbro';
+  }
+
+  async syncBantahBroProfile(): Promise<boolean> {
+    if (!this.isBantahBroBot()) {
+      return true;
+    }
+
+    try {
+      await this.bot.setMyCommands([...buildBantahBroTelegramCommandMenu()]);
+      await axios.post(`${this.baseUrl}/setMyShortDescription`, {
+        short_description: buildBantahBroTelegramBotShortDescription(),
+      });
+      await axios.post(`${this.baseUrl}/setMyDescription`, {
+        description: buildBantahBroTelegramBotDescription(),
+      });
+      await axios.post(`${this.baseUrl}/setChatMenuButton`, {
+        menu_button: { type: 'commands' },
+      });
+      console.log(`✅ ${this.label} Telegram profile synced`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Failed to sync ${this.label} Telegram profile:`, error);
+      return false;
+    }
+  }
+
+  private async sendPhotoMessage(
+    chatId: number | string,
+    photoPath: string,
+    caption: string,
+    replyMarkup?: Record<string, unknown>,
+  ): Promise<boolean> {
+    try {
+      await this.bot.sendPhoto(chatId, photoPath, {
+        caption,
+        ...(replyMarkup ? { reply_markup: replyMarkup as any } : {}),
+      });
+      return true;
+    } catch (error) {
+      console.error(`❌ Error sending photo message for ${this.label}:`, error);
+      return false;
+    }
   }
 
   // Test bot connection
@@ -653,7 +772,10 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
   }
 
   // Send message to Telegram channel
-  private async sendToChannel(message: string): Promise<boolean> {
+  private async sendToChannel(
+    message: string,
+    replyMarkup?: Record<string, unknown>,
+  ): Promise<boolean> {
     try {
       console.log(`🔍 Attempting to send message to channel: ${this.channelId}`);
 
@@ -662,6 +784,7 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
         text: message,
         parse_mode: 'Markdown',
         disable_web_page_preview: false,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       });
 
       if (response.data.ok) {
@@ -692,7 +815,11 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
   }
 
   // Send photo with caption to Telegram channel
-  private async sendPhotoToChannel(photoUrl: string, caption: string): Promise<boolean> {
+  private async sendPhotoToChannel(
+    photoUrl: string,
+    caption: string,
+    replyMarkup?: Record<string, unknown>,
+  ): Promise<boolean> {
     try {
       console.log(`🔍 Attempting to send photo to channel: ${this.channelId}`);
 
@@ -701,6 +828,7 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
         photo: photoUrl,
         caption: caption,
         parse_mode: 'Markdown',
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       });
 
       if (response.data.ok) {
@@ -711,7 +839,7 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
         console.error('Channel ID:', this.channelId);
         console.error('Error:', response.data);
         // Fallback to text message if photo fails
-        return await this.sendToChannel(caption);
+        return await this.sendToChannel(caption, replyMarkup);
       }
     } catch (error) {
       console.error('❌ Error sending photo to Telegram channel:', error);
@@ -720,7 +848,7 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
         console.error('Response data:', error.response?.data);
       }
       // Fallback to text message if photo fails
-      return await this.sendToChannel(caption);
+      return await this.sendToChannel(caption, replyMarkup);
     }
   }
 
@@ -757,6 +885,79 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
       return await this.sendToChannel(message);
     } catch (error) {
       console.error('❌ Error sending custom message:', error);
+      return false;
+    }
+  }
+
+  private buildBantahBroAlertReplyMarkup(
+    alert: BantahBroAlert,
+    analysis?: BantahBroTokenAnalysis | null,
+  ) {
+    const rows: Array<Array<Record<string, unknown>>> = [];
+    const marketMode = alert.type === 'runner_alert' ? 'runner' : 'rug';
+
+    rows.push([
+      {
+        text: alert.type === 'runner_alert' ? 'Open runner market' : 'Open rug market',
+        callback_data: `bb|market|${alert.id}|${marketMode}`,
+      },
+    ]);
+
+    const secondaryRow: Array<Record<string, unknown>> = [];
+    if (analysis?.primaryPair?.url) {
+      secondaryRow.push({
+        text: 'View chart',
+        url: analysis.primaryPair.url,
+      });
+    }
+    secondaryRow.push({
+      text: 'Open Bantah',
+      url: buildBantahBroAgentsUrl(),
+    });
+    rows.push(secondaryRow);
+
+    return {
+      inline_keyboard: rows,
+    };
+  }
+
+  async broadcastBantahBroAlert(
+    alert: BantahBroAlert,
+    analysis?: BantahBroTokenAnalysis | null,
+  ): Promise<boolean> {
+    try {
+      const { text } = buildBantahBroTelegramAlertMessage(alert, analysis);
+      const replyMarkup = this.buildBantahBroAlertReplyMarkup(alert, analysis);
+      return await this.sendToChannel(text, replyMarkup);
+    } catch (error) {
+      console.error('❌ Error broadcasting BantahBro alert:', error);
+      return false;
+    }
+  }
+
+  async broadcastBantahBroReceipt(
+    receipt: BantahBroReceipt,
+  ): Promise<boolean> {
+    try {
+      const text = buildBantahBroTelegramReceiptMessage(receipt);
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            receipt.market?.url
+              ? {
+                  text: 'View market',
+                  url: receipt.market.url,
+                }
+              : {
+                  text: 'Open Bantah',
+                  url: buildBantahBroAgentsUrl(),
+                },
+          ],
+        ],
+      };
+      return await this.sendToChannel(text, replyMarkup);
+    } catch (error) {
+      console.error('❌ Error broadcasting BantahBro receipt:', error);
       return false;
     }
   }
@@ -869,27 +1070,54 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
   async setupWebhook(webhookUrl: string): Promise<boolean> {
     try {
       this.webhookUrl = webhookUrl;
+      await this.syncBantahBroProfile();
       const response = await axios.post(`${this.baseUrl}/setWebhook`, {
         url: webhookUrl,
         allowed_updates: ['message', 'callback_query', 'inline_query', 'chosen_inline_result'],
       });
 
       if (response.data.ok) {
-        console.log('✅ Telegram webhook set up successfully');
+        console.log(`✅ ${this.label} webhook set up successfully`);
         console.log(`📡 Webhook URL: ${webhookUrl}`);
         return true;
       } else {
-        console.error('❌ Failed to set webhook:', response.data);
+        console.error(`❌ Failed to set ${this.label} webhook:`, response.data);
         return false;
       }
     } catch (error) {
-      console.error('❌ Error setting up webhook:', error);
+      console.error(`❌ Error setting up ${this.label} webhook:`, error);
       return false;
     }
   }
 
+  async sendBantahBroBannerStartMessage(chatId: number, firstName: string): Promise<boolean> {
+    const message = buildBantahBroTelegramWelcomeMessage(firstName);
+    const replyMarkup = this.buildBantahBroStartReplyMarkup();
+    const bannerPath = this.resolveBantahBroBannerPath();
+
+    if (bannerPath) {
+      const sentBanner = await this.sendPhotoMessage(chatId, bannerPath, message, replyMarkup);
+      if (sentBanner) {
+        return true;
+      }
+    }
+
+    return await this.sendMessage(
+      chatId,
+      message,
+      replyMarkup ? { reply_markup: replyMarkup } : undefined,
+    );
+  }
+
   // Simplified /start message - just open mini-app
   async sendStartMessage(chatId: number, firstName: string): Promise<boolean> {
+    const message = buildBantahBroTelegramWelcomeMessage(firstName);
+    const replyMarkup = this.buildBantahBroStartReplyMarkup();
+    return await this.sendMessage(
+      chatId,
+      message,
+      replyMarkup ? { reply_markup: replyMarkup } : undefined,
+    );
     try {
       const miniAppUrl = (process.env.FRONTEND_URL || process.env.REPLIT_DOMAINS?.split(',')[0] || 'https://betchat.replit.app').replace('https://', '');
       const miniAppFullUrl = `https://${miniAppUrl}/telegram-mini-app`;
@@ -1016,7 +1244,7 @@ Your Telegram account is now linked to your Bantah account.
             [
               {
                 text: 'Return to Bot',
-                url: `https://t.me/${process.env.TELEGRAM_BOT_USERNAME || ''}`
+                url: `https://t.me/${this.username || ''}`
               },
               {
                 text: 'Open Web Profile',
@@ -1411,16 +1639,27 @@ Tap below to view and manage your challenges!`;
     }
 
     // Set up bot command menu
-    await this.bot.setMyCommands([
-      { command: 'start', description: 'Link your Telegram account to Bantah' },
-      { command: 'help', description: 'Show available commands and usage' },
-      { command: 'balance', description: 'Check your wallet balance' },
-      { command: 'mychallenges', description: 'View your active challenges' },
-      { command: 'challenge', description: 'Create a new challenge' },
-      { command: 'leaderboard', description: 'View the global leaderboard' },
-      { command: 'friends', description: 'Manage your friends list' },
-      { command: 'wallet', description: 'Access your wallet' }
-    ]);
+    if (this.isBantahBroBot()) {
+      await this.syncBantahBroProfile();
+    } else {
+      await this.bot.setMyCommands([
+        { command: 'start', description: 'Link your Telegram account to Bantah' },
+        { command: 'help', description: 'Show available commands and usage' },
+        { command: 'balance', description: 'Check your wallet balance' },
+        { command: 'mychallenges', description: 'View your active challenges' },
+        { command: 'challenge', description: 'Create a new challenge' },
+        { command: 'analyze', description: 'BantahBro token scan' },
+        { command: 'rug', description: 'BantahBro rug score' },
+        { command: 'runner', description: 'BantahBro runner score' },
+        { command: 'alerts', description: 'Latest BantahBro alerts' },
+        { command: 'markets', description: 'Live BantahBro markets' },
+        { command: 'create', description: 'Create market from a token signal' },
+        { command: 'bxbt', description: 'BantahBro BXBT status' },
+        { command: 'leaderboard', description: 'View the global leaderboard' },
+        { command: 'friends', description: 'Manage your friends list' },
+        { command: 'wallet', description: 'Access your wallet' }
+      ]);
+    }
     console.log('✅ Bot command menu configured');
 
     console.log('🔄 Starting Telegram bot polling...');
@@ -1439,6 +1678,18 @@ Tap below to view and manage your challenges!`;
     this.bot.startPolling();
     this.isRunning = true;
     console.log('✅ Telegram bot polling started with message handlers');
+  }
+
+  async handleWebhookUpdate(update: any): Promise<void> {
+    await this.processUpdate(update);
+
+    if (update?.inline_query) {
+      await this.handleInlineQuery(update.inline_query, axios);
+    }
+
+    if (update?.chosen_inline_result) {
+      await this.handleChosenInlineResult(update.chosen_inline_result, axios);
+    }
   }
 
   private async pollLoop(): Promise<void> {
@@ -1477,13 +1728,14 @@ Tap below to view and manage your challenges!`;
         const text = message.text;
         const firstName = message.from?.first_name || 'User';
         const telegramId = message.from?.id.toString();
+        const startButtonAction = parseBantahBroTelegramStartButton(text);
 
         console.log(`📨 Processing message: "${text}" from user ${telegramId}`);
 
         // Handle /start command - Always open mini-app
         if (text.startsWith('/start')) {
           console.log(`📱 Received /start from Telegram user ${chatId}`);
-          await this.sendStartMessage(chatId, firstName);
+          await this.sendBantahBroBannerStartMessage(chatId, firstName);
           return;
         }
 
@@ -1508,6 +1760,58 @@ Tap below to view and manage your challenges!`;
         else if (text.startsWith('/challenge')) {
           await this.handleChallengeCommand(chatId, text, telegramId!);
         }
+
+        else if (text.startsWith('/analyze')) {
+          await this.handleBantahBroAnalyzeCommand(chatId, text, 'auto');
+        }
+
+        else if (text.startsWith('/rug')) {
+          await this.handleBantahBroAnalyzeCommand(chatId, text, 'rug');
+        }
+
+        else if (text.startsWith('/runner')) {
+          await this.handleBantahBroAnalyzeCommand(chatId, text, 'runner');
+        }
+
+        else if (text.startsWith('/alerts')) {
+          await this.handleBantahBroAlertsCommand(chatId);
+        }
+
+        else if (text.startsWith('/markets')) {
+          await this.handleBantahBroMarketsCommand(chatId);
+        }
+
+        else if (text.startsWith('/create')) {
+          await this.handleBantahBroCreateCommand(chatId, text);
+        }
+
+        else if (text.startsWith('/leaderboard')) {
+          await this.handleBantahBroLeaderboardCommand(chatId);
+        }
+
+        else if (text.startsWith('/friends')) {
+          await this.handleBantahBroFriendsCommand(chatId, telegramId!);
+        }
+
+        else if (text.startsWith('/bxbt')) {
+          await this.handleBantahBroBxbtCommand(chatId);
+        }
+
+        else if (startButtonAction === 'analyze' || startButtonAction === 'rug' || startButtonAction === 'runner') {
+          await this.sendMessage(chatId, buildBantahBroTelegramStartButtonPrompt(startButtonAction));
+        }
+
+        else if (startButtonAction === 'alerts') {
+          await this.handleBantahBroAlertsCommand(chatId);
+        }
+
+        else if (startButtonAction === 'markets') {
+          await this.handleBantahBroMarketsCommand(chatId);
+        }
+
+        else if (startButtonAction === 'leaderboard') {
+          await this.handleBantahBroLeaderboardCommand(chatId);
+        }
       }
 
       // Handle callback queries (inline button clicks)
@@ -1525,6 +1829,75 @@ Tap below to view and manage your challenges!`;
     const telegramId = callbackQuery.from.id.toString();
 
     try {
+      if (typeof data === 'string' && data.startsWith('bb|')) {
+        const [, action, alertId, mode] = data.split('|');
+
+        if (action === 'market') {
+          const alert = getBantahBroAlert(alertId);
+          if (!alert) {
+            await this.bot.answerCallbackQuery(callbackQuery.id, {
+              text: 'Alert not found',
+              show_alert: true,
+            });
+            return;
+          }
+
+          const marketResult = await createBantahBroMarketFromSignal({
+            sourceAlertId: alertId,
+            durationHours: mode === 'runner' ? 24 : 6,
+            stakeAmount: '10',
+            currency: defaultBantahBroMarketCurrency(alert.chainId),
+            chargeBxbt: String(process.env.BANTAHBRO_TELEGRAM_CHARGE_BXBT_MARKETS || '').trim().toLowerCase() === 'true',
+          });
+
+          await this.bot.answerCallbackQuery(callbackQuery.id, {
+            text: 'Market opened',
+          });
+
+          await this.sendMessage(
+            chatId,
+            `Market live.\n\n${marketResult.market.url}`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: 'View market',
+                      url: marketResult.market.url,
+                    },
+                  ],
+                ],
+              },
+            },
+          );
+          return;
+        }
+
+        if (action === 'receipt') {
+          const alert = getBantahBroAlert(alertId);
+          if (!alert) {
+            await this.bot.answerCallbackQuery(callbackQuery.id, {
+              text: 'Alert not found',
+              show_alert: true,
+            });
+            return;
+          }
+
+          const analysis = await analyzeToken({
+            chainId: alert.chainId,
+            tokenAddress: alert.tokenAddress,
+          });
+          const existingReceipt = getBantahBroReceiptBySourceAlert(alertId);
+          const receipt = existingReceipt || publishBantahBroReceipt(buildReceiptFromAlert(alert, analysis));
+
+          await this.bot.answerCallbackQuery(callbackQuery.id, {
+            text: 'Receipt updated',
+          });
+          await this.sendMessage(chatId, buildBantahBroTelegramReceiptMessage(receipt));
+          return;
+        }
+      }
+
       const [action, challengeId] = data.split('_');
 
       if (action === 'accept' || action === 'decline') {
@@ -1616,6 +1989,8 @@ Tap below to view and manage your challenges!`;
   // Phase 3: Bot Commands
 
   private async sendHelpMessage(chatId: number): Promise<void> {
+    await this.sendMessage(chatId, buildBantahBroTelegramHelp());
+    return;
     const message = `🎮 *Bantah Bot Commands*
 
 ━━━━━━━━━━━━━━━━━━━━━
@@ -1884,9 +2259,171 @@ Ready to place some bets? 🎯`;
     await this.sendMessage(chatId, message);
   }
 
-  private async sendMessage(chatId: number, text: string): Promise<boolean> {
+  private async handleBantahBroAnalyzeCommand(
+    chatId: number,
+    text: string,
+    mode: 'auto' | 'rug' | 'runner',
+  ): Promise<void> {
+    const tokenRef = parseBantahBroTelegramTokenCommand(text);
+    if (!tokenRef) {
+      await this.sendMessage(chatId, buildBantahBroTelegramHelp());
+      return;
+    }
+
     try {
-      await this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+      const analysis = await analyzeToken(tokenRef);
+      const alert = publishBantahBroAlert(buildAlertFromAnalysis(analysis, mode));
+      const { text: messageText, chartUrl } = buildBantahBroTelegramAlertMessage(alert, analysis);
+      const systemAgent = await getBantahBroSystemAgentStatus().catch(() => null);
+
+      await this.sendMessage(chatId, messageText, {
+        disable_web_page_preview: false,
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: alert.type === 'runner_alert' ? 'Open runner market' : 'Open rug market',
+                callback_data: `bb|market|${alert.id}|${alert.type === 'runner_alert' ? 'runner' : 'rug'}`,
+              },
+            ],
+            [
+              ...(chartUrl ? [{ text: 'View chart', url: chartUrl }] : []),
+              {
+                text: 'Open Bantah',
+                url: buildBantahBroAgentUrl(systemAgent?.agentId),
+              },
+            ],
+            [
+              {
+                text: 'Receipt check',
+                callback_data: `bb|receipt|${alert.id}|now`,
+              },
+            ],
+          ],
+        },
+      });
+    } catch (error) {
+      await this.sendMessage(
+        chatId,
+        error instanceof Error ? `Analyze failed.\n\n${error.message}` : 'Analyze failed.',
+      );
+    }
+  }
+
+  private async handleBantahBroAlertsCommand(chatId: number): Promise<void> {
+    const alerts = listBantahBroAlerts(5);
+    await this.sendMessage(chatId, buildBantahBroTelegramAlertsDigest(alerts));
+  }
+
+  private async handleBantahBroMarketsCommand(chatId: number): Promise<void> {
+    const alerts = listBantahBroAlerts(10);
+    await this.sendMessage(chatId, buildBantahBroTelegramMarketsDigest(alerts));
+  }
+
+  private async handleBantahBroCreateCommand(chatId: number, text: string): Promise<void> {
+    const tokenRef = parseBantahBroTelegramTokenCommand(text);
+    if (!tokenRef) {
+      await this.sendMessage(
+        chatId,
+        'Usage:\n/create <token>\n/create <chain> <token>',
+      );
+      return;
+    }
+
+    try {
+      const result = await createBantahBroMarketFromSignal({
+        chainId: tokenRef.chainId,
+        tokenAddress: tokenRef.tokenAddress,
+        durationHours: 24,
+        stakeAmount: '10',
+        currency: defaultBantahBroMarketCurrency(tokenRef.chainId),
+        chargeBxbt: String(process.env.BANTAHBRO_TELEGRAM_CHARGE_BXBT_MARKETS || '').trim().toLowerCase() === 'true',
+      });
+
+      await this.sendMessage(chatId, `Market live.\n\n${result.market.url}`, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: 'View market',
+                url: result.market.url,
+              },
+            ],
+          ],
+        },
+      });
+    } catch (error) {
+      await this.sendMessage(
+        chatId,
+        error instanceof Error ? `Create failed.\n\n${error.message}` : 'Create failed.',
+      );
+    }
+  }
+
+  private async handleBantahBroLeaderboardCommand(chatId: number): Promise<void> {
+    try {
+      const leaderboard = await getBantahBroLeaderboard(10);
+      await this.sendMessage(chatId, buildBantahBroTelegramLeaderboardMessage(leaderboard.entries));
+    } catch (error) {
+      await this.sendMessage(
+        chatId,
+        error instanceof Error ? `Leaderboard fetch failed.\n\n${error.message}` : 'Leaderboard fetch failed.',
+      );
+    }
+  }
+
+  private async handleBantahBroFriendsCommand(chatId: number, telegramId: string): Promise<void> {
+    try {
+      const user = await storage.getUserByTelegramId(telegramId);
+      if (!user) {
+        await this.sendMessage(
+          chatId,
+          'Link your Telegram account first from Bantah, then /friends will show your circle.',
+        );
+        return;
+      }
+
+      const friends = await storage.getFriends(user.id);
+      const normalizedFriends = friends.map((friend) => {
+        const counterpart =
+          friend.requesterId === user.id ? friend.addressee : friend.requester;
+        return {
+          username: counterpart?.username || null,
+          firstName: counterpart?.firstName || null,
+          connectedAt: friend.createdAt,
+        };
+      });
+      await this.sendMessage(chatId, buildBantahBroTelegramFriendsMessage(normalizedFriends));
+    } catch (error) {
+      await this.sendMessage(
+        chatId,
+        error instanceof Error ? `Friends fetch failed.\n\n${error.message}` : 'Friends fetch failed.',
+      );
+    }
+  }
+
+  private async handleBantahBroBxbtCommand(chatId: number): Promise<void> {
+    try {
+      const status = await getBantahBroBxbtStatus();
+      await this.sendMessage(chatId, buildBantahBroTelegramBxbtMessage(status));
+    } catch (error) {
+      await this.sendMessage(
+        chatId,
+        error instanceof Error ? `BXBT check failed.\n\n${error.message}` : 'BXBT check failed.',
+      );
+    }
+  }
+
+  private async sendMessage(
+    chatId: number,
+    text: string,
+    options: TelegramBot.SendMessageOptions = {},
+  ): Promise<boolean> {
+    try {
+      await this.bot.sendMessage(chatId, text, {
+        parse_mode: 'Markdown',
+        ...options,
+      });
       return true;
     } catch (error) {
       console.error('Error sending message:', error);
@@ -2084,30 +2621,71 @@ Ready to place some bets? 🎯`;
 
 // Singleton instance
 let telegramBot: TelegramBotService | null = null;
+let bantahBroTelegramBot: TelegramBotService | null = null;
 
-export function createTelegramBot(): TelegramBotService | null {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const channelId = process.env.TELEGRAM_CHANNEL_ID;
+function createScopedTelegramBot(config: {
+  tokenEnv: string;
+  channelEnv: string;
+  usernameEnv?: string;
+  label: string;
+  existing: TelegramBotService | null;
+}): TelegramBotService | null {
+  const token = String(process.env[config.tokenEnv] || "").trim();
+  const channelId = String(process.env[config.channelEnv] || "").trim();
+  const username = config.usernameEnv
+    ? String(process.env[config.usernameEnv] || "").trim()
+    : "";
 
   if (!token || !channelId) {
-    console.log('⚠️ Telegram bot credentials not found. Broadcasting disabled.');
-    console.log('💡 Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID to enable broadcasting');
+    console.log(`⚠️ ${config.label} Telegram credentials not found. Broadcasting disabled.`);
+    console.log(`💡 Set ${config.tokenEnv} and ${config.channelEnv} to enable ${config.label} Telegram.`);
     return null;
   }
 
-  if (telegramBot) {
-    return telegramBot;
+  if (config.existing) {
+    return config.existing;
   }
 
   try {
-    telegramBot = new TelegramBotService({ token, channelId });
-    return telegramBot;
-  } catch (error) {
+    return new TelegramBotService({
+      token,
+      channelId,
+      username: username || null,
+      label: config.label,
+    });
+  } catch {
     return null;
   }
+}
+
+export function createTelegramBot(): TelegramBotService | null {
+  telegramBot =
+    createScopedTelegramBot({
+      tokenEnv: "TELEGRAM_BOT_TOKEN",
+      channelEnv: "TELEGRAM_CHANNEL_ID",
+      usernameEnv: "TELEGRAM_BOT_USERNAME",
+      label: "Platform",
+      existing: telegramBot,
+    }) || null;
+  return telegramBot;
 }
 
 export function getTelegramBot(): TelegramBotService | null {
   return telegramBot;
 }
 
+export function createBantahBroTelegramBot(): TelegramBotService | null {
+  bantahBroTelegramBot =
+    createScopedTelegramBot({
+      tokenEnv: "BANTAHBRO_TELEGRAM_BOT_TOKEN",
+      channelEnv: "BANTAHBRO_TELEGRAM_CHANNEL_ID",
+      usernameEnv: "BANTAHBRO_TELEGRAM_BOT_USERNAME",
+      label: "BantahBro",
+      existing: bantahBroTelegramBot,
+    }) || null;
+  return bantahBroTelegramBot;
+}
+
+export function getBantahBroTelegramBot(): TelegramBotService | null {
+  return bantahBroTelegramBot;
+}

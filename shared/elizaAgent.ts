@@ -24,10 +24,13 @@ export const bantahElizaStyleSchema = z.object({
   post: z.array(z.string()).default([]),
 });
 
+export const bantahElizaTemplatesSchema = z.record(z.string(), z.string()).default({});
+
 export const bantahElizaCharacterSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(2).max(80),
   username: z.string().min(2).max(80),
+  clients: z.array(z.string().min(1)).default([]),
   bio: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
   system: z.string().min(1),
   adjectives: z.array(z.string().min(1)).default([]),
@@ -36,9 +39,10 @@ export const bantahElizaCharacterSchema = z.object({
   messageExamples: z.array(z.array(z.record(z.string(), z.unknown()))).default([]),
   plugins: z.array(z.string().min(1)).default([]),
   settings: z.record(z.string(), z.unknown()).default({}),
+  templates: bantahElizaTemplatesSchema,
   style: bantahElizaStyleSchema.default({
     all: [],
-    chat: [],
+    chat: [],  
     post: [],
   }),
 });

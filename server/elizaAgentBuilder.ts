@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+import { messageHandlerTemplate, shouldRespondTemplate } from "@elizaos/core";
 import type { BantahAgentSpecialty, BantahSkillAction } from "@shared/agentSkill";
 import type { BantahElizaCharacter, BantahElizaRuntimeConfig } from "@shared/elizaAgent";
 
@@ -5,6 +8,19 @@ export const BANTAH_ELIZA_DEFAULT_PLUGIN_PACKAGES = [
   "@elizaos/plugin-bootstrap",
   "@elizaos/plugin-openrouter",
 ] as const;
+export const BANTAH_ELIZA_TELEGRAM_PLUGIN_PACKAGE = "@elizaos/plugin-telegram";
+
+const BANTAHBRO_CHARACTER_SPEC_PATH = path.resolve(
+  process.cwd(),
+  "docs",
+  "bantahbro",
+  "BantahBro_Character.json",
+);
+const BANTAHBRO_CHARACTER_PROFILE_VERSION = "bantahbro-v3";
+
+type BantahBroCharacterSpec = Partial<BantahElizaCharacter> & {
+  settings?: Record<string, unknown>;
+};
 
 function sanitizeUsernameSeed(input: string) {
   return String(input || "")
@@ -122,6 +138,65 @@ function buildSpecialtyStyle(specialty: BantahAgentSpecialty) {
   };
 }
 
+function loadBantahBroCharacterSpec(): BantahBroCharacterSpec {
+  try {
+    const raw = fs.readFileSync(BANTAHBRO_CHARACTER_SPEC_PATH, "utf8");
+    const parsed = JSON.parse(raw) as BantahBroCharacterSpec;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function buildBantahBroTelegramMessageTemplate(agentName: string) {
+  return `${messageHandlerTemplate}
+
+<bantahbro_telegram_rules>
+- You are BantahBro in Telegram. Sound fast, sharp, degen-native, and data-backed.
+- In private Telegram chats, be interactive, helpful, and action-oriented. Offer scan, alert, market, receipt, or leaderboard next steps when useful.
+- In Telegram groups, be tighter and harder-hitting. Prefer one strong take over a long explanation.
+- In groups, if a user gives a strong token claim, challenge it, score it, or turn it into a market angle when the signal is clear.
+- For live token or coin price questions, never answer from memory. Use LOOKUP_LIVE_MARKET.
+- Never promise profit. Use probabilistic language like "looks like", "might run", "high risk", or "watching".
+- If risk is weak or data is incomplete, say so instead of bluffing.
+- Keep most answers short enough to screenshot.
+</bantahbro_telegram_rules>`;
+}
+
+function buildBantahBroTelegramShouldRespondTemplate(agentName: string) {
+  return `${shouldRespondTemplate}
+
+<bantahbro_telegram_should_respond_rules>
+- In private Telegram chats, ${agentName} should usually respond unless the message is clear spam, abuse, or unrelated nonsense.
+- In Telegram group chats, ${agentName} should respond only when directly mentioned, replied to, called with a slash command, or when the message is clearly about Bantah, BXBT, a token, a market, or a trading claim.
+- In groups, if the message is casual chatter with no direct relevance, prefer IGNORE.
+- If a message contains a concrete market or token question, respond.
+</bantahbro_telegram_should_respond_rules>`;
+}
+
+function buildBantahBroTwitterMessageTemplate() {
+  return `${messageHandlerTemplate}
+
+<bantahbro_twitter_rules>
+- You are BantahBro on X/Twitter. Be shorter, sharper, and more public-facing than Telegram.
+- Prefer replies that turn claims into receipts, scores, or market questions.
+- If a strong claim deserves a challenge, call it out and point toward a Bantah market.
+- If live market data is needed, use LOOKUP_LIVE_MARKET instead of guessing.
+- Never overexplain. One or two punchy lines is usually enough.
+- Never promise profit or certainty.
+</bantahbro_twitter_rules>`;
+}
+
+function buildBantahBroTwitterShouldRespondTemplate(agentName: string) {
+  return `${shouldRespondTemplate}
+
+<bantahbro_twitter_should_respond_rules>
+- On Twitter, ${agentName} should respond mainly to direct mentions, replies, tracked claims, or posts clearly about Bantah, BXBT, token calls, or market conviction.
+- Ignore random unrelated tweets.
+- Prefer responding when there is a token, market, or conviction angle worth scoring or challenging.
+</bantahbro_twitter_should_respond_rules>`;
+}
+
 export function buildBantahElizaCharacter(params: {
   agentId: string;
   agentName: string;
@@ -132,14 +207,23 @@ export function buildBantahElizaCharacter(params: {
   walletNetworkId: string;
   skillActions: BantahSkillAction[];
   endpointUrl: string;
+  clients?: string[];
+  pluginPackages?: string[];
+  settingsOverrides?: Record<string, unknown>;
+  templates?: Record<string, string>;
 }): BantahElizaCharacter {
   const usernameSeed = sanitizeUsernameSeed(params.agentName) || "bantah_agent";
   const username = `${usernameSeed}_${params.agentId.slice(0, 6)}`.slice(0, 31);
+  const pluginPackages =
+    params.pluginPackages && params.pluginPackages.length > 0
+      ? params.pluginPackages
+      : [...BANTAH_ELIZA_DEFAULT_PLUGIN_PACKAGES];
 
   return {
     id: params.agentId,
     name: params.agentName,
     username,
+    clients: params.clients ?? [],
     bio: buildSpecialtyBio(params.specialty),
     system: [
       `You are ${params.agentName}, a Bantah-managed agent running on ElizaOS.`,
@@ -156,7 +240,7 @@ export function buildBantahElizaCharacter(params: {
       `Conviction is only useful when the stake size still respects risk.`,
     ],
     messageExamples: [],
-    plugins: [...BANTAH_ELIZA_DEFAULT_PLUGIN_PACKAGES],
+    plugins: [...pluginPackages],
     settings: {
       BANTAH_AGENT_ID: params.agentId,
       BANTAH_CHAIN_ID: params.chainId,
@@ -165,9 +249,109 @@ export function buildBantahElizaCharacter(params: {
       BANTAH_AGENT_ENDPOINT_URL: params.endpointUrl,
       BANTAH_SKILL_ACTIONS: params.skillActions,
       OPENROUTER_MODEL_TIER: "large",
+      ...(params.settingsOverrides || {}),
+    },
+    templates: {
+      ...(params.templates || {}),
     },
     style: buildSpecialtyStyle(params.specialty),
   };
+}
+
+export function buildBantahBroElizaCharacter(params: {
+  agentId: string;
+  agentName: string;
+  walletAddress: string;
+  chainId: number;
+  chainName: string;
+  walletNetworkId: string;
+  skillActions: BantahSkillAction[];
+  endpointUrl: string;
+  clients?: string[];
+  pluginPackages?: string[];
+  settingsOverrides?: Record<string, unknown>;
+}): BantahElizaCharacter {
+  const spec = loadBantahBroCharacterSpec();
+  const usernameSeed = sanitizeUsernameSeed(
+    typeof spec.username === "string" && spec.username.trim()
+      ? spec.username
+      : params.agentName,
+  ) || "bantahbro";
+  const username = `${usernameSeed}_${params.agentId.slice(0, 6)}`.slice(0, 31);
+  const pluginPackages =
+    params.pluginPackages && params.pluginPackages.length > 0
+      ? params.pluginPackages
+      : [...BANTAH_ELIZA_DEFAULT_PLUGIN_PACKAGES];
+  const specSettings =
+    spec.settings && typeof spec.settings === "object"
+      ? spec.settings
+      : {};
+  const specTemplates =
+    (spec as { templates?: Record<string, string> }).templates &&
+    typeof (spec as { templates?: Record<string, string> }).templates === "object"
+      ? ((spec as { templates?: Record<string, string> }).templates || {})
+      : {};
+
+  return {
+    id: params.agentId,
+    name: params.agentName,
+    username,
+    clients: params.clients ?? [],
+    bio:
+      Array.isArray(spec.bio) || typeof spec.bio === "string"
+        ? spec.bio
+        : [
+            "BantahBro is a fast degen onchain analyst for Bantah.",
+            "He reads meme chaos, scores conviction, and turns strong signals into markets.",
+          ],
+    system: [
+      typeof spec.system === "string" ? spec.system : "",
+      `You are ${params.agentName}, the Bantah-managed BantahBro system agent running on ElizaOS.`,
+      `Your wallet address is ${params.walletAddress} on ${params.chainName} (${params.walletNetworkId}).`,
+      `Your managed Bantah endpoint is ${params.endpointUrl}.`,
+      `Use Bantah skill actions for market reads, market creation, P2P creation, and wallet-aware actions instead of improvising external execution.`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    adjectives: Array.isArray(spec.adjectives) ? spec.adjectives : [],
+    topics: Array.isArray(spec.topics) ? spec.topics : [],
+    postExamples: Array.isArray(spec.postExamples) ? spec.postExamples : [],
+    messageExamples: Array.isArray(spec.messageExamples) ? spec.messageExamples : [],
+    plugins: [...pluginPackages],
+    settings: {
+      BANTAH_AGENT_ID: params.agentId,
+      BANTAH_CHAIN_ID: params.chainId,
+      BANTAH_CHAIN_NAME: params.chainName,
+      BANTAH_AGENT_WALLET: params.walletAddress,
+      BANTAH_AGENT_ENDPOINT_URL: params.endpointUrl,
+      BANTAH_SKILL_ACTIONS: params.skillActions,
+      OPENROUTER_MODEL_TIER: "large",
+      BANTAHBRO_CHARACTER_PROFILE: BANTAHBRO_CHARACTER_PROFILE_VERSION,
+      ...specSettings,
+      ...(params.settingsOverrides || {}),
+    },
+    templates: {
+      ...specTemplates,
+      telegramMessageHandlerTemplate: buildBantahBroTelegramMessageTemplate(
+        params.agentName,
+      ),
+      telegramShouldRespondTemplate: buildBantahBroTelegramShouldRespondTemplate(
+        params.agentName,
+      ),
+      twitterMessageHandlerTemplate: buildBantahBroTwitterMessageTemplate(),
+      twitterShouldRespondTemplate: buildBantahBroTwitterShouldRespondTemplate(
+        params.agentName,
+      ),
+    },
+    style:
+      spec.style && typeof spec.style === "object"
+        ? (spec.style as BantahElizaCharacter["style"])
+        : buildSpecialtyStyle("crypto"),
+  };
+}
+
+export function getBantahBroCharacterProfileVersion() {
+  return BANTAHBRO_CHARACTER_PROFILE_VERSION;
 }
 
 export function buildBantahElizaRuntimeConfig(params: {
@@ -180,8 +364,13 @@ export function buildBantahElizaRuntimeConfig(params: {
   walletProvider: string;
   skillActions: BantahSkillAction[];
   character: BantahElizaCharacter;
+  pluginPackages?: string[];
 }): BantahElizaRuntimeConfig {
   const timestamp = new Date().toISOString();
+  const pluginPackages =
+    params.pluginPackages && params.pluginPackages.length > 0
+      ? params.pluginPackages
+      : [...BANTAH_ELIZA_DEFAULT_PLUGIN_PACKAGES];
 
   return {
     engine: "elizaos",
@@ -191,7 +380,7 @@ export function buildBantahElizaRuntimeConfig(params: {
     agentId: params.agentId,
     endpointUrl: params.endpointUrl,
     modelProvider: "openrouter",
-    pluginPackages: [...BANTAH_ELIZA_DEFAULT_PLUGIN_PACKAGES],
+    pluginPackages: [...pluginPackages],
     skillActions: params.skillActions,
     chainId: params.chainId,
     chainName: params.chainName,

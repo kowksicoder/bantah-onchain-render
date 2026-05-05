@@ -77,8 +77,10 @@ const Challenges = lazy(() => import("./pages/Challenges"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const Agents = lazy(() => import("./pages/Agents"));
 const AgentDetail = lazy(() => import("./pages/AgentDetail"));
+const BantahBro = lazy(() => import("./pages/BantahBro"));
 const PartnerPrograms = lazy(() => import("./pages/PartnerPrograms"));
 const PartnerSignup = lazy(() => import("./pages/PartnerSignup"));
+const Skills = lazy(() => import("./pages/Skills"));
 
 function AppRouter() {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -236,8 +238,10 @@ function AppRouter() {
       <Route path="/telegram-auth" component={TelegramLink} />
       {/* Public Routes - Accessible to everyone */}
       <Route path="/about" component={About} />
+      <Route path="/skills" component={Skills} />
       <Route path="/partners" component={PartnerPrograms} />
       <Route path="/partner-signup" component={PartnerSignup} />
+      <Route path="/bantahbro" component={BantahBro} />
       <Route path="/agents/:agentId" component={AgentDetail} />
       <Route path="/events/:id/chat" component={EventChatPage} />
       <Route path="/challenges/:id/activity" component={ChallengeChatPage} />

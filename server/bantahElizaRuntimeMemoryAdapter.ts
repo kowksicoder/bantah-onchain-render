@@ -19,20 +19,92 @@ type StoredEntity = {
 
 type StoredRoom = {
   id: string;
+  worldId?: string;
   agentId?: string;
   name?: string;
   source?: string;
   type?: string;
+  channelId?: string;
+  serverId?: string;
   metadata?: Record<string, unknown>;
 };
+
+type StoredWorld = {
+  id: string;
+  agentId?: string;
+  name?: string;
+  serverId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type WorldMetadata = {
+  ownership?: {
+    ownerId?: string;
+  };
+  roles?: Record<string, string>;
+  settings?: Record<string, unknown>;
+} & Record<string, unknown>;
 
 export class BantahElizaRuntimeMemoryAdapter {
   db = null;
   private agents = new Map<string, StoredAgent>();
   private entities = new Map<string, StoredEntity>();
+  private worlds = new Map<string, StoredWorld>();
   private rooms = new Map<string, StoredRoom>();
   private memories = new Map<string, any>();
   private roomParticipants = new Map<string, Set<string>>();
+  private participantStates = new Map<string, "FOLLOWED" | "MUTED" | null>();
+
+  private ensureDirectMessageWorldOwnership(roomId: string, participantIds: string[]) {
+    const room = this.rooms.get(roomId);
+    if (!room || room.type !== "DM" || !room.worldId) {
+      return;
+    }
+
+    const world = this.worlds.get(room.worldId);
+    if (!world) {
+      return;
+    }
+
+    const existingMetadata = (world.metadata ?? {}) as WorldMetadata;
+    const existingOwnerId = existingMetadata.ownership?.ownerId;
+    const nonAgentParticipantId =
+      participantIds.find((participantId) => participantId && participantId !== room.agentId) ??
+      Array.from(this.roomParticipants.get(roomId) ?? []).find(
+        (participantId) => participantId && participantId !== room.agentId,
+      );
+
+    if (!nonAgentParticipantId) {
+      return;
+    }
+
+    const nextServerId =
+      typeof world.serverId === "string" && world.serverId.trim() && world.serverId !== "default"
+        ? world.serverId
+        : room.channelId || room.id;
+
+    const nextMetadata: WorldMetadata = {
+      ...existingMetadata,
+      ownership: {
+        ...(existingMetadata.ownership ?? {}),
+        ownerId: existingOwnerId || nonAgentParticipantId,
+      },
+      roles: {
+        ...(existingMetadata.roles ?? {}),
+        [nonAgentParticipantId]: existingMetadata.roles?.[nonAgentParticipantId] || "OWNER",
+      },
+      settings:
+        existingMetadata.settings && typeof existingMetadata.settings === "object"
+          ? existingMetadata.settings
+          : {},
+    };
+
+    this.worlds.set(room.worldId, {
+      ...world,
+      serverId: nextServerId,
+      metadata: nextMetadata,
+    });
+  }
 
   async initialize() {}
   async init() {}
@@ -99,8 +171,12 @@ export class BantahElizaRuntimeMemoryAdapter {
     return items.length ? items : null;
   }
 
-  async getEntitiesForRoom() {
-    return [];
+  async getEntitiesForRoom(roomId?: string) {
+    if (!roomId) return [];
+    const participantIds = Array.from(this.roomParticipants.get(roomId) ?? []);
+    return participantIds
+      .map((participantId) => this.entities.get(participantId))
+      .filter(Boolean);
   }
 
   async createEntities(entities: StoredEntity[]) {
@@ -115,7 +191,11 @@ export class BantahElizaRuntimeMemoryAdapter {
   }
 
   async updateEntity(entity: StoredEntity) {
-    this.entities.set(entity.id, entity);
+    this.entities.set(entity.id, {
+      ...entity,
+      components: entity.components ?? [],
+      metadata: entity.metadata ?? {},
+    });
   }
 
   async getComponent() {
@@ -188,26 +268,33 @@ export class BantahElizaRuntimeMemoryAdapter {
       .filter(Boolean);
   }
 
-  async getRooms() {
-    return Array.from(this.rooms.values());
+  async getRooms(worldId?: string) {
+    if (!worldId) {
+      return Array.from(this.rooms.values());
+    }
+    return Array.from(this.rooms.values()).filter((room) => room.worldId === worldId);
   }
 
   async createRoom(room: StoredRoom) {
     this.rooms.set(room.id, room);
-    return true;
+    return room.id;
   }
 
   async createRooms(rooms: StoredRoom[]) {
     for (const room of rooms) {
       this.rooms.set(room.id, room);
     }
-    return true;
+    return rooms.map((room) => room.id);
   }
 
-  async updateRoom(roomId: string, updates: Partial<StoredRoom>) {
+  async updateRoom(roomOrRoomId: string | StoredRoom, updates?: Partial<StoredRoom>) {
+    const roomId = typeof roomOrRoomId === "string" ? roomOrRoomId : roomOrRoomId.id;
     const existing = this.rooms.get(roomId);
     if (!existing) return null;
-    const next = { ...existing, ...updates, id: roomId };
+    const next =
+      typeof roomOrRoomId === "string"
+        ? { ...existing, ...(updates ?? {}), id: roomId }
+        : { ...existing, ...roomOrRoomId, id: roomId };
     this.rooms.set(roomId, next);
     return next;
   }
@@ -216,24 +303,50 @@ export class BantahElizaRuntimeMemoryAdapter {
     this.rooms.delete(roomId);
   }
 
-  async getRoomsForParticipant() {
-    return [];
+  async deleteRoomsByWorldId(worldId: string) {
+    for (const [roomId, room] of this.rooms.entries()) {
+      if (room.worldId === worldId) {
+        this.rooms.delete(roomId);
+        this.roomParticipants.delete(roomId);
+      }
+    }
+  }
+
+  async getRoomsForParticipant(entityId: string) {
+    const roomIds: string[] = [];
+    for (const [roomId, participants] of this.roomParticipants.entries()) {
+      if (participants.has(entityId)) {
+        roomIds.push(roomId);
+      }
+    }
+    return roomIds;
+  }
+
+  async getRoomsForParticipants(entityIds: string[]) {
+    const roomIds = new Set<string>();
+    for (const entityId of entityIds) {
+      for (const roomId of await this.getRoomsForParticipant(entityId)) {
+        roomIds.add(roomId);
+      }
+    }
+    return Array.from(roomIds);
   }
 
   async addParticipants() {}
 
-  async addParticipantsRoom(roomId: string, participantIds: string[]) {
+  async addParticipantsRoom(participantIds: string[], roomId: string) {
     const current = this.roomParticipants.get(roomId) ?? new Set<string>();
     for (const participantId of participantIds) {
       current.add(participantId);
     }
     this.roomParticipants.set(roomId, current);
+    this.ensureDirectMessageWorldOwnership(roomId, participantIds);
     return true;
   }
 
   async removeParticipant() {}
 
-  async removeParticipantsRoom(roomId: string, participantIds: string[]) {
+  async removeParticipantsRoom(participantIds: string[], roomId: string) {
     const current = this.roomParticipants.get(roomId);
     if (!current) return true;
     for (const participantId of participantIds) {
@@ -252,6 +365,52 @@ export class BantahElizaRuntimeMemoryAdapter {
 
   async createRelationship() {
     return true;
+  }
+
+  async createWorld(world: StoredWorld) {
+    this.worlds.set(world.id, {
+      ...world,
+      metadata: world.metadata ?? {},
+    });
+    return world.id;
+  }
+
+  async getWorld(id: string) {
+    return this.worlds.get(id) ?? null;
+  }
+
+  async removeWorld(worldId: string) {
+    this.worlds.delete(worldId);
+    await this.deleteRoomsByWorldId(worldId);
+  }
+
+  async getAllWorlds() {
+    return Array.from(this.worlds.values());
+  }
+
+  async updateWorld(world: StoredWorld) {
+    const existing = this.worlds.get(world.id);
+    this.worlds.set(world.id, {
+      ...(existing ?? {}),
+      ...world,
+      metadata: world.metadata ?? existing?.metadata ?? {},
+    });
+  }
+
+  async getRoomsByWorld(worldId: string) {
+    return Array.from(this.rooms.values()).filter((room) => room.worldId === worldId);
+  }
+
+  async getParticipantUserState(roomId: string, entityId: string) {
+    return this.participantStates.get(`${roomId}:${entityId}`) ?? null;
+  }
+
+  async setParticipantUserState(
+    roomId: string,
+    entityId: string,
+    state: "FOLLOWED" | "MUTED" | null,
+  ) {
+    this.participantStates.set(`${roomId}:${entityId}`, state);
   }
 
   async getRelationships() {

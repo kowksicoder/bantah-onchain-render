@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2020"
+  },
+  "include": [
+    "shared/bantahBro.ts",
+    "server/bantahBro/**/*.ts",
+    "server/routes/bantahBroApi.ts"
+  ]
+}

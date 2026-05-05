@@ -22,6 +22,8 @@ export const bantahSkillActionValues = [
   "join_no",
   "read_market",
   "check_balance",
+  "read_leaderboard",
+  "create_p2p_market",
   "challenge_user",
   "settle_market",
 ] as const;
@@ -105,6 +107,46 @@ export const checkBalanceInputSchema = z.object({
   chainId: z.number().int().positive().default(8453),
 });
 
+export const readLeaderboardInputSchema = z.object({
+  limit: z.number().int().min(1).max(100).default(10),
+});
+
+export const createP2PMarketInputSchema = z
+  .object({
+    question: z.string().min(5).max(280),
+    description: z.string().trim().min(1).max(600).optional(),
+    category: z.string().trim().min(1).max(64).default("crypto"),
+    deadline: z.string().datetime(),
+    stakeAmount: z.string().min(1).max(32),
+    currency: z.enum(bantahSkillCurrencyValues).default("USDC"),
+    chainId: z.number().int().positive().default(8453),
+    challengerSide: z.enum(["yes", "no"]).default("yes"),
+    challengedUsername: z.string().trim().min(1).max(64).optional(),
+    challengedWalletAddress: evmAddressSchema.optional(),
+    challengedAgentId: z.string().uuid().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const targetCount = Number(Boolean(value.challengedUsername))
+      + Number(Boolean(value.challengedWalletAddress))
+      + Number(Boolean(value.challengedAgentId));
+
+    if (targetCount === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Create P2P market requires exactly one opponent target: challengedUsername, challengedWalletAddress, or challengedAgentId.",
+        path: ["challengedUsername"],
+      });
+    } else if (targetCount > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Create P2P market accepts only one opponent target at a time.",
+        path: ["challengedUsername"],
+      });
+    }
+  });
+
 export const marketParticipantSchema = z.object({
   participantId: z.string().min(1).max(128),
   participantType: z.enum(["agent", "human"]),
@@ -158,6 +200,41 @@ export const checkBalanceResultSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
+export const leaderboardEntrySchema = z.object({
+  rank: z.number().int().positive(),
+  userId: z.string().min(1).max(128),
+  username: z.string().nullable(),
+  displayName: z.string().nullable(),
+  points: z.number().int().nonnegative(),
+  coins: z.number().int().nonnegative(),
+  eventsWon: z.number().int().nonnegative(),
+  challengesWon: z.number().int().nonnegative(),
+});
+
+export const readLeaderboardResultSchema = z.object({
+  entries: z.array(leaderboardEntrySchema),
+  generatedAt: z.string().datetime(),
+});
+
+export const createP2PMarketResultSchema = z.object({
+  marketId: z.string().min(1).max(128),
+  status: z.enum(["pending", "open", "active"]),
+  question: z.string().min(5).max(280),
+  description: z.string().nullable(),
+  deadline: z.string().datetime(),
+  stakeAmount: z.string().min(1).max(32),
+  currency: z.enum(bantahSkillCurrencyValues),
+  chainId: z.number().int().positive(),
+  challengerSide: z.enum(["yes", "no"]),
+  challengedSide: z.enum(["yes", "no"]),
+  challengerWalletAddress: evmAddressSchema,
+  challengedUserId: z.string().min(1).max(128).nullable(),
+  challengedAgentId: z.string().uuid().nullable(),
+  challengedWalletAddress: evmAddressSchema.nullable(),
+  challengedLabel: z.string().min(1).max(160),
+  escrowTxHash: evmTransactionHashSchema.optional(),
+});
+
 export const skillErrorSchema = z.object({
   ok: z.literal(false),
   error: z.object({
@@ -190,11 +267,16 @@ export type CreateMarketInput = z.infer<typeof createMarketInputSchema>;
 export type JoinMarketInput = z.infer<typeof joinMarketInputSchema>;
 export type ReadMarketInput = z.infer<typeof readMarketInputSchema>;
 export type CheckBalanceInput = z.infer<typeof checkBalanceInputSchema>;
+export type ReadLeaderboardInput = z.infer<typeof readLeaderboardInputSchema>;
+export type CreateP2PMarketInput = z.infer<typeof createP2PMarketInputSchema>;
 export type MarketParticipant = z.infer<typeof marketParticipantSchema>;
 export type ReadMarketResult = z.infer<typeof readMarketResultSchema>;
 export type CreateMarketResult = z.infer<typeof createMarketResultSchema>;
 export type JoinMarketResult = z.infer<typeof joinMarketResultSchema>;
 export type CheckBalanceResult = z.infer<typeof checkBalanceResultSchema>;
+export type LeaderboardEntry = z.infer<typeof leaderboardEntrySchema>;
+export type ReadLeaderboardResult = z.infer<typeof readLeaderboardResultSchema>;
+export type CreateP2PMarketResult = z.infer<typeof createP2PMarketResultSchema>;
 export type SkillErrorResponse = z.infer<typeof skillErrorSchema>;
 export type SkillSuccessEnvelope = z.infer<typeof skillSuccessEnvelopeSchema>;
 export type BantahWebhookPayload = z.infer<typeof webhookPayloadSchema>;

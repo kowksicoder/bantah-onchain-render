@@ -1,21 +1,7 @@
-import fs from "fs";
-import path from "path";
-import { pathToFileURL } from "url";
-import dotenv from "dotenv";
 import { encodeFunctionData, formatUnits, parseAbi, parseUnits, type Address, type Hex } from "viem";
 import { BANTAH_SKILL_VERSION, bantahRequiredSkillActionValues } from "@shared/agentSkill";
 import type { OnchainChainConfig, OnchainTokenSymbol } from "@shared/onchainConfig";
 import { getBantahAgentKitNetworkIdForChainId } from "@shared/agentApi";
-
-const LOCAL_AGENT_ENV_PATH = path.resolve(
-  process.cwd(),
-  "../Agent/typescript/examples/vercel-ai-sdk-smart-wallet-chatbot/.env",
-);
-
-const LOCAL_AGENTKIT_DIST_PATH = path.resolve(
-  process.cwd(),
-  "../Agent/typescript/agentkit/dist/index.js",
-);
 
 export const DEFAULT_BANTAH_AGENT_SKILLS = [...bantahRequiredSkillActionValues];
 export const DEFAULT_BANTAH_AGENT_NETWORK_ID = "base-mainnet";
@@ -205,7 +191,7 @@ function extractWalletSnapshot(snapshot: StoredBantahAgentWalletSnapshot) {
   return {
     walletAddress,
     ownerWalletAddress,
-    walletNetworkId: String(snapshot.walletNetworkId || "").trim() || DEFAULT_BANTAH_AGENT_NETWORK_ID,
+    walletNetworkId: String(snapshot.walletNetworkId || "").trim(),
   };
 }
 
@@ -215,6 +201,12 @@ function resolveAgentKitRuntimeNetworkId(params: {
 }) {
   const { walletNetworkId } = extractWalletSnapshot(params.snapshot);
   if (params.targetChainId === undefined) {
+    if (!walletNetworkId) {
+      throw new BantahAgentWalletError(
+        "wallet_not_provisioned",
+        "This Bantah agent wallet does not have a recorded AgentKit network id yet.",
+      );
+    }
     return walletNetworkId;
   }
 
@@ -246,37 +238,22 @@ function extractTransactionHash(receipt: unknown): `0x${string}` | null {
   );
 }
 
-function ensureLocalCdpEnvFallback() {
-  const hasCdpEnv =
-    Boolean(process.env.CDP_API_KEY_ID) &&
-    Boolean(process.env.CDP_API_KEY_SECRET) &&
-    Boolean(process.env.CDP_WALLET_SECRET);
-
-  if (hasCdpEnv) return;
-  if (!fs.existsSync(LOCAL_AGENT_ENV_PATH)) return;
-
-  dotenv.config({
-    path: LOCAL_AGENT_ENV_PATH,
-    override: false,
-  });
-}
-
-async function loadLocalAgentKit(): Promise<AgentKitLikeModule> {
-  if (!fs.existsSync(LOCAL_AGENTKIT_DIST_PATH)) {
+async function loadAgentKit(): Promise<AgentKitLikeModule> {
+  try {
+    return (await import("@coinbase/agentkit")) as AgentKitLikeModule;
+  } catch (error: any) {
     throw new Error(
-      "AgentKit runtime is not available. Clear disk space and install @coinbase/agentkit in Onchain, or rebuild the local Agent workspace.",
+      error?.message
+        ? `Failed to load @coinbase/agentkit: ${error.message}`
+        : "Failed to load @coinbase/agentkit.",
     );
   }
-
-  return (await import(pathToFileURL(LOCAL_AGENTKIT_DIST_PATH).href)) as AgentKitLikeModule;
 }
 
 function requireCdpEnvValue(name: "CDP_API_KEY_ID" | "CDP_API_KEY_SECRET" | "CDP_WALLET_SECRET") {
   const value = String(process.env[name] || "").trim();
   if (!value) {
-    throw new Error(
-      `${name} is required to provision Bantah agents. Add it to Onchain env or keep the local Agent env available.`,
-    );
+    throw new Error(`${name} is required to provision Bantah agents.`);
   }
   return value;
 }
@@ -298,9 +275,7 @@ export async function provisionBantahAgentWallet(
   agentId: string,
   networkId = DEFAULT_BANTAH_AGENT_NETWORK_ID,
 ): Promise<ProvisionedBantahAgent> {
-  ensureLocalCdpEnvFallback();
-
-  const { CdpSmartWalletProvider } = await loadLocalAgentKit();
+  const { CdpSmartWalletProvider } = await loadAgentKit();
   try {
     const walletProvider = await CdpSmartWalletProvider.configureWithWallet({
       networkId,
@@ -340,8 +315,6 @@ export async function restoreBantahAgentWallet(
     targetChainId?: number;
   } = {},
 ): Promise<RestoredBantahAgentWallet> {
-  ensureLocalCdpEnvFallback();
-
   if (snapshot.walletProvider && snapshot.walletProvider !== "cdp_smart_wallet") {
     const walletProvider = String(snapshot.walletProvider || "").trim();
     throw new BantahAgentWalletError(
@@ -364,7 +337,7 @@ export async function restoreBantahAgentWallet(
     snapshot,
     targetChainId: options.targetChainId,
   });
-  const { CdpSmartWalletProvider } = await loadLocalAgentKit();
+  const { CdpSmartWalletProvider } = await loadAgentKit();
 
   try {
     const walletProvider = await CdpSmartWalletProvider.configureWithWallet({

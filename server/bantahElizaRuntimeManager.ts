@@ -6,10 +6,12 @@ import {
   AgentRuntime,
   asUUID,
   createMessageMemory,
+  messageHandlerTemplate,
   type State,
 } from "@elizaos/core";
 import { bootstrapPlugin } from "@elizaos/plugin-bootstrap";
 import { openrouterPlugin } from "@elizaos/plugin-openrouter";
+import telegramPlugin from "@elizaos/plugin-telegram";
 import { agents } from "@shared/schema";
 import {
   bantahElizaRuntimeConfigSchema,
@@ -25,6 +27,9 @@ import { storage } from "./storage";
 import { createBantahElizaSkillsPlugin } from "./bantahElizaSkillsPlugin";
 import { BantahElizaRuntimeMemoryAdapter } from "./bantahElizaRuntimeMemoryAdapter";
 import { buildSkillErrorEnvelope } from "./agentProvisioning";
+import { bantahOpenRouterEmbeddingsPlugin } from "./bantahOpenRouterEmbeddingsPlugin";
+import { bantahBroTelegramBannerPlugin } from "./bantahBroTelegramBannerPlugin";
+import { bantahBroLiveMarketPlugin } from "./bantahBroLiveMarketPlugin";
 
 const LOCAL_AGENT_ENV_PATH = path.resolve(
   process.cwd(),
@@ -76,6 +81,22 @@ function withRuntimeStatus(
   };
 }
 
+function buildBantahBroTelegramMessageHandlerTemplate(baseTemplate?: unknown) {
+  const base =
+    typeof baseTemplate === "string" && baseTemplate.trim()
+      ? baseTemplate
+      : messageHandlerTemplate;
+
+  return `${base}
+
+<bantahbro_live_market_rules>
+- If the user asks for a current coin or token price, including phrases like "price of", "how much is", "what is btc at", or "<token> price", you MUST include LOOKUP_LIVE_MARKET in actions.
+- Never answer a live price question from memory.
+- If you include REPLY before LOOKUP_LIVE_MARKET, the REPLY text must only acknowledge that you are checking the live market now. Do not include any guessed or stale price number in that first reply.
+- After LOOKUP_LIVE_MARKET runs, use the returned live market result as the actual answer.
+</bantahbro_live_market_rules>`;
+}
+
 async function persistRuntimeState(
   agentId: string,
   config: BantahElizaRuntimeConfig,
@@ -92,13 +113,116 @@ async function persistRuntimeState(
 }
 
 function buildRuntimeCharacter(config: BantahElizaRuntimeConfig) {
+  const isBantahBro =
+    config.character.name === String(process.env.BANTAHBRO_AGENT_NAME || "BantahBro").trim();
+  const existingTemplates = ((config.character as any).templates || {}) as Record<string, unknown>;
+  const existingMessageExamples = Array.isArray(config.character.messageExamples)
+    ? config.character.messageExamples
+    : [];
+  const bantahBroMessageExamples = isBantahBro
+    ? [
+        [
+          {
+            user: "{{user1}}",
+            content: {
+              text: "price of bitcoin",
+            },
+          },
+          {
+            user: config.character.name,
+            content: {
+              text: "Checking the live BTC market now.",
+              actions: ["REPLY", "LOOKUP_LIVE_MARKET"],
+            },
+          },
+        ],
+        [
+          {
+            user: "{{user1}}",
+            content: {
+              text: "how much is eth on base",
+            },
+          },
+          {
+            user: config.character.name,
+            content: {
+              text: "Pulling the live ETH/Base market before I answer.",
+              actions: ["REPLY", "LOOKUP_LIVE_MARKET"],
+            },
+          },
+        ],
+      ]
+    : [];
+
   return {
     ...config.character,
+    system: [
+      config.character.system,
+      isBantahBro
+        ? "For live token or coin price questions, never answer from memory. Use the live market provider context when available. If live market context is unavailable, explicitly say you could not verify the current price."
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    messageExamples: [...existingMessageExamples, ...bantahBroMessageExamples],
+    templates: {
+      ...existingTemplates,
+      ...(isBantahBro
+        ? {
+            telegramMessageHandlerTemplate:
+              buildBantahBroTelegramMessageHandlerTemplate(
+                existingTemplates.telegramMessageHandlerTemplate,
+              ),
+          }
+        : {}),
+    },
     settings: {
       ...config.character.settings,
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     },
   };
+}
+
+function resolveManagedRuntimePlugins(config: BantahElizaRuntimeConfig) {
+  const configured = new Set(
+    (config.pluginPackages || []).map((entry) => String(entry || "").trim()).filter(Boolean),
+  );
+  const isBantahBro =
+    config.character.name === String(process.env.BANTAHBRO_AGENT_NAME || "BantahBro").trim();
+
+  const plugins = [];
+
+  if (
+    configured.size === 0 ||
+    configured.has("@elizaos/plugin-bootstrap")
+  ) {
+    plugins.push(bootstrapPlugin);
+  }
+
+  if (
+    configured.size === 0 ||
+    configured.has("@elizaos/plugin-openrouter")
+  ) {
+    plugins.push(openrouterPlugin);
+    plugins.push(bantahOpenRouterEmbeddingsPlugin);
+  }
+
+  if (isBantahBro) {
+    plugins.push(bantahBroLiveMarketPlugin);
+  }
+
+  if (
+    configured.has("@elizaos/plugin-telegram") ||
+    (config.character.clients || []).includes("telegram")
+  ) {
+    plugins.push(telegramPlugin);
+    if (isBantahBro) {
+      plugins.push(bantahBroTelegramBannerPlugin);
+    }
+  }
+
+  plugins.push(createBantahElizaSkillsPlugin(config.skillActions));
+  return plugins;
 }
 
 function ensureShutdownHooks() {
@@ -157,10 +281,9 @@ export async function startManagedBantahAgentRuntime(
   await persistRuntimeState(agentId, startingConfig);
 
   try {
-    const skillsPlugin = createBantahElizaSkillsPlugin(startingConfig.skillActions);
     const runtime = new AgentRuntime({
       character: buildRuntimeCharacter(startingConfig) as any,
-      plugins: [bootstrapPlugin, openrouterPlugin, skillsPlugin],
+      plugins: resolveManagedRuntimePlugins(startingConfig),
     });
     runtime.registerDatabaseAdapter(new BantahElizaRuntimeMemoryAdapter() as any);
     await runtime.initialize();

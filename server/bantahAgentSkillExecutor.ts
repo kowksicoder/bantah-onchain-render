@@ -3,11 +3,14 @@ import { ZodError } from "zod";
 import {
   type AgentActionEnvelope,
   type BantahSkillErrorCode,
+  type CreateP2PMarketInput,
   type SkillErrorResponse,
   type SkillSuccessEnvelope,
   checkBalanceInputSchema,
+  createP2PMarketInputSchema,
   createMarketInputSchema,
   joinMarketInputSchema,
+  readLeaderboardInputSchema,
   readMarketInputSchema,
 } from "@shared/agentSkill";
 import { pairQueue } from "@shared/schema";
@@ -277,6 +280,87 @@ async function getStoredBantahAgent(agentId: string) {
   }
 
   return storedAgent;
+}
+
+type ResolvedP2POpponent = {
+  challengedUserId: string | null;
+  challengedAgentId: string | null;
+  challengedWalletAddress: string | null;
+  challengedType: "human" | "agent";
+  challengedLabel: string;
+};
+
+async function resolveP2POpponentTarget(
+  storedAgent: Awaited<ReturnType<typeof getStoredBantahAgent>>,
+  input: CreateP2PMarketInput,
+): Promise<ResolvedP2POpponent> {
+  if (input.challengedAgentId) {
+    const challengedAgent = await storage.getAgentById(input.challengedAgentId);
+    if (!challengedAgent) {
+      throw new BantahSkillHttpError(404, "Target agent was not found.");
+    }
+
+    if (challengedAgent.agentId === storedAgent.agentId) {
+      throw new BantahSkillHttpError(400, "Agent cannot challenge itself.");
+    }
+
+    return {
+      challengedUserId: challengedAgent.ownerId || null,
+      challengedAgentId: challengedAgent.agentId,
+      challengedWalletAddress: null,
+      challengedType: "agent",
+      challengedLabel: challengedAgent.agentName || challengedAgent.agentId,
+    };
+  }
+
+  if (input.challengedUsername) {
+    const normalizedTarget = input.challengedUsername.replace(/^@+/, "").trim();
+    const challengedUser =
+      (await storage.getUser(normalizedTarget)) ||
+      (await storage.getUserByUsername(normalizedTarget));
+
+    if (!challengedUser) {
+      throw new BantahSkillHttpError(404, "Target user was not found.");
+    }
+
+    if (challengedUser.id === storedAgent.ownerId) {
+      throw new BantahSkillHttpError(400, "Agent cannot challenge its own owner.");
+    }
+
+    return {
+      challengedUserId: challengedUser.id,
+      challengedAgentId: null,
+      challengedWalletAddress: null,
+      challengedType: "human",
+      challengedLabel:
+        challengedUser.username ||
+        challengedUser.firstName ||
+        challengedUser.lastName ||
+        challengedUser.id,
+    };
+  }
+
+  if (input.challengedWalletAddress) {
+    if (
+      storedAgent.walletAddress &&
+      storedAgent.walletAddress.toLowerCase() === input.challengedWalletAddress.toLowerCase()
+    ) {
+      throw new BantahSkillHttpError(400, "Agent cannot challenge its own wallet.");
+    }
+
+    return {
+      challengedUserId: null,
+      challengedAgentId: null,
+      challengedWalletAddress: input.challengedWalletAddress,
+      challengedType: "human",
+      challengedLabel: `${input.challengedWalletAddress.slice(0, 6)}...${input.challengedWalletAddress.slice(-4)}`,
+    };
+  }
+
+  throw new BantahSkillHttpError(
+    400,
+    "Create P2P market requires an opponent target.",
+  );
 }
 
 export async function executeBantahSkillEnvelope(
@@ -732,6 +816,245 @@ export async function executeBantahSkillEnvelope(
         chainId: chainConfig.chainId,
         availableBalance: walletBalance.amountFormatted,
         updatedAt: new Date().toISOString(),
+      });
+    }
+
+    case "read_leaderboard": {
+      const parsed = readLeaderboardInputSchema.safeParse(envelope.payload);
+      if (!parsed.success) {
+        throw new BantahSkillHttpError(400, "Leaderboard payload is invalid.");
+      }
+
+      const leaderboard = await storage.getLeaderboard(parsed.data.limit);
+
+      return buildSkillSuccessEnvelope(requestId, {
+        entries: leaderboard.map((entry) => ({
+          rank: Number(entry.rank || 0),
+          userId: entry.id,
+          username: entry.username || null,
+          displayName:
+            entry.username ||
+            entry.firstName ||
+            entry.lastName ||
+            null,
+          points: Number(entry.points || 0),
+          coins: Number(entry.coins || 0),
+          eventsWon: Number(entry.eventsWon || 0),
+          challengesWon: Number(entry.challengesWon || 0),
+        })),
+        generatedAt: new Date().toISOString(),
+      });
+    }
+
+    case "create_p2p_market": {
+      const parsed = createP2PMarketInputSchema.safeParse(envelope.payload);
+      if (!parsed.success) {
+        throw new BantahSkillHttpError(400, "P2P market payload is invalid.");
+      }
+
+      const deadline = new Date(parsed.data.deadline);
+      if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) {
+        throw new BantahSkillHttpError(400, "Deadline must be a future ISO datetime.");
+      }
+
+      const previousRank = await getAgentRankSnapshot(storedAgent.agentId);
+      const { chainConfig, tokenConfig, tokenSymbol } = resolveOnchainRuntimeToken(
+        parsed.data.chainId,
+        parsed.data.currency,
+      );
+      const { roundedAmount } = parseStakeAmount(parsed.data.stakeAmount);
+      const challengedSide = parsed.data.challengerSide === "yes" ? "no" : "yes";
+      const opponent = await resolveP2POpponentTarget(storedAgent, parsed.data);
+      const requiredAmountAtomic = toAtomicUnits(parsed.data.stakeAmount, tokenConfig.decimals);
+      const agentWalletSnapshot = buildAgentWalletSnapshot(storedAgent);
+
+      let escrowTxHash: string | null = null;
+
+      try {
+        const walletBalance = await getBantahAgentWalletBalance({
+          snapshot: agentWalletSnapshot,
+          chainId: chainConfig.chainId,
+          chainConfig,
+          tokenSymbol,
+        });
+
+        if (BigInt(walletBalance.amountAtomic) < BigInt(requiredAmountAtomic)) {
+          throw new BantahSkillHttpError(
+            409,
+            `Agent wallet balance is too low for this ${tokenSymbol} stake.`,
+            {
+              chainId: chainConfig.chainId,
+              currency: tokenSymbol,
+              walletAddress: walletBalance.walletAddress,
+              availableBalance: walletBalance.amountFormatted,
+              requiredAmount: parsed.data.stakeAmount,
+            },
+            "insufficient_balance",
+          );
+        }
+      } catch (error) {
+        if (error instanceof BantahSkillHttpError) {
+          throw error;
+        }
+        if (error instanceof BantahAgentWalletError) {
+          throw toSkillHttpErrorFromWalletError(error, {
+            chainId: chainConfig.chainId,
+            currency: tokenSymbol,
+          });
+        }
+        throw error;
+      }
+
+      try {
+        const escrowExecution = await executeBantahAgentEscrowStakeTx({
+          snapshot: agentWalletSnapshot,
+          chainId: chainConfig.chainId,
+          chainConfig,
+          tokenSymbol,
+          amount: parsed.data.stakeAmount,
+          amountAtomic: requiredAmountAtomic,
+        });
+        escrowTxHash = escrowExecution.escrowTxHash;
+      } catch (error) {
+        if (error instanceof BantahAgentWalletError) {
+          throw toSkillHttpErrorFromWalletError(error, {
+            chainId: chainConfig.chainId,
+            currency: tokenSymbol,
+          });
+        }
+        throw error;
+      }
+
+      const createdChallenge = await storage.createChallenge({
+        challenger: storedAgent.ownerId,
+        challenged: opponent.challengedUserId || undefined,
+        challengedWalletAddress: opponent.challengedWalletAddress || undefined,
+        creatorType: "agent",
+        challengerType: "agent",
+        challengedType: opponent.challengedType,
+        creatorAgentId: storedAgent.agentId,
+        challengerAgentId: storedAgent.agentId,
+        challengedAgentId: opponent.challengedAgentId || undefined,
+        createdByAgent: true,
+        agentInvolved: true,
+        title: parsed.data.question.trim(),
+        description:
+          parsed.data.description?.trim() ||
+          `P2P market created by ${storedAgent.agentName} via Bantah agent runtime`,
+        category: parsed.data.category.trim().toLowerCase(),
+        amount: roundedAmount,
+        challengerSide: parsed.data.challengerSide.toUpperCase(),
+        challengedSide: challengedSide.toUpperCase(),
+        status:
+          opponent.challengedUserId || opponent.challengedWalletAddress || opponent.challengedAgentId
+            ? "pending"
+            : "open",
+        evidence: {
+          source: "bantah_agent_runtime",
+          createdByAgentId: storedAgent.agentId,
+          marketType: "p2p",
+          challengedLabel: opponent.challengedLabel,
+        },
+        settlementRail: "onchain",
+        chainId: chainConfig.chainId,
+        tokenSymbol,
+        tokenAddress: tokenConfig.address,
+        decimals: tokenConfig.decimals,
+        stakeAtomic: requiredAmountAtomic,
+        escrowTxHash: escrowTxHash || undefined,
+        dueDate: deadline,
+      } as any);
+
+      await storage.incrementAgentMarketCount(storedAgent.agentId);
+      await createAndPushAgentOwnerNotification(storedAgent, {
+        type: "agent_market_created",
+        title: "Agent opened a P2P market",
+        message: `${storedAgent.agentName} challenged ${opponent.challengedLabel} on "${createdChallenge.title}".`,
+        data: {
+          challengeId: createdChallenge.id,
+          action: "create_p2p_market",
+          challengedLabel: opponent.challengedLabel,
+          challengerSide: parsed.data.challengerSide,
+        },
+        priority: 2,
+        fomoLevel: "high",
+      });
+      await notifyAgentFollowers({
+        agentId: storedAgent.agentId,
+        agentName: storedAgent.agentName,
+        type: "followed_agent_created_market",
+        title: "Followed agent opened a P2P market",
+        message: `${storedAgent.agentName} challenged ${opponent.challengedLabel} on "${createdChallenge.title}".`,
+        challengeId: createdChallenge.id,
+        data: {
+          action: "create_p2p_market",
+          challengerSide: parsed.data.challengerSide,
+          challengedSide,
+          challengedLabel: opponent.challengedLabel,
+        },
+      });
+      await notifyAgentRankChangeIfNeeded(
+        storedAgent.agentId,
+        previousRank?.rank ?? null,
+        "market_created",
+        {
+          challengeId: createdChallenge.id,
+          marketType: "p2p",
+        },
+      );
+
+      if (opponent.challengedUserId) {
+        const notification = await storage.createNotification({
+          userId: opponent.challengedUserId,
+          type: "challenge",
+          title: "New P2P market request",
+          message: `${storedAgent.agentName} challenged you to "${createdChallenge.title}"`,
+          icon: "agent",
+          data: {
+            challengeId: createdChallenge.id,
+            challengerName: storedAgent.agentName,
+            challengeTitle: createdChallenge.title,
+            amount: createdChallenge.amount,
+            category: createdChallenge.category,
+            chainId: createdChallenge.chainId,
+            tokenSymbol: createdChallenge.tokenSymbol,
+          },
+        } as any);
+
+        await pushRealtimeNotification(opponent.challengedUserId, {
+          ...notification,
+          event: "challenge_received",
+          challengeId: String(createdChallenge.id),
+          timestamp: new Date().toISOString(),
+          data: {
+            ...(notification as any).data,
+            challengeId: createdChallenge.id,
+          },
+        });
+      }
+
+      return buildSkillSuccessEnvelope(requestId, {
+        marketId: String(createdChallenge.id),
+        status:
+          String(createdChallenge.status || "").trim().toLowerCase() === "active"
+            ? "active"
+            : String(createdChallenge.status || "").trim().toLowerCase() === "open"
+              ? "open"
+              : "pending",
+        question: createdChallenge.title,
+        description: createdChallenge.description || null,
+        deadline: deadline.toISOString(),
+        stakeAmount: String(createdChallenge.amount),
+        currency: tokenSymbol,
+        chainId: chainConfig.chainId,
+        challengerSide: parsed.data.challengerSide,
+        challengedSide,
+        challengerWalletAddress: storedAgent.walletAddress,
+        challengedUserId: opponent.challengedUserId,
+        challengedAgentId: opponent.challengedAgentId,
+        challengedWalletAddress: opponent.challengedWalletAddress,
+        challengedLabel: opponent.challengedLabel,
+        escrowTxHash: escrowTxHash || undefined,
       });
     }
 

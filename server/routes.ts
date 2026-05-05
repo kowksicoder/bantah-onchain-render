@@ -56,7 +56,7 @@ import {
 import { sql } from "drizzle-orm";
 import crypto from "crypto";
 import { createTelegramSync, getTelegramSync } from "./telegramSync";
-import { getTelegramBot } from "./telegramBot";
+import { getBantahBroTelegramBot, getTelegramBot } from "./telegramBot";
 import webpush from "web-push";
 import { setupOGImageRoutes } from "./ogImageGenerator";
 import { recommendationEngine } from "./recommendationEngine";
@@ -83,6 +83,7 @@ import { getStoredMediaAsset, storeUploadedImage } from "./mediaStorage";
 import notificationsApi from './routes/notificationsApi';
 import adminNotificationsApi from './routes/adminNotificationsApi';
 import agentsApi from './routes/agentsApi';
+import bantahBroApi from './routes/bantahBroApi';
 import { notificationInfrastructure } from './notificationInfrastructure';
 import { normalizePolymarketMarkets } from "./externalMarketAdapters";
 import type { ExternalMarket } from "@shared/externalMarkets";
@@ -4064,8 +4065,8 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     try {
       const limitRaw = Number(req.query?.limit || 60);
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 60;
-      console.log("📥 Fetching public admin challenges...");
-      const challenges = await storage.getPublicAdminChallenges(limit);
+      console.log("📥 Fetching public challenges...");
+      const challenges = await storage.getAllChallengesFeed(limit);
       console.log(`✅ Retrieved ${challenges.length} public challenges`);
       res.json(challenges);
     } catch (error: any) {
@@ -7669,65 +7670,27 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   app.post('/api/telegram/bot-webhook', async (req, res) => {
     try {
       const update = req.body;
-
-      // Handle /start command - Always show mini-app button
-      if (update.message && update.message.text && update.message.text.startsWith('/start')) {
-        const chatId = update.message.chat.id;
-        const firstName = update.message.from.first_name || 'User';
-
-        console.log(`📱 Received /start from Telegram user ${chatId}`);
-
-        const telegramBot = getTelegramBot();
-        if (telegramBot) {
-          await telegramBot.sendStartMessage(chatId, firstName);
-        }
-        return res.json({ ok: true });
+      const telegramBot = getTelegramBot();
+      if (telegramBot) {
+        await telegramBot.handleWebhookUpdate(update);
       }
-
-      // Handle /balance command
-      if (update.message && update.message.text && update.message.text.startsWith('/balance')) {
-        const chatId = update.message.chat.id;
-        const telegramId = update.message.from.id.toString();
-
-        const telegramBot = getTelegramBot();
-        if (telegramBot) {
-          const { TelegramLinkingService } = await import('./telegramLinking');
-          const user = await TelegramLinkingService.getUserByTelegramId(telegramId);
-
-          if (!user) {
-            await telegramBot.sendMessage(chatId, '💰 *Your Wallet*\n\nNo account linked yet. Open the mini-app to get started!');
-          } else {
-            const balance = await storage.getUserBalance(user.id);
-            await telegramBot.sendBalanceNotification(chatId, parseInt(balance.balance || '0'), balance.coins || 0);
-          }
-        }
-        return res.json({ ok: true });
-      }
-
-      // Handle /mychallenges command
-      if (update.message && update.message.text && update.message.text.startsWith('/mychallenges')) {
-        const chatId = update.message.chat.id;
-        const telegramId = update.message.from.id.toString();
-
-        const telegramBot = getTelegramBot();
-        if (telegramBot) {
-          const { TelegramLinkingService } = await import('./telegramLinking');
-          const user = await TelegramLinkingService.getUserByTelegramId(telegramId);
-
-          if (!user) {
-            await telegramBot.sendMessage(chatId, '⚔️ *Your Challenges*\n\nNo account linked yet. Open the mini-app to get started!');
-          } else {
-            const challenges = await storage.getChallenges(user.id, 10);
-            const activeChallenges = challenges.filter((c: any) => c.status === 'active' || c.status === 'pending');
-            await telegramBot.sendChallengesNotification(chatId, activeChallenges.length);
-          }
-        }
-        return res.json({ ok: true });
-      }
-
       return res.json({ ok: true });
     } catch (error) {
       console.error('❌ Webhook error:', error);
+      res.json({ ok: true });
+    }
+  });
+
+  app.post('/api/telegram/bantahbro-webhook', async (req, res) => {
+    try {
+      const update = req.body;
+      const telegramBot = getBantahBroTelegramBot();
+      if (telegramBot) {
+        await telegramBot.handleWebhookUpdate(update);
+      }
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error('❌ BantahBro webhook error:', error);
       res.json({ ok: true });
     }
   });
@@ -10322,6 +10285,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   app.use('/api/notifications', notificationsApi);
   app.use('/api/admin/notifications', adminNotificationsApi);
   app.use('/api/agents', agentsApi);
+  app.use('/api/bantahbro', bantahBroApi);
   app.use('/api', ogMetadataRouter);
 
   // ============ PAIRING ENGINE ROUTES ============
