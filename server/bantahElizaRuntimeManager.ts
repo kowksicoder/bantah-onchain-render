@@ -30,6 +30,8 @@ import { buildSkillErrorEnvelope } from "./agentProvisioning";
 import { bantahOpenRouterEmbeddingsPlugin } from "./bantahOpenRouterEmbeddingsPlugin";
 import { bantahBroTelegramBannerPlugin } from "./bantahBroTelegramBannerPlugin";
 import { bantahBroLiveMarketPlugin } from "./bantahBroLiveMarketPlugin";
+import { bantahBroTelegramCommandsPlugin } from "./bantahBroTelegramCommandsPlugin";
+import { bantahBroKnowledgePlugin } from "./bantahBroKnowledgePlugin";
 
 const LOCAL_AGENT_ENV_PATH = path.resolve(
   process.cwd(),
@@ -209,6 +211,7 @@ function resolveManagedRuntimePlugins(config: BantahElizaRuntimeConfig) {
 
   if (isBantahBro) {
     plugins.push(bantahBroLiveMarketPlugin);
+    plugins.push(bantahBroKnowledgePlugin);
   }
 
   if (
@@ -217,6 +220,7 @@ function resolveManagedRuntimePlugins(config: BantahElizaRuntimeConfig) {
   ) {
     plugins.push(telegramPlugin);
     if (isBantahBro) {
+      plugins.push(bantahBroTelegramCommandsPlugin);
       plugins.push(bantahBroTelegramBannerPlugin);
     }
   }

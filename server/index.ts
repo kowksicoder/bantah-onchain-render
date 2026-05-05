@@ -73,6 +73,10 @@ function resolveBantahBroTelegramWebhookUrl() {
   );
 }
 
+function isPlatformTelegramBotEnabled() {
+  return String(process.env.TELEGRAM_BOT_ENABLED || "true").trim().toLowerCase() !== "false";
+}
+
 async function initializeTelegramBotRuntime(options: {
   bot: {
     testConnection: () => Promise<unknown>;
@@ -241,15 +245,19 @@ app.use((req, res, next) => {
   // Run slow/non-critical startup tasks in the background so deploy healthchecks pass quickly.
   void (async () => {
     // Telegram bot (safe in production)
-    await initializeTelegramBotRuntime({
-      bot: createTelegramBot(),
-      label: "Platform",
-      webhookUrl: resolveTelegramWebhookUrl(),
-      enableWebhook:
-        String(process.env.TELEGRAM_BOT_ENABLE_WEBHOOK || "true").trim().toLowerCase() !==
-        "false",
-      allowPollingFallback: true,
-    });
+    if (isPlatformTelegramBotEnabled()) {
+      await initializeTelegramBotRuntime({
+        bot: createTelegramBot(),
+        label: "Platform",
+        webhookUrl: resolveTelegramWebhookUrl(),
+        enableWebhook:
+          String(process.env.TELEGRAM_BOT_ENABLE_WEBHOOK || "true").trim().toLowerCase() !==
+          "false",
+        allowPollingFallback: true,
+      });
+    } else {
+      console.log("[INIT] Platform Telegram bot disabled by TELEGRAM_BOT_ENABLED=false");
+    }
 
     // Initialize database
     try {
@@ -341,16 +349,20 @@ export async function initAppForServerless() {
     console.log("[INIT] Initializing serverless app...");
 
     // Telegram bot (safe in production)
-    const telegramBot = createTelegramBot();
-    await initializeTelegramBotRuntime({
-      bot: telegramBot,
-      label: "Platform",
-      webhookUrl: resolveTelegramWebhookUrl(),
-      enableWebhook:
-        String(process.env.TELEGRAM_BOT_ENABLE_WEBHOOK || "true").trim().toLowerCase() !==
-        "false",
-      allowPollingFallback: false,
-    });
+    const telegramBot = isPlatformTelegramBotEnabled() ? createTelegramBot() : null;
+    if (isPlatformTelegramBotEnabled()) {
+      await initializeTelegramBotRuntime({
+        bot: telegramBot,
+        label: "Platform",
+        webhookUrl: resolveTelegramWebhookUrl(),
+        enableWebhook:
+          String(process.env.TELEGRAM_BOT_ENABLE_WEBHOOK || "true").trim().toLowerCase() !==
+          "false",
+        allowPollingFallback: false,
+      });
+    } else {
+      console.log("[INIT] Platform Telegram bot disabled by TELEGRAM_BOT_ENABLED=false");
+    }
     if (telegramBot) {
       console.log("[OK] Telegram bot connected");
     }

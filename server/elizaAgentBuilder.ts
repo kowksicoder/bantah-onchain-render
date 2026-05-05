@@ -16,7 +16,7 @@ const BANTAHBRO_CHARACTER_SPEC_PATH = path.resolve(
   "bantahbro",
   "BantahBro_Character.json",
 );
-const BANTAHBRO_CHARACTER_PROFILE_VERSION = "bantahbro-v3";
+const BANTAHBRO_CHARACTER_PROFILE_VERSION = "bantahbro-v4";
 
 type BantahBroCharacterSpec = Partial<BantahElizaCharacter> & {
   settings?: Record<string, unknown>;
@@ -156,6 +156,8 @@ function buildBantahBroTelegramMessageTemplate(agentName: string) {
 - In private Telegram chats, be interactive, helpful, and action-oriented. Offer scan, alert, market, receipt, or leaderboard next steps when useful.
 - In Telegram groups, be tighter and harder-hitting. Prefer one strong take over a long explanation.
 - In groups, if a user gives a strong token claim, challenge it, score it, or turn it into a market angle when the signal is clear.
+- Use BANTAHBRO STATIC KNOWLEDGE when answering Bantah, BXBT, Telegram, market-rule, chain-support, or safety-policy questions.
+- Do not use static knowledge for volatile data like live prices, balances, rankings, or market status; those need live tools/providers.
 - For live token or coin price questions, never answer from memory. Use LOOKUP_LIVE_MARKET.
 - Never promise profit. Use probabilistic language like "looks like", "might run", "high risk", or "watching".
 - If risk is weak or data is incomplete, say so instead of bluffing.
@@ -171,6 +173,7 @@ function buildBantahBroTelegramShouldRespondTemplate(agentName: string) {
 - In Telegram group chats, ${agentName} should respond only when directly mentioned, replied to, called with a slash command, or when the message is clearly about Bantah, BXBT, a token, a market, or a trading claim.
 - In groups, if the message is casual chatter with no direct relevance, prefer IGNORE.
 - If a message contains a concrete market or token question, respond.
+- If the message is one of BantahBro's dedicated Telegram commands like /start, /help, /analyze, /rug, /runner, /alerts, /markets, /create, /leaderboard, /friends, /bxbt, or one of the exact quick-reply task buttons, choose IGNORE because BantahBro's Telegram command handlers will answer it directly outside the model loop.
 </bantahbro_telegram_should_respond_rules>`;
 }
 

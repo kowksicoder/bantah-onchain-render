@@ -335,6 +335,29 @@ export function buildBantahBroTelegramStartReplyMarkup() {
   } as const;
 }
 
+export function buildBantahBroTelegramStartInlineReplyMarkup() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🔎 Analyze Token", callback_data: "bb:menu:analyze" },
+        { text: "⚠️ Rug Score", callback_data: "bb:menu:rug" },
+      ],
+      [
+        { text: "🚀 Runner Score", callback_data: "bb:menu:runner" },
+        { text: "📣 Live Alerts", callback_data: "bb:run:alerts" },
+      ],
+      [
+        { text: "🏟 Live Markets", callback_data: "bb:run:markets" },
+        { text: "🏆 Leaderboard", callback_data: "bb:run:leaderboard" },
+      ],
+      [
+        { text: "🪙 BXBT Status", callback_data: "bb:run:bxbt" },
+        { text: "🎯 Create Market", callback_data: "bb:menu:create" },
+      ],
+    ],
+  };
+}
+
 export function parseBantahBroTelegramStartButton(text: string | null | undefined) {
   const normalized = String(text || "").trim().toLowerCase();
   if (!normalized) return null;

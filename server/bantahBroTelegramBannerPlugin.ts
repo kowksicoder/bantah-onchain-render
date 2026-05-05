@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import type { Plugin } from "@elizaos/core";
 import {
-  buildBantahBroTelegramStartReplyMarkup,
+  buildBantahBroTelegramStartInlineReplyMarkup,
   buildBantahBroTelegramWelcomeMessage,
 } from "./bantahBro/telegramSupport";
 
@@ -26,7 +26,7 @@ function resolveBannerPath() {
 }
 
 function buildStartReplyMarkup() {
-  return buildBantahBroTelegramStartReplyMarkup();
+  return buildBantahBroTelegramStartInlineReplyMarkup();
 }
 
 async function sendStartBanner(ctx: any) {

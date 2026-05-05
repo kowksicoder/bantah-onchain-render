@@ -12,6 +12,38 @@ Primary mode is now the official Eliza Telegram plugin.
 - `@elizaos/plugin-telegram` is the primary transport.
 - The old custom BantahBro bot path is now legacy / fallback only.
 - A dedicated BantahBro bot instance can still be used for outbound broadcasts, alerts, receipts, and challenge cards.
+- Platform alignment notes live in `docs/bantahbro/Eliza_Platform_Integration.md`.
+
+## Telegram interaction phases
+
+Telegram-1 callback/state alignment is active:
+
+- `/start` uses inline `bb:*` callback buttons.
+- Button taps are handled by the Eliza Telegram service's Telegraf bot.
+- Token flows keep pending per-chat/per-user state for 10 minutes.
+- If a user taps Analyze, Rug Score, Runner Score, or Create Market, they can paste the token in the next message.
+
+Telegram-2 real interactive menus are active for:
+
+- Analyze Token
+- Rug Score
+- Runner Score
+- Live Alerts
+- Live Markets
+- Leaderboard
+- BXBT Status
+- Create Market
+
+Telegram-3 group behavior is controlled by the BantahBro character templates:
+
+- Private chats are interactive and helpful.
+- Groups are selective, shorter, and trigger on mentions, replies, slash commands, Bantah/BXBT terms, token questions, or strong trading claims.
+
+Telegram-4 production webhook setup remains host-dependent:
+
+- The managed Eliza plugin currently owns inbound Telegram operation.
+- Legacy webhook routes remain available only for the fallback custom bot mode.
+- Production should keep one inbound owner active at a time to avoid double replies.
 
 ## Eliza-first behavior
 
@@ -54,6 +86,18 @@ Later Twitter/X:
 
 - The character templates are already prepared for a Twitter mode.
 - The live Twitter transport is still scaffolded and not yet active in this repo.
+
+## Knowledge layers
+
+BantahBro now has a static knowledge provider in the Eliza runtime:
+
+- Static corpus: `docs/bantahbro/knowledge/`
+- Provider: `BANTAHBRO_KNOWLEDGE_CONTEXT`
+- Architecture note: `docs/bantahbro/Knowledge_Base.md`
+
+Static knowledge is for Bantah, BXBT, market rules, Telegram help, chains, and safety.
+
+Live prices, token scans, balances, leaderboards, and market status still come from live APIs/providers only.
 
 ## Legacy custom-bot behavior
 

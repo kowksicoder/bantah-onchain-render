@@ -51,6 +51,10 @@ function requireEnv(name: string) {
   return value;
 }
 
+function optionalEnv(name: string) {
+  return String(process.env[name] || "").trim();
+}
+
 function getBxbtChainEnvAliases(chainId: number) {
   const aliasMap: Record<number, string[]> = {
     8453: ["8453", "BASE"],
@@ -97,6 +101,41 @@ export function getBxbtConfig() {
     boostUnitCost: requireEnv("BANTAHBRO_BXBT_BOOST_UNIT_COST"),
     rewardAmount: requireEnv("BANTAHBRO_BXBT_REWARD_AMOUNT"),
   };
+}
+
+function getBxbtStatusConfig() {
+  const chainId = Number.parseInt(optionalEnv("BANTAHBRO_BXBT_CHAIN_ID") || "8453", 10);
+  const safeChainId = Number.isInteger(chainId) && chainId > 0 ? chainId : 8453;
+  const decimals = Number.parseInt(
+    optionalEnv(`BANTAHBRO_BXBT_DECIMALS_${getBxbtChainEnvAliases(safeChainId)[1] || safeChainId}`) ||
+      optionalEnv("BANTAHBRO_BXBT_DECIMALS") ||
+      "18",
+    10,
+  );
+  const tokenAddress =
+    normalizeAddress(resolveOptionalChainAwareEnv("BANTAHBRO_BXBT_TOKEN_ADDRESS", safeChainId)) ||
+    null;
+  const treasuryAddress =
+    normalizeAddress(resolveOptionalChainAwareEnv("BANTAHBRO_BXBT_TREASURY_ADDRESS", safeChainId)) ||
+    null;
+
+  return {
+    tokenAddress,
+    chainId: safeChainId,
+    decimals: Number.isInteger(decimals) && decimals > 0 ? decimals : 18,
+    treasuryAddress,
+    marketCreationCost: optionalEnv("BANTAHBRO_BXBT_MARKET_CREATION_COST") || "0",
+    boostUnitCost: optionalEnv("BANTAHBRO_BXBT_BOOST_UNIT_COST") || "0",
+    rewardAmount: optionalEnv("BANTAHBRO_BXBT_REWARD_AMOUNT") || "0",
+  };
+}
+
+function resolveOptionalChainAwareEnv(name: string, chainId: number) {
+  for (const alias of getBxbtChainEnvAliases(chainId)) {
+    const scopedValue = optionalEnv(`${name}_${alias}`);
+    if (scopedValue) return scopedValue;
+  }
+  return optionalEnv(name);
 }
 
 async function readBxbtBalance() {
@@ -152,6 +191,32 @@ async function readBxbtBalance() {
 }
 
 export async function getBantahBroBxbtStatus(): Promise<BantahBroBxbtStatus> {
+  const statusConfig = getBxbtStatusConfig();
+
+  if (!statusConfig.tokenAddress || !statusConfig.treasuryAddress) {
+    const { agent } = await getBantahBroSystemAgentSnapshot();
+    return bantahBroBxbtStatusSchema.parse({
+      configured: false,
+      tokenAddress: statusConfig.tokenAddress,
+      tokenSymbol: "BXBT",
+      chainId: statusConfig.chainId,
+      decimals: statusConfig.decimals,
+      treasuryAddress: statusConfig.treasuryAddress,
+      marketCreationCost: statusConfig.marketCreationCost,
+      boostUnitCost: statusConfig.boostUnitCost,
+      rewardAmount: statusConfig.rewardAmount,
+      liveWalletRequired: true,
+      balance: {
+        available: false,
+        walletAddress: agent.walletAddress || null,
+        amountAtomic: null,
+        amountFormatted: null,
+        error:
+          "BXBT token and treasury addresses are not configured yet. Add BANTAHBRO_BXBT_TOKEN_ADDRESS and BANTAHBRO_BXBT_TREASURY_ADDRESS to enable live balance checks.",
+      },
+    });
+  }
+
   const config = getBxbtConfig();
   const balance = await readBxbtBalance();
 
