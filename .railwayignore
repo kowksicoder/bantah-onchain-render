@@ -11,7 +11,7 @@ archived
 tests
 docs
 api
-app
+/app
 contracts
 scripts
 supabase
