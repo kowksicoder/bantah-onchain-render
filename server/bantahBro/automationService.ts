@@ -403,6 +403,7 @@ async function runMarketTriggerCycle(config: AutomationConfig) {
             : config.rugMarketDurationHours,
         stakeAmount: config.autoMarketStakeAmount,
         currency: defaultBantahBroMarketCurrency(alert.chainId),
+        sourcePlatform: "system",
         chargeBxbt: config.chargeBxbtForAutoMarkets,
       });
       marketTriggeredAlertIds.add(alert.id);

@@ -78,9 +78,35 @@ const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const Agents = lazy(() => import("./pages/Agents"));
 const AgentDetail = lazy(() => import("./pages/AgentDetail"));
 const BantahBro = lazy(() => import("./pages/BantahBro"));
+const BantahBroAgents = lazy(() => import("./pages/BantahBroAgents"));
+const BantahBroAds = lazy(() => import("./pages/BantahBroAds"));
+const BantahBroLauncher = lazy(() => import("./pages/BantahBroLauncher"));
+const BantahBroRugScorer = lazy(() => import("./pages/BantahBroRugScorer"));
 const PartnerPrograms = lazy(() => import("./pages/PartnerPrograms"));
 const PartnerSignup = lazy(() => import("./pages/PartnerSignup"));
 const Skills = lazy(() => import("./pages/Skills"));
+
+function isBantahBroPath(pathname: string) {
+  const normalized = pathname.toLowerCase();
+  return (
+    normalized.startsWith('/bantahbro') ||
+    pathname === '/Agents' ||
+    normalized.startsWith('/ads') ||
+    normalized.startsWith('/launcher') ||
+    normalized.startsWith('/rug-scorer')
+  );
+}
+
+function DefaultRouteFallback() {
+  return (
+    <div className="min-h-[40vh] flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-7 h-7 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Loading page...</p>
+      </div>
+    </div>
+  );
+}
 
 function AppRouter() {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -204,25 +230,19 @@ function AppRouter() {
 
   // Check if current location is an admin route
   const isAdminRoute = location.startsWith('/admin');
+  const isBantahBroRoute = isBantahBroPath(location);
 
   return (
     <div className="min-h-screen transition-all duration-300 ease-in-out">
       {/* Show Navigation for all users except on landing page and admin routes */}
-      {!isLoading && !isAdminRoute && (
+      {!isLoading && !isAdminRoute && !isBantahBroRoute && (
         <div className="sticky top-0 z-50">
           <Navigation />
         </div>
       )}
 
       <Suspense
-        fallback={
-          <div className="min-h-[40vh] flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-7 h-7 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Loading page...</p>
-            </div>
-          </div>
-        }
+        fallback={isBantahBroRoute ? null : <DefaultRouteFallback />}
       >
       <Switch>
       {/* Admin Login Route - Always Available */}
@@ -241,7 +261,18 @@ function AppRouter() {
       <Route path="/skills" component={Skills} />
       <Route path="/partners" component={PartnerPrograms} />
       <Route path="/partner-signup" component={PartnerSignup} />
+      <Route path="/bantahbro/agents" component={BantahBroAgents} />
+      <Route path="/bantahbro/ads" component={BantahBroAds} />
+      <Route path="/bantahbro/launcher" component={BantahBroLauncher} />
+      <Route path="/bantahbro/rug-scorer" component={BantahBroRugScorer} />
       <Route path="/bantahbro" component={BantahBro} />
+      <Route path="/bantahbro/" component={BantahBro} />
+      <Route path="/Agents" component={BantahBroAgents} />
+      <Route path="/ads" component={BantahBroAds} />
+      <Route path="/Ads" component={BantahBroAds} />
+      <Route path="/launcher" component={BantahBroLauncher} />
+      <Route path="/Launcher" component={BantahBroLauncher} />
+      <Route path="/rug-scorer" component={BantahBroRugScorer} />
       <Route path="/agents/:agentId" component={AgentDetail} />
       <Route path="/events/:id/chat" component={EventChatPage} />
       <Route path="/challenges/:id/activity" component={ChallengeChatPage} />
@@ -360,6 +391,9 @@ function AppRouter() {
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [isBantahBroRoute] = useState(() =>
+    typeof window !== 'undefined' ? isBantahBroPath(window.location.pathname) : false
+  );
 
   useEffect(() => {
     const checkMobile = () => {
@@ -386,7 +420,10 @@ function App() {
           <EventsSearchProvider>
             <div className={`${isMobile ? 'mobile-app' : ''}`}>
               {showSplash ? (
-                <SplashScreen onComplete={handleSplashComplete} />
+                <SplashScreen
+                  onComplete={handleSplashComplete}
+                  variant={isBantahBroRoute ? 'bantahbro' : 'bantah'}
+                />
               ) : (
                 <TooltipProvider>
                   <Toaster />

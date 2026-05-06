@@ -32,6 +32,7 @@ export type BantahSkillAction = (typeof bantahSkillActionValues)[number];
 
 export const bantahRequiredSkillActionValues = [
   "create_market",
+  "create_p2p_market",
   "join_yes",
   "join_no",
   "read_market",

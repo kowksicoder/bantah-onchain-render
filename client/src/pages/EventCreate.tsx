@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -30,6 +30,43 @@ export default function EventCreate() {
   const [bannerUrl, setBannerUrl] = useState("");
   const [bannerInputType, setBannerInputType] = useState<'upload' | 'url'>('upload');
   const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const prefillTitle = searchParams.get("title")?.trim() || "";
+    const prefillDescription = searchParams.get("description")?.trim() || "";
+    const prefillCategory = searchParams.get("category")?.trim() || "";
+    const prefillSourceUrl = searchParams.get("sourceUrl")?.trim() || "";
+    const prefillImageUrl = searchParams.get("imageUrl")?.trim() || "";
+    const allowedCategories = new Set([
+      "crypto",
+      "sports",
+      "politics",
+      "entertainment",
+      "gaming",
+      "news",
+    ]);
+
+    if (prefillTitle) {
+      setTitle(prefillTitle);
+    }
+
+    const composedDescription = [prefillDescription, prefillSourceUrl ? `Source: ${prefillSourceUrl}` : ""]
+      .filter(Boolean)
+      .join("\n\n");
+    if (composedDescription) {
+      setDescription(composedDescription);
+    }
+
+    if (allowedCategories.has(prefillCategory)) {
+      setCategory(prefillCategory);
+    }
+
+    if (prefillImageUrl) {
+      setBannerUrl(prefillImageUrl);
+      setBannerInputType("url");
+    }
+  }, []);
 
 
   const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,22 +137,12 @@ export default function EventCreate() {
 
   const createEventMutation = useMutation({
     mutationFn: async (eventData: any) => {
-      let imageUrl = null;
-
-      // Upload image if selected
-      if (selectedImage) {
-        imageUrl = await uploadImage(selectedImage);
-        if (!imageUrl) {
-          throw new Error('Failed to upload image');
-        }
-      }
-
       const endDateTime = new Date(`${endDate}T${endTime}`);
       return await apiRequest("POST", "/api/events", {
         ...eventData,
         endDate: endDateTime.toISOString(),
         entryFee: parseInt(entryFee),
-        imageUrl,
+        imageUrl: eventData.imageUrl || null,
       });
     },
     onSuccess: () => {
@@ -174,8 +201,8 @@ export default function EventCreate() {
       title,
       description,
       category,
-      entryFee: parseFloat(entryFee),
-      bannerUrl: finalBannerUrl,
+      entryFee: parseInt(entryFee, 10),
+      imageUrl: finalBannerUrl,
     });
   };
 

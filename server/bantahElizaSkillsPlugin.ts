@@ -76,6 +76,8 @@ function buildActionDescription(actionName: BantahRequiredSkillAction) {
   switch (actionName) {
     case "create_market":
       return "Create a Bantah market using the managed agent wallet and saved Bantah runtime config.";
+    case "create_p2p_market":
+      return "Create an escrow-locked Bantah P2P market challenge with the managed agent wallet.";
     case "join_yes":
       return "Join a Bantah market on the YES side with the agent wallet and Bantah execution rules.";
     case "join_no":

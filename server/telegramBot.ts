@@ -45,6 +45,7 @@ import {
   parseBantahBroTelegramStartButton,
   parseBantahBroTelegramTokenCommand,
 } from './bantahBro/telegramSupport';
+import { recordBantahBroTelegramPost } from './bantahBro/socialFeedService';
 import { getBantahBroLeaderboard } from './bantahBro/communityService';
 import type {
   BantahBroAlert,
@@ -942,12 +943,25 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
   async broadcastChallenge(challenge: ChallengeBroadcast): Promise<boolean> {
     try {
       const message = this.formatChallengeMessage(challenge);
+      let sent = false;
       // If challenge has an image (admin challenge), send as photo with caption
       if (challenge.imageUrl) {
-        return await this.sendPhotoToChannel(challenge.imageUrl, message);
+        sent = await this.sendPhotoToChannel(challenge.imageUrl, message);
+      } else {
+        // Otherwise send as text message
+        sent = await this.sendToChannel(message);
       }
-      // Otherwise send as text message
-      return await this.sendToChannel(message);
+      if (sent) {
+        recordBantahBroTelegramPost({
+          id: `telegram-challenge-${challenge.id}`,
+          content: message,
+          market: challenge.title,
+          marketEmoji: '🏟',
+          tags: ['BantahBro', 'Challenge'],
+          url: typeof challenge.id !== 'undefined' ? `/challenges/${challenge.id}/activity` : undefined,
+        });
+      }
+      return sent;
     } catch (error) {
       console.error('❌ Error broadcasting challenge:', error);
       return false;
@@ -1019,11 +1033,12 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
       const alertBannerPath = this.isBantahBroMarketAlert(alert)
         ? this.resolveBantahBroMarketAlertBannerPath() || this.resolveBantahBroAlertBannerPath()
         : this.resolveBantahBroAlertBannerPath();
+      let sent = false;
 
       if (alertBannerPath) {
         if (text.length <= 1000) {
           const sentPhoto = await this.sendPhotoPathToChannel(alertBannerPath, text, replyMarkup);
-          if (sentPhoto) return true;
+          if (sentPhoto) sent = true;
         } else {
           const sentPhoto = await this.sendPhotoPathToChannel(
             alertBannerPath,
@@ -1032,12 +1047,26 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
               : '🚨 BantahBro alert incoming. Full scan below.',
           );
           if (sentPhoto) {
-            return await this.sendToChannel(text, replyMarkup);
+            sent = await this.sendToChannel(text, replyMarkup);
           }
         }
       }
 
-      return await this.sendToChannel(text, replyMarkup);
+      if (!sent) {
+        sent = await this.sendToChannel(text, replyMarkup);
+      }
+      if (sent) {
+        recordBantahBroTelegramPost({
+          id: `telegram-alert-${alert.id}`,
+          content: text,
+          market: alert.market?.url ? alert.headline : undefined,
+          marketEmoji: alert.market?.url ? '🎯' : undefined,
+          tags: alert.tokenSymbol ? [alert.tokenSymbol, alert.type, 'BantahBro'] : [alert.type, 'BantahBro'],
+          url: alert.market?.url || undefined,
+        });
+      }
+
+      return sent;
     } catch (error) {
       console.error('❌ Error broadcasting BantahBro alert:', error);
       return false;
@@ -1064,7 +1093,20 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
           ],
         ],
       };
-      return await this.sendToChannel(text, replyMarkup);
+      const sent = await this.sendToChannel(text, replyMarkup);
+      if (sent) {
+        recordBantahBroTelegramPost({
+          id: `telegram-receipt-${receipt.id}`,
+          content: text,
+          market: receipt.market?.url ? receipt.headline : undefined,
+          marketEmoji: receipt.market?.url ? '🧾' : undefined,
+          tags: receipt.tokenSymbol
+            ? [receipt.tokenSymbol, receipt.status, 'Receipt', 'BantahBro']
+            : [receipt.status, 'Receipt', 'BantahBro'],
+          url: receipt.market?.url || undefined,
+        });
+      }
+      return sent;
     } catch (error) {
       console.error('❌ Error broadcasting BantahBro receipt:', error);
       return false;
@@ -1956,6 +1998,7 @@ Tap below to view and manage your challenges!`;
             durationHours: mode === 'runner' ? 24 : 6,
             stakeAmount: '10',
             currency: defaultBantahBroMarketCurrency(alert.chainId),
+            sourcePlatform: 'telegram',
             chargeBxbt: String(process.env.BANTAHBRO_TELEGRAM_CHARGE_BXBT_MARKETS || '').trim().toLowerCase() === 'true',
           });
 
@@ -2447,6 +2490,7 @@ Ready to place some bets? 🎯`;
         durationHours: 24,
         stakeAmount: '10',
         currency: defaultBantahBroMarketCurrency(tokenRef.chainId),
+        sourcePlatform: 'telegram',
         chargeBxbt: String(process.env.BANTAHBRO_TELEGRAM_CHARGE_BXBT_MARKETS || '').trim().toLowerCase() === 'true',
       });
 

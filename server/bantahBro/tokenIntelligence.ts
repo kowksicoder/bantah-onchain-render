@@ -532,6 +532,14 @@ function normalizeDexSearchQuery(query: string) {
   return MARKET_QUERY_ALIASES[normalized] || query.trim();
 }
 
+function normalizeTickerTerm(value: string) {
+  return String(value || "")
+    .trim()
+    .replace(/^\$/g, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toUpperCase();
+}
+
 function normalizeDexChainId(chainId?: string | null) {
   const normalized = String(chainId || "").trim().toLowerCase();
   if (!normalized) return null;
@@ -560,6 +568,54 @@ async function fetchDexScreenerSearchPairs(query: string) {
   return Array.isArray(data?.pairs) ? data.pairs : [];
 }
 
+function scoreTickerPairMatch(pair: BantahBroPairSnapshot, query: string) {
+  const normalizedQuery = normalizeTickerTerm(query);
+  if (!normalizedQuery) return 0;
+
+  const symbol = normalizeTickerTerm(pair.baseToken.symbol || "");
+  const name = normalizeTickerTerm(pair.baseToken.name || "");
+  const address = normalizeTickerTerm(pair.baseToken.address || "");
+
+  if (symbol === normalizedQuery) return 400;
+  if (name === normalizedQuery) return 320;
+  if (address === normalizedQuery) return 260;
+  if (symbol.startsWith(normalizedQuery)) return 180;
+  if (name.startsWith(normalizedQuery)) return 140;
+  if (symbol.includes(normalizedQuery)) return 110;
+  if (name.includes(normalizedQuery)) return 90;
+  return 0;
+}
+
+function chooseMarketSearchPair(
+  pairs: BantahBroPairSnapshot[],
+  query: string,
+  mode: "broad" | "ticker" | "ticker-first",
+) {
+  if (mode === "broad") {
+    return choosePrimaryPair(pairs);
+  }
+
+  if (mode === "ticker-first") {
+    return pairs.find((pair) => scoreTickerPairMatch(pair, query) > 0) || null;
+  }
+
+  const matchedPairs = pairs
+    .map((pair) => ({
+      pair,
+      score: scoreTickerPairMatch(pair, query),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      if (right.pair.liquidityUsd !== left.pair.liquidityUsd) {
+        return right.pair.liquidityUsd - left.pair.liquidityUsd;
+      }
+      return right.pair.volume.h24 - left.pair.volume.h24;
+    });
+
+  return matchedPairs[0]?.pair || null;
+}
+
 export type BantahBroMarketLookup = {
   query: string;
   resolvedQuery: string;
@@ -572,9 +628,11 @@ export type BantahBroMarketLookup = {
 export async function lookupMarketByQuery(params: {
   query: string;
   chainId?: string | null;
+  mode?: "broad" | "ticker" | "ticker-first";
 }): Promise<BantahBroMarketLookup> {
   const resolvedQuery = normalizeDexSearchQuery(params.query);
   const requestedChainId = normalizeDexChainId(params.chainId);
+  const lookupMode = params.mode || "broad";
   const rawPairs = await fetchDexScreenerSearchPairs(resolvedQuery);
   const normalizedPairs = rawPairs
     .map(normalizePair)
@@ -585,14 +643,19 @@ export async function lookupMarketByQuery(params: {
       ? normalizedPairs.filter((pair) => normalizeDexChainId(pair.chainId) === requestedChainId)
       : normalizedPairs;
 
-  const pair = choosePrimaryPair(filteredPairs.length > 0 ? filteredPairs : normalizedPairs);
+  const candidatePairs = filteredPairs.length > 0 ? filteredPairs : normalizedPairs;
+  const pair = chooseMarketSearchPair(candidatePairs, params.query, lookupMode);
+  const matchedPairCount =
+    lookupMode !== "broad"
+      ? candidatePairs.filter((candidate) => scoreTickerPairMatch(candidate, params.query) > 0).length
+      : candidatePairs.length;
 
   return {
     query: params.query.trim(),
     resolvedQuery,
     chainId: requestedChainId,
     pair,
-    pairCount: filteredPairs.length > 0 ? filteredPairs.length : normalizedPairs.length,
+    pairCount: matchedPairCount,
     generatedAt: new Date().toISOString(),
   };
 }

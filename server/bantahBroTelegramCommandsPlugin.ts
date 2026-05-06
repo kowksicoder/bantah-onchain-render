@@ -10,6 +10,8 @@ import {
 } from "./bantahBro/alertFeed";
 import { createBantahBroMarketFromSignal } from "./bantahBro/marketService";
 import { getBantahBroBxbtStatus } from "./bantahBro/bxbtUtility";
+import { handleTokenLaunchIntent } from "./bantahBro/launchIntent";
+import { deployBantahLaunchToken } from "./bantahBro/tokenLauncher";
 import { getBantahBroSystemAgentStatus } from "./bantahBro/systemAgent";
 import { getBantahBroLeaderboard } from "./bantahBro/communityService";
 import {
@@ -363,6 +365,7 @@ async function handleCreateCommand(payload: TelegramMessageEventPayload, text: s
         durationHours: 24,
         stakeAmount: "10",
         currency: defaultBantahBroMarketCurrency(tokenRef.chainId),
+        sourcePlatform: "telegram",
         chargeBxbt:
           String(process.env.BANTAHBRO_TELEGRAM_CHARGE_BXBT_MARKETS || "")
             .trim()
@@ -383,6 +386,59 @@ async function handleCreateCommand(payload: TelegramMessageEventPayload, text: s
     const message =
       error instanceof Error ? `⚠️ Create failed.\n\n${error.message}` : "⚠️ Create failed.";
     await sendTelegramText(payload, message);
+    return true;
+  }
+}
+
+async function handleLaunchCommand(payload: TelegramMessageEventPayload, text: string, telegramId: string | null) {
+  const intentText = text.replace(/^\/launch(?:@\w+)?/i, "launch token").trim();
+  const launchIntent = handleTokenLaunchIntent(intentText);
+  if (!launchIntent.handled) {
+    await sendTelegramText(
+      payload,
+      "🚀 Usage:\n/launch name Bantah Demo symbol BDEMO supply 1000000 owner 0xYourWallet on Base\n\nI will draft first. Add confirm to the same command only when you are ready to deploy.",
+      [[callbackButton("😎 Main Menu", "bb:menu:main")]],
+    );
+    return true;
+  }
+
+  const wantsConfirm = /\bconfirm\b/i.test(text);
+  if (!wantsConfirm || !launchIntent.launcher?.deployPayload) {
+    await sendTelegramText(
+      payload,
+      `${launchIntent.reply}\n\nTelegram deploy safety: repeat the same /launch command with the word confirm when you are ready.`,
+      [[urlButton("🚀 Open Launcher", `${buildBantahBroAgentUrl()}?section=launcher`) as TelegramInlineButton]],
+    );
+    return true;
+  }
+
+  if (!telegramId) {
+    await sendTelegramText(payload, "🔐 Link your Telegram account to Bantah first before deploying a token.");
+    return true;
+  }
+
+  const user = await storage.getUserByTelegramId(telegramId);
+  if (!user?.id) {
+    await sendTelegramText(payload, "🔐 I could not find a linked Bantah account for this Telegram user.");
+    return true;
+  }
+
+  try {
+    const result = await withTimeout(
+      deployBantahLaunchToken(launchIntent.launcher.deployPayload, { userId: user.id }),
+      "Token launch",
+    );
+    await sendTelegramText(
+      payload,
+      `🚀 Token deployed.\n\nToken: ${result.tokenAddress || result.launch?.tokenAddress || "pending"}${
+        result.explorerTokenUrl ? `\nExplorer: ${result.explorerTokenUrl}` : ""
+      }`,
+      [[callbackButton("😎 Main Menu", "bb:menu:main")]],
+    );
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Token launch failed.";
+    await sendTelegramText(payload, `⚠️ Token launch failed.\n\n${message}`);
     return true;
   }
 }
@@ -561,6 +617,7 @@ async function handleMarketForAlert(
         durationHours: mode === "runner" ? 24 : 6,
         stakeAmount: "10",
         currency: defaultBantahBroMarketCurrency(alert.chainId),
+        sourcePlatform: "telegram",
         chargeBxbt:
           String(process.env.BANTAHBRO_TELEGRAM_CHARGE_BXBT_MARKETS || "")
             .trim()
@@ -640,6 +697,10 @@ export async function handleBantahBroTelegramCommandEvent(
 
   if (matchesSlashCommand(text, "create")) {
     return handleCreateCommand(payload, text);
+  }
+
+  if (matchesSlashCommand(text, "launch")) {
+    return handleLaunchCommand(payload, text, telegramId);
   }
 
   if (matchesSlashCommand(text, "leaderboard")) {

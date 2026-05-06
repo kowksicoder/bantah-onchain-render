@@ -135,6 +135,8 @@ export async function createBantahBroMarketFromSignal(
         chargedBxbt: Boolean(bxbtCharge),
         systemAgentId: systemStatus.agentId,
         executionChainId,
+        sourcePlatform: request.sourcePlatform || "agent",
+        origin: request.sourcePlatform || "agent",
       },
     }),
   );

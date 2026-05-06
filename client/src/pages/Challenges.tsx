@@ -468,23 +468,32 @@ export default function Challenges() {
     queryKey: ["/api/challenges"],
     queryFn: async () => {
       try {
-        // Fetch the full public challenge feed, then merge admin metadata as a fallback.
-        const [allFeedResult, publicResult, communityResult] = await Promise.allSettled([
-          fetch(`/api/challenges?feed=all&limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
+        // Fetch admin/community highlights plus the full public feed so wallet-created
+        // open markets are visible even before a viewer signs in.
+        const [publicResult, communityResult, allFeedResult] = await Promise.allSettled([
           fetch(`/api/challenges/public?limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
           fetch(`/api/communities/challenges?limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
+          fetch(`/api/challenges?feed=all&limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" }),
         ]);
-
-        let allFeedData: any[] = [];
-        if (allFeedResult.status === "fulfilled" && allFeedResult.value.ok) {
-          allFeedData = await allFeedResult.value.json();
-        }
 
         let publicData: any[] = [];
         if (publicResult.status === "fulfilled" && publicResult.value.ok) {
           publicData = await publicResult.value.json();
         } else {
-          console.warn("Public challenges endpoint failed; continuing with all-feed data");
+          console.warn("Public challenges endpoint failed, falling back to all-feed endpoint");
+          try {
+            const fallbackResp = await fetch(`/api/challenges?feed=all&limit=${CHALLENGE_FEED_LIMIT}`, { credentials: "include" });
+            if (fallbackResp.ok) {
+              publicData = await fallbackResp.json();
+            }
+          } catch (fallbackError) {
+            console.warn("Fallback challenges endpoint also failed:", fallbackError);
+          }
+        }
+
+        let allFeedData: any[] = [];
+        if (allFeedResult.status === "fulfilled" && allFeedResult.value.ok) {
+          allFeedData = await allFeedResult.value.json();
         }
 
         let communityData: any[] = [];
@@ -499,45 +508,77 @@ export default function Challenges() {
           }
         });
 
-        const map = new Map<number, any>();
-        (allFeedData || []).forEach((c: any) => map.set(c.id, c));
-        (publicData || []).forEach((c: any) => {
-          const existing = map.get(c.id);
-          if (!existing) {
-            map.set(c.id, c);
-            return;
-          }
+        const mergeChallengeRows = (baseRows: any[], nextRows: any[]) => {
+          const map = new Map<number, any>();
 
-          const existingPreviewUsers = Array.isArray(existing.participantPreviewUsers)
-            ? existing.participantPreviewUsers
-            : [];
-          const nextPreviewUsers = Array.isArray(c.participantPreviewUsers)
-            ? c.participantPreviewUsers
-            : [];
+          (baseRows || []).forEach((c: any) => map.set(c.id, c));
+          (nextRows || []).forEach((c: any) => {
+            const existing = map.get(c.id);
+            if (!existing) {
+              map.set(c.id, c);
+              return;
+            }
 
-          map.set(c.id, {
-            ...existing,
-            ...c,
-            coverImageUrl:
-              c.coverImageUrl ??
-              (c as any).cover_image_url ??
-              existing.coverImageUrl ??
-              (existing as any).cover_image_url ??
-              null,
-            participantCount: Math.max(
-              Number(existing.participantCount || 0),
-              Number(c.participantCount || 0),
-            ),
-            commentCount: Math.max(
-              Number(existing.commentCount || 0),
-              Number(c.commentCount || 0),
-            ),
-            participantPreviewUsers:
-              nextPreviewUsers.length > 0 ? nextPreviewUsers : existingPreviewUsers,
+            const isAdminChallenge = Boolean(c.adminCreated ?? existing.adminCreated);
+            if (!isAdminChallenge) {
+              map.set(c.id, {
+                ...existing,
+                ...c,
+                coverImageUrl:
+                  c.coverImageUrl ??
+                  (c as any).cover_image_url ??
+                  existing.coverImageUrl ??
+                  (existing as any).cover_image_url ??
+                  null,
+              });
+              return;
+            }
+
+            const existingPreviewUsers = Array.isArray(existing.participantPreviewUsers)
+              ? existing.participantPreviewUsers
+              : [];
+            const nextPreviewUsers = Array.isArray(c.participantPreviewUsers)
+              ? c.participantPreviewUsers
+              : [];
+
+            map.set(c.id, {
+              ...existing,
+              ...c,
+              coverImageUrl:
+                c.coverImageUrl ??
+                (c as any).cover_image_url ??
+                existing.coverImageUrl ??
+                (existing as any).cover_image_url ??
+                null,
+              participantCount: Math.max(
+                Number(existing.participantCount || 0),
+                Number(c.participantCount || 0),
+              ),
+              commentCount: Math.max(
+                Number(existing.commentCount || 0),
+                Number(c.commentCount || 0),
+              ),
+              participantPreviewUsers:
+                nextPreviewUsers.length > 0 ? nextPreviewUsers : existingPreviewUsers,
+            });
           });
-        });
 
-        const merged = Array.from(map.values());
+          return Array.from(map.values());
+        };
+
+        let merged: any[] = mergeChallengeRows(publicData || [], allFeedData || []);
+
+        // If user is authenticated, re-fetch with auth headers so user-specific enrichments
+        // can override the unauthenticated all-feed rows without hiding public markets.
+        if (user) {
+          try {
+            const authData = await apiRequest("GET", `/api/challenges?feed=all&limit=${CHALLENGE_FEED_LIMIT}`);
+            merged = mergeChallengeRows(merged, authData || []);
+          } catch (err) {
+            // ignore auth fetch errors and fall back to public data
+            console.warn('Failed to fetch authenticated challenges feed:', err);
+          }
+        }
 
         return merged.map((challenge: any) => ({
           ...challenge,

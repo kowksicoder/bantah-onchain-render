@@ -79,6 +79,10 @@ export function publishBantahBroReceipt(receipt: BantahBroReceipt) {
   return parsed;
 }
 
+export function listBantahBroReceipts(limit = 50) {
+  return sortByNewest(liveReceipts).slice(0, Math.max(1, Math.min(limit, MAX_RECEIPTS)));
+}
+
 export function listBantahBroReceiptsByToken(tokenAddress: string, chainId?: string) {
   return sortByNewest(
     liveReceipts.filter(

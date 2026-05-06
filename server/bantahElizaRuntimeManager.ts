@@ -4,9 +4,17 @@ import dotenv from "dotenv";
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
   AgentRuntime,
+  ChannelType,
+  ModelType,
   asUUID,
+  composePromptFromState,
   createMessageMemory,
+  createUniqueUuid,
+  parseKeyValueXml,
   messageHandlerTemplate,
+  type Content,
+  type HandlerCallback,
+  type Memory,
   type State,
 } from "@elizaos/core";
 import { bootstrapPlugin } from "@elizaos/plugin-bootstrap";
@@ -45,6 +53,7 @@ type ManagedRuntimeEntry = {
 };
 
 const managedRuntimes = new Map<string, ManagedRuntimeEntry>();
+const managedWebChatRuntimes = new Map<string, ManagedRuntimeEntry>();
 let shutdownHooksRegistered = false;
 
 function ensureElizaEnvFallback() {
@@ -185,7 +194,10 @@ function buildRuntimeCharacter(config: BantahElizaRuntimeConfig) {
   };
 }
 
-function resolveManagedRuntimePlugins(config: BantahElizaRuntimeConfig) {
+function resolveManagedRuntimePlugins(
+  config: BantahElizaRuntimeConfig,
+  options: { disableTelegramPlugin?: boolean } = {},
+) {
   const configured = new Set(
     (config.pluginPackages || []).map((entry) => String(entry || "").trim()).filter(Boolean),
   );
@@ -215,8 +227,9 @@ function resolveManagedRuntimePlugins(config: BantahElizaRuntimeConfig) {
   }
 
   if (
-    configured.has("@elizaos/plugin-telegram") ||
-    (config.character.clients || []).includes("telegram")
+    !options.disableTelegramPlugin &&
+    (configured.has("@elizaos/plugin-telegram") ||
+      (config.character.clients || []).includes("telegram"))
   ) {
     plugins.push(telegramPlugin);
     if (isBantahBro) {
@@ -309,6 +322,59 @@ export async function startManagedBantahAgentRuntime(
   }
 }
 
+async function startManagedBantahAgentWebChatRuntime(
+  agentId: string,
+): Promise<BantahElizaRuntimeConfig> {
+  ensureRuntimeEnv();
+  ensureShutdownHooks();
+
+  const existing = managedWebChatRuntimes.get(agentId);
+  if (existing) {
+    return existing.config;
+  }
+
+  const storedAgent = await storage.getAgentById(agentId);
+  if (!storedAgent) {
+    throw new Error(`Bantah agent ${agentId} not found.`);
+  }
+  if (storedAgent.agentType !== "bantah_created") {
+    throw new Error("Only Bantah-created agents can start a managed Eliza runtime.");
+  }
+  if (!storedAgent.runtimeConfig) {
+    throw new Error("This Bantah agent does not have Eliza runtime metadata.");
+  }
+
+  const parsedConfig = bantahElizaRuntimeConfigSchema.parse(storedAgent.runtimeConfig);
+  const webConfig: BantahElizaRuntimeConfig = {
+    ...parsedConfig,
+    status: "active",
+    updatedAt: new Date().toISOString(),
+    pluginPackages: parsedConfig.pluginPackages.filter(
+      (pluginPackage) => pluginPackage !== "@elizaos/plugin-telegram",
+    ),
+    character: {
+      ...parsedConfig.character,
+      clients: parsedConfig.character.clients.filter((client) => client !== "telegram"),
+    },
+  };
+
+  const runtime = new AgentRuntime({
+    character: buildRuntimeCharacter(webConfig) as any,
+    plugins: resolveManagedRuntimePlugins(webConfig, { disableTelegramPlugin: true }),
+  });
+  runtime.registerDatabaseAdapter(new BantahElizaRuntimeMemoryAdapter() as any);
+  await runtime.initialize();
+
+  managedWebChatRuntimes.set(agentId, {
+    agentId,
+    runtime,
+    config: webConfig,
+    startedAt: new Date().toISOString(),
+  });
+
+  return webConfig;
+}
+
 export async function stopManagedBantahAgentRuntime(
   agentId: string,
   options: { persist?: boolean } = {},
@@ -357,6 +423,9 @@ export async function stopAllManagedBantahAgentRuntimes(
   await Promise.allSettled(
     agentIds.map((agentId) => stopManagedBantahAgentRuntime(agentId, options)),
   );
+  const webEntries = Array.from(managedWebChatRuntimes.values());
+  managedWebChatRuntimes.clear();
+  await Promise.allSettled(webEntries.map((entry) => entry.runtime.stop()));
 }
 
 export async function restoreManagedBantahAgentRuntimes() {
@@ -397,7 +466,10 @@ export async function executeManagedBantahAgentRuntimeAction(
 }> {
   const entry =
     managedRuntimes.get(agentId) ||
-    (await startManagedBantahAgentRuntime(agentId).then(() => managedRuntimes.get(agentId) || null));
+    managedWebChatRuntimes.get(agentId) ||
+    (await startManagedBantahAgentWebChatRuntime(agentId).then(
+      () => managedWebChatRuntimes.get(agentId) || null,
+    ));
 
   if (!entry) {
     return {
@@ -494,5 +566,200 @@ export async function executeManagedBantahAgentRuntimeAction(
       "internal_error",
       `Eliza runtime did not return a valid Bantah envelope for ${envelope.action}.`,
     ),
+  };
+}
+
+function normalizeRuntimeList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function getRuntimeContentText(content: unknown) {
+  if (!content || typeof content !== "object") return "";
+  const text = (content as { text?: unknown }).text;
+  return typeof text === "string" ? text.trim() : "";
+}
+
+export async function sendManagedBantahAgentRuntimeMessage(
+  agentId: string,
+  params: {
+    text: string;
+    sessionId?: string;
+    userId?: string;
+    userName?: string;
+    tool?: string;
+  },
+): Promise<{
+  text: string;
+  actions: string[];
+  providers: string[];
+  agentId: string;
+  roomId: string;
+}> {
+  const entry =
+    managedRuntimes.get(agentId) ||
+    (await startManagedBantahAgentRuntime(agentId).then(() => managedRuntimes.get(agentId) || null));
+
+  if (!entry) {
+    throw new Error("Managed Bantah Eliza runtime is unavailable.");
+  }
+
+  const userText = params.text.trim();
+  if (!userText) {
+    throw new Error("Message cannot be empty.");
+  }
+
+  const runtime = entry.runtime;
+  const sessionId = String(params.sessionId || "default").slice(0, 96);
+  const userId = String(params.userId || `web-user-${sessionId}`).slice(0, 96);
+  const userName = String(params.userName || "BantahBro Web User").slice(0, 80);
+  const serverId = `bantahbro-web:${agentId}`;
+  const channelId = `bantahbro-web:${sessionId}`;
+  const worldId = createUniqueUuid(runtime, serverId);
+  const roomId = createUniqueUuid(runtime, channelId);
+  const entityId = createUniqueUuid(runtime, userId);
+
+  await runtime.ensureConnection({
+    entityId,
+    roomId,
+    name: userName,
+    userName,
+    source: "web",
+    channelId,
+    serverId,
+    type: ChannelType.DM,
+    worldId,
+  });
+
+  const message = createMessageMemory({
+    id: createUniqueUuid(runtime, `${channelId}:message:${Date.now()}:${Math.random()}`),
+    entityId,
+    agentId: runtime.agentId,
+    roomId,
+    content: {
+      text: userText,
+      source: "web",
+      tool: params.tool || "assistant",
+      timestamp: new Date().toISOString(),
+    },
+  });
+
+  try {
+    await Promise.all([
+      runtime.addEmbeddingToMemory(message),
+      runtime.createMemory(message, "messages"),
+    ]);
+  } catch {
+    await runtime.createMemory(message, "messages").catch(() => undefined);
+  }
+
+  let state = await runtime.composeState(message, ["ACTIONS", "CHARACTER", "RECENT_MESSAGES"]);
+  const baseTemplate =
+    typeof runtime.character.templates?.telegramMessageHandlerTemplate === "string"
+      ? runtime.character.templates.telegramMessageHandlerTemplate
+      : typeof runtime.character.templates?.messageHandlerTemplate === "string"
+        ? runtime.character.templates.messageHandlerTemplate
+        : messageHandlerTemplate;
+  const template = `${baseTemplate}
+
+<bantahbro_web_chat_context>
+- This request came from the BantahBro web /chat page, not Telegram.
+- Tool tab: ${params.tool || "assistant"}.
+- Answer the user directly in the same BantahBro agent voice you use on Telegram.
+- For live price, token, market, rug-score, runner-score, alerts, BXBT, or Bantah market questions, use available actions/providers instead of guessing.
+</bantahbro_web_chat_context>`;
+
+  const prompt = composePromptFromState({
+    state,
+    template,
+  });
+
+  let responseContent: (Content & { providers?: string[]; thought?: string; simple?: boolean }) | null = null;
+  for (let attempt = 0; attempt < 3 && (!responseContent?.thought || !responseContent?.actions); attempt++) {
+    const response = await runtime.useModel(ModelType.TEXT_LARGE, { prompt });
+    const parsed = parseKeyValueXml(String(response || "")) as Record<string, unknown> | null;
+    if (!parsed) continue;
+
+    responseContent = {
+      thought: typeof parsed.thought === "string" ? parsed.thought : "",
+      actions: normalizeRuntimeList(parsed.actions).length
+        ? normalizeRuntimeList(parsed.actions)
+        : ["REPLY"],
+      providers: normalizeRuntimeList(parsed.providers),
+      text: typeof parsed.text === "string" ? parsed.text : "",
+      simple: parsed.simple === true,
+    };
+  }
+
+  if (!responseContent || !responseContent.actions?.length) {
+    throw new Error("BantahBro runtime did not return a valid response.");
+  }
+
+  const responseMemory = createMessageMemory({
+    id: createUniqueUuid(runtime, `${channelId}:response:${Date.now()}:${Math.random()}`),
+    entityId: runtime.agentId,
+    agentId: runtime.agentId,
+    roomId,
+    content: responseContent,
+  });
+  const callbackTexts: string[] = [];
+  const callbackMemories: Memory[] = [];
+  const callback: HandlerCallback = async (content) => {
+    const memory = createMessageMemory({
+      id: createUniqueUuid(runtime, `${channelId}:callback:${Date.now()}:${Math.random()}`),
+      entityId: runtime.agentId,
+      agentId: runtime.agentId,
+      roomId,
+      content: {
+        ...content,
+        source: "web",
+      },
+    });
+
+    const text = getRuntimeContentText(content);
+    if (text) callbackTexts.push(text);
+    callbackMemories.push(memory);
+    await runtime.createMemory(memory, "messages").catch(() => undefined);
+    return [memory];
+  };
+
+  if (responseContent.providers?.length) {
+    state = await runtime.composeState(message, responseContent.providers);
+  }
+
+  const isSimpleReply =
+    responseContent.actions.length === 1 &&
+    responseContent.actions[0]?.toUpperCase() === "REPLY" &&
+    !responseContent.providers?.length;
+
+  if (isSimpleReply && responseContent.text) {
+    await callback(responseContent);
+  } else {
+    await runtime.processActions(message, [responseMemory], state, callback);
+  }
+
+  await runtime.evaluate(message, state, true, callback, [responseMemory]).catch(() => undefined);
+
+  const directText = getRuntimeContentText(responseContent);
+  const text = callbackTexts.length ? callbackTexts.join("\n\n") : directText;
+  if (!text) {
+    throw new Error("BantahBro runtime returned an empty response.");
+  }
+
+  if (!callbackMemories.length) {
+    await runtime.createMemory(responseMemory, "messages").catch(() => undefined);
+  }
+
+  return {
+    text,
+    actions: normalizeRuntimeList(responseContent.actions),
+    providers: normalizeRuntimeList(responseContent.providers),
+    agentId,
+    roomId,
   };
 }

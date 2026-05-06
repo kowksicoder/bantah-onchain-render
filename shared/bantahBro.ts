@@ -266,6 +266,7 @@ export const bantahBroCreateMarketFromSignalRequestSchema = z.object({
   stakeAmount: z.string().min(1).max(32).default("10"),
   currency: z.enum(bantahSkillCurrencyValues).default("ETH"),
   executionChainId: z.number().int().positive().optional(),
+  sourcePlatform: z.enum(["telegram", "twitter", "web", "system"]).optional(),
   chargeBxbt: z.boolean().default(false),
   question: z.string().min(5).max(280).optional(),
 });

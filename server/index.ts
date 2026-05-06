@@ -197,8 +197,9 @@ app.use((req, res, next) => {
 
   const distPublicPath = path.resolve(__dirname, "../dist/public");
 
-  // On Windows, npm scripts often run without NODE_ENV; default to dev unless explicitly production.
-  if (process.env.NODE_ENV !== "production") {
+  // `npm run dev` must always use Vite, even when local .env mirrors production.
+  const isDevCommand = process.env.npm_lifecycle_event === "dev";
+  if (isDevCommand || process.env.NODE_ENV !== "production") {
     // Dev only: dynamic Vite import
     const { setupVite } = await import("./vite");
     await setupVite(app, server);

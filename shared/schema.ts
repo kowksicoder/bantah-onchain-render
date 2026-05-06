@@ -186,6 +186,41 @@ export const agentFollows = pgTable(
   }),
 );
 
+export const tokenLaunches = pgTable(
+  "token_launches",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+    agentId: uuid("agent_id").references(() => agents.agentId, { onDelete: "set null" }),
+    chainId: integer("chain_id").notNull(),
+    networkId: varchar("network_id", { length: 64 }).notNull(),
+    factoryAddress: varchar("factory_address", { length: 64 }),
+    tokenAddress: varchar("token_address", { length: 64 }),
+    ownerAddress: varchar("owner_address", { length: 64 }).notNull(),
+    tokenName: varchar("token_name", { length: 80 }).notNull(),
+    tokenSymbol: varchar("token_symbol", { length: 16 }).notNull(),
+    decimals: integer("decimals").notNull().default(18),
+    initialSupply: varchar("initial_supply", { length: 80 }).notNull(),
+    initialSupplyAtomic: varchar("initial_supply_atomic", { length: 96 }).notNull(),
+    deployTxHash: varchar("deploy_tx_hash", { length: 80 }),
+    status: varchar("status", { length: 24 })
+      .$type<"pending" | "deployed" | "failed">()
+      .notNull()
+      .default("pending"),
+    errorMessage: text("error_message"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    userIdx: index("idx_token_launches_user_id").on(table.userId),
+    chainIdx: index("idx_token_launches_chain_id").on(table.chainId),
+    tokenIdx: index("idx_token_launches_token_address").on(table.tokenAddress),
+    statusIdx: index("idx_token_launches_status").on(table.status),
+    createdIdx: index("idx_token_launches_created_at").on(table.createdAt),
+  }),
+);
+
 export const agentOrders = pgTable(
   "agent_orders",
   {
@@ -918,6 +953,12 @@ export const insertAgentSchema = createInsertSchema(agents)
     runtimeStatus: z.enum(bantahElizaRuntimeStatusValues).optional(),
   });
 
+export const insertTokenLaunchSchema = createInsertSchema(tokenLaunches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Auth specific schemas
 export const loginSchema = z.object({
   emailOrUsername: z.string().min(1, "Please enter your email or username"),
@@ -1149,10 +1190,12 @@ export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
 export type AgentFollow = typeof agentFollows.$inferSelect;
+export type TokenLaunch = typeof tokenLaunches.$inferSelect;
 export type AgentOrderRecord = typeof agentOrders.$inferSelect;
 export type AgentPositionRecord = typeof agentPositions.$inferSelect;
 export type DecisionLogRecord = typeof decisionLogs.$inferSelect;
 export type InsertAgent = z.infer<typeof insertAgentSchema>;
+export type InsertTokenLaunch = z.infer<typeof insertTokenLaunchSchema>;
 export type Event = typeof events.$inferSelect;
 export type InsertEvent = z.infer<typeof insertEventSchema>;
 export type Challenge = typeof challenges.$inferSelect;

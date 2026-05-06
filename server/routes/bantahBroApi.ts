@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   bantahBroAlertSchema,
   bantahBroBoostMarketRequestSchema,
@@ -31,6 +32,11 @@ import {
   getBantahBroLeaderboard,
 } from "../bantahBro/communityService";
 import {
+  getLiveBantahBroLeaderboard,
+  getLiveBantahBroMarkets,
+} from "../bantahBro/liveDiscoveryService";
+import { getBantahBroHotTickers } from "../bantahBro/hotTickersService";
+import {
   ensureBantahBroSystemAgent,
   ensureBantahBroTelegramRuntimeStarted,
   getBantahBroSystemAgentStatus,
@@ -43,11 +49,42 @@ import {
   rewardBantahBroBxbt,
   spendBantahBroBxbt,
 } from "../bantahBro/bxbtUtility";
+import {
+  deployBantahLaunchToken,
+  getBantahLauncherStatus,
+  listBantahTokenLaunches,
+  validateBantahLaunchDraft,
+} from "../bantahBro/tokenLauncher";
+import { handleTokenLaunchIntent } from "../bantahBro/launchIntent";
+import {
+  getBantahBroSocialFeed,
+  type BantahBroFeedSource,
+} from "../bantahBro/socialFeedService";
 import { PrivyAuthMiddleware } from "../privyAuth";
+import { db } from "../db";
 import { storage } from "../storage";
 import { getBantahBroTelegramBot } from "../telegramBot";
+import { sendManagedBantahAgentRuntimeMessage } from "../bantahElizaRuntimeManager";
+import { agents, transactions, users } from "@shared/schema";
 
 const router = Router();
+
+const BANTCREDIT_TRANSACTION_TYPES = [
+  "signup_bonus",
+  "referral_bonus",
+  "referral_reward",
+  "daily_signin",
+  "challenge_creation_reward",
+  "admin_points",
+];
+
+const bantahBroChatRequestSchema = z.object({
+  message: z.string().min(1).max(2000),
+  tool: z
+    .enum(["assistant", "analyze", "rug", "runner", "alerts", "markets", "bxbt", "launcher"])
+    .default("assistant"),
+  sessionId: z.string().min(1).max(120).optional(),
+});
 
 function parseBoolean(value: unknown): boolean {
   return String(value || "").trim().toLowerCase() === "true";
@@ -116,6 +153,14 @@ function parseLimit(value: unknown, fallback = 50, max = 100) {
   return Math.max(1, Math.min(parsed, max));
 }
 
+function parseFeedSource(value: unknown): BantahBroFeedSource | undefined {
+  const source = String(value || "").trim().toLowerCase();
+  if (source === "bantah" || source === "twitter" || source === "telegram") {
+    return source;
+  }
+  return undefined;
+}
+
 function requireAdmin(req: any, res: any, next: any) {
   if (!req.user?.id) {
     return res.status(401).json({ message: "Unauthorized" });
@@ -131,6 +176,19 @@ router.get("/alerts/live", async (req, res) => {
     res.json({
       alerts: listBantahBroAlerts(parseLimit(req.query.limit)),
     });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/feed", async (req, res) => {
+  try {
+    res.json(
+      getBantahBroSocialFeed({
+        limit: parseLimit(req.query.limit, 50, 100),
+        source: parseFeedSource(req.query.source),
+      }),
+    );
   } catch (error) {
     handleError(res, error);
   }
@@ -152,6 +210,84 @@ router.get("/boosts/live", async (req, res) => {
   try {
     res.json({
       boosts: listMarketBoosts(parseLimit(req.query.limit)),
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/markets", async (req, res) => {
+  try {
+    const feed = await getLiveBantahBroMarkets(parseLimit(req.query.limit, 24, 100));
+    res.json(feed);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/hot-tickers", async (req, res) => {
+  try {
+    const feed = await getBantahBroHotTickers(parseLimit(req.query.limit, 5, 5));
+    res.json(feed);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/stats/bantcredit", async (_req, res) => {
+  try {
+    const [userBalanceRow, agentBalanceRow, earnedTransactionRow] = await Promise.all([
+      db
+        .select({
+          total: sql<string>`COALESCE(SUM(COALESCE(${users.points}, 0)), 0)`,
+          count: sql<string>`COUNT(*)`,
+        })
+        .from(users)
+        .then((rows) => rows[0]),
+      db
+        .select({
+          total: sql<string>`COALESCE(SUM(COALESCE(${agents.points}, 0)), 0)`,
+          count: sql<string>`COUNT(*)`,
+        })
+        .from(agents)
+        .then((rows) => rows[0]),
+      db
+        .select({
+          total: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
+          count: sql<string>`COUNT(*)`,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.status, "completed"),
+            inArray(transactions.type, BANTCREDIT_TRANSACTION_TYPES),
+          ),
+        )
+        .then((rows) => rows[0]),
+    ]);
+
+    const currentUserPoints = Math.max(0, Math.round(Number(userBalanceRow?.total || 0)));
+    const currentAgentPoints = Math.max(0, Math.round(Number(agentBalanceRow?.total || 0)));
+    const earnedFromTransactions = Math.max(
+      0,
+      Math.round(Number(earnedTransactionRow?.total || 0)),
+    );
+    const currentAggregate = currentUserPoints + currentAgentPoints;
+    const lifetimeEarned = Math.max(currentAggregate, earnedFromTransactions + currentAgentPoints);
+
+    res.json({
+      token: "BantCredit",
+      lifetimeEarned,
+      currentAggregate,
+      currentUserPoints,
+      currentAgentPoints,
+      earnedFromTransactions,
+      userCount: Number(userBalanceRow?.count || 0),
+      agentCount: Number(agentBalanceRow?.count || 0),
+      rewardTransactionCount: Number(earnedTransactionRow?.count || 0),
+      basis:
+        "Offchain aggregate from users.points, agents.points, and completed BantCredit reward transactions.",
+      updatedAt: new Date().toISOString(),
     });
   } catch (error) {
     handleError(res, error);
@@ -303,6 +439,15 @@ router.get("/leaderboard", async (req, res) => {
   }
 });
 
+router.get("/leaderboard/live", async (req, res) => {
+  try {
+    const leaderboard = await getLiveBantahBroLeaderboard(parseLimit(req.query.limit, 20, 100));
+    res.json(leaderboard);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
 router.get("/friends", PrivyAuthMiddleware, async (req: any, res) => {
   try {
     if (!req.user?.id) {
@@ -336,6 +481,56 @@ router.get("/bxbt/status", async (_req, res) => {
   try {
     const status = await getBantahBroBxbtStatus();
     res.json(status);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/chat", async (req, res) => {
+  try {
+    const parsed = bantahBroChatRequestSchema.parse(req.body || {});
+    const launchIntent = handleTokenLaunchIntent(parsed.message);
+    if (parsed.tool === "launcher" || launchIntent.handled) {
+      if (launchIntent.handled) {
+        return res.json({
+          reply: launchIntent.reply,
+          actions: ["LAUNCH_TOKEN_DRAFT"],
+          providers: [],
+          launcher: launchIntent.launcher,
+          agent: null,
+          roomId: parsed.sessionId || `web-${parsed.tool}`,
+        });
+      }
+
+      return res.json({
+        reply:
+          "Tell me the token name, symbol, initial supply, owner wallet, and chain. Example: launch token name Bantah Demo symbol BDEMO supply 1000000 owner 0xYourWallet on Base",
+        actions: ["LAUNCH_TOKEN_GUIDE"],
+        providers: [],
+        launcher: { missingFields: ["token name", "symbol", "initial supply", "owner wallet"] },
+        agent: null,
+        roomId: parsed.sessionId || `web-${parsed.tool}`,
+      });
+    }
+
+    const systemAgent = await ensureBantahBroSystemAgent({ preferLiveWallet: true });
+    const reply = await sendManagedBantahAgentRuntimeMessage(systemAgent.agentId, {
+      text: parsed.message,
+      tool: parsed.tool,
+      sessionId: parsed.sessionId || `web-${parsed.tool}`,
+    });
+
+    res.json({
+      reply: reply.text,
+      actions: reply.actions,
+      providers: reply.providers,
+      agent: {
+        agentId: systemAgent.agentId,
+        agentName: systemAgent.agentName,
+        runtimeStatus: systemAgent.runtimeStatus,
+      },
+      roomId: reply.roomId,
+    });
   } catch (error) {
     handleError(res, error);
   }
@@ -605,6 +800,55 @@ router.post("/bxbt/reward", PrivyAuthMiddleware, requireAdmin, async (req, res) 
     const parsed = bantahBroBxbtRewardRequestSchema.parse(req.body || {});
     const transfer = await rewardBantahBroBxbt(parsed);
     res.json(transfer);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/launcher/status", async (_req, res) => {
+  try {
+    res.json(getBantahLauncherStatus());
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/launcher/validate", async (req, res) => {
+  try {
+    res.json(validateBantahLaunchDraft(req.body || {}));
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/launcher/launches", async (req, res) => {
+  try {
+    res.json({
+      launches: await listBantahTokenLaunches(null, parseLimit(req.query.limit, 20, 50)),
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/launcher/my-launches", PrivyAuthMiddleware, async (req: any, res) => {
+  try {
+    const userId = String(req.user?.id || "").trim();
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    res.json({
+      launches: await listBantahTokenLaunches(userId, parseLimit(req.query.limit, 20, 50)),
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/launcher/deploy", PrivyAuthMiddleware, async (req: any, res) => {
+  try {
+    const userId = String(req.user?.id || "").trim();
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const result = await deployBantahLaunchToken(req.body || {}, { userId });
+    res.json(result);
   } catch (error) {
     handleError(res, error);
   }
