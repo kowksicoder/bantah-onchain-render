@@ -389,11 +389,11 @@ function AppRouter() {
 }
 
 function App() {
-  const [showSplash, setShowSplash] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
   const [isBantahBroRoute] = useState(() =>
     typeof window !== 'undefined' ? isBantahBroPath(window.location.pathname) : false
   );
+  const [showSplash, setShowSplash] = useState(() => !isBantahBroRoute);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
