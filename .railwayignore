@@ -10,8 +10,8 @@ chrome-extension
 archived
 tests
 docs
-api
-app
+/api
+/app
 contracts
 scripts
 supabase
