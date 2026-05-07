@@ -17,15 +17,15 @@ const tabs: { id: AppSection; label: string; icon: string }[] = [
 
 export default function MobileBottomNav({ activeSection, onNavigate }: MobileBottomNavProps) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border md:hidden z-30">
+    <div className="fixed bottom-0 left-0 right-0 bg-card/95 border-t border-border md:hidden z-30 backdrop-blur-xl">
       <div className="flex items-center justify-around h-16">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => onNavigate(tab.id)}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 px-2 transition ${
+            className={`bb-tap flex-1 flex flex-col items-center justify-center gap-1 py-2 px-2 transition ${
               activeSection === tab.id
-                ? 'text-primary'
+                ? 'text-primary scale-[1.04]'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >

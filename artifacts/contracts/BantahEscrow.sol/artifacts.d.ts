@@ -15,7 +15,7 @@ export interface BantahEscrow$Type {
   readonly deployedLinkReferences: {};
   readonly immutableReferences: {};
   readonly inputSourceName: "project/contracts/BantahEscrow.sol";
-  readonly buildInfoId: "solc-0_8_24-6dc9da72b575e71cdb869b898707823769b7e93c";
+  readonly buildInfoId: "solc-0_8_24-f5c482c2abd5d958cce84895efd482563e74af37";
 };
 
 export interface IERC20Minimal$Type {
@@ -29,7 +29,7 @@ export interface IERC20Minimal$Type {
   readonly deployedLinkReferences: {};
   readonly immutableReferences: {};
   readonly inputSourceName: "project/contracts/BantahEscrow.sol";
-  readonly buildInfoId: "solc-0_8_24-6dc9da72b575e71cdb869b898707823769b7e93c";
+  readonly buildInfoId: "solc-0_8_24-f5c482c2abd5d958cce84895efd482563e74af37";
 };
 
 import "hardhat/types/artifacts";

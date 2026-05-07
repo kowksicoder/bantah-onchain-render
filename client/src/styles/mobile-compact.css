@@ -2,12 +2,14 @@
 
 /* Hide scrollbars on mobile for cleaner look */
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
 /* Mobile-optimized card spacing */
@@ -146,5 +148,74 @@
   
   .mobile-form-textarea {
     @apply text-sm min-h-[60px];
+  }
+}
+
+/* BantahBro app-like micro interactions */
+@media (max-width: 768px) {
+  button,
+  a,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:not(:disabled),
+  a[href],
+  [role="button"] {
+    transition:
+      transform 140ms ease,
+      opacity 140ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  button:not(:disabled):active,
+  a[href]:active,
+  [role="button"]:active {
+    transform: scale(0.975);
+  }
+
+  .bb-tap {
+    transition:
+      transform 140ms ease,
+      opacity 140ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .bb-tap:active {
+    transform: scale(0.975);
+  }
+
+  .bb-lift {
+    transition:
+      transform 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      background-color 180ms ease;
+  }
+
+  .bb-lift:active {
+    transform: translateY(1px) scale(0.985);
+  }
+
+  .bb-pop-in {
+    animation: bb-pop-in 180ms ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes bb-pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
 }

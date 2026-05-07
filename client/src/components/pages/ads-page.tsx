@@ -9,9 +9,27 @@ import {
   Monitor,
   PanelRight,
   Send,
+  ShieldCheck,
+  Swords,
   TrendingUp,
   Twitter,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+
+type BxbtStatusResponse = {
+  boostUnitCost: string
+  configured: boolean
+}
+
+const SPONSORED_BATTLE_BOOST_UNITS = 25
+
+function formatBxbtStake(status?: BxbtStatusResponse) {
+  const boostUnit = Number.parseFloat(status?.boostUnitCost || '')
+  if (!Number.isFinite(boostUnit) || boostUnit <= 0) return 'Confirm with team'
+  return `${(boostUnit * SPONSORED_BATTLE_BOOST_UNITS).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  })} BXBT`
+}
 
 const stats = [
   { label: 'Starter slots', value: 'From $99' },
@@ -49,6 +67,12 @@ const placements = [
     tag: 'Feed',
     highlight: 'feed',
   },
+]
+
+const sponsoredBattleSteps = [
+  'Submit token, battle theme, and preferred window.',
+  'Stake BXBT to reserve the sponsored battle slot.',
+  'Battle is labeled as sponsored and monitored for abuse.',
 ]
 
 const partnerships = [
@@ -98,6 +122,14 @@ function TerminalPreview({ highlight }: { highlight: string }) {
 }
 
 export default function AdsPage() {
+  const { data: bxbtStatus } = useQuery<BxbtStatusResponse>({
+    queryKey: ['/api/bantahbro/bxbt/status'],
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  })
+
+  const sponsoredBattleStake = formatBxbtStake(bxbtStatus)
+
   return (
     <div className="flex-1 bg-card border border-border rounded overflow-hidden flex flex-col">
       <div className="border-b border-border bg-background px-4 py-3 shrink-0">
@@ -182,6 +214,57 @@ export default function AdsPage() {
               </div>
             </div>
           ))}
+        </section>
+
+        <section className="border border-border rounded bg-background overflow-hidden">
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_22rem]">
+            <div className="p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="size-10 rounded bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Swords size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-lg font-black text-foreground">Sponsored Battle Hosting</div>
+                  <div className="text-sm text-muted-foreground">Promote your memecoin with a labeled Agent Battle event.</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <div className="rounded border border-primary/30 bg-primary/10 p-3">
+                  <div className="text-[10px] font-black uppercase tracking-wide text-primary">BXBT stake required</div>
+                  <div className="mt-1 text-2xl font-black text-foreground">{sponsoredBattleStake}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Reservation stake for one sponsored battle host slot.</div>
+                </div>
+                {sponsoredBattleSteps.map((step, index) => (
+                  <div key={step} className="rounded border border-border bg-card p-3">
+                    <div className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Step {index + 1}</div>
+                    <div className="mt-1 text-sm font-bold text-foreground leading-snug">{step}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t xl:border-l xl:border-t-0 border-border bg-muted/20 p-4 flex flex-col justify-between gap-4">
+              <div className="rounded border border-secondary/30 bg-secondary/10 p-3">
+                <div className="flex items-center gap-2 text-sm font-black text-secondary">
+                  <ShieldCheck size={16} />
+                  Promotion safety rule
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+                  Sponsored battles are visibility placements only. They are not for wash trading, fake volume, pump-and-dump coordination, or gaming a coin trade.
+                </p>
+              </div>
+              <a
+                href="https://t.me/bantahfun"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded bg-primary px-4 py-2 text-sm font-bold text-primary-foreground"
+              >
+                Book Sponsored Battle
+                <ArrowUpRight size={14} />
+              </a>
+            </div>
+          </div>
         </section>
 
         <section className="border border-border rounded bg-background overflow-hidden">

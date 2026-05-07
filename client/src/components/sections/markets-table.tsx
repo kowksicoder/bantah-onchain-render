@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { AgentBattleFeed } from '@/types/agentBattle';
 
 interface LiveMarketEntry {
   id: string;
@@ -35,6 +36,17 @@ interface LiveMarketEntry {
   coverImageUrl: string | null;
   creatorName: string | null;
   isAgentMarket: boolean;
+}
+
+interface MarketTableEntry extends LiveMarketEntry {
+  rowType?: 'market' | 'battle';
+  rowEmoji?: string;
+  queueLabel?: string;
+  yesLabel?: string;
+  noLabel?: string;
+  escrowHeadline?: string;
+  escrowSubline?: string;
+  battleId?: string;
 }
 
 interface MarketsResponse {
@@ -84,7 +96,23 @@ function formatTimeRemaining(dueDate: string | null) {
   return `${hours}h ${minutes}m`;
 }
 
-function marketEmoji(market: LiveMarketEntry) {
+function formatCompact(value: number | null | undefined) {
+  if (!Number.isFinite(Number(value))) return '0';
+  const amount = Number(value);
+  if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(1)}M`;
+  if (amount >= 1_000) return `${(amount / 1_000).toFixed(1)}K`;
+  return `${Math.round(amount)}`;
+}
+
+function formatBattleCountdown(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}`;
+}
+
+function marketEmoji(market: MarketTableEntry) {
+  if (market.rowEmoji) return market.rowEmoji;
   const category = String(market.category || '').toLowerCase();
   if (market.source === 'telegram') return '✈';
   if (market.source === 'twitter') return '𝕏';
@@ -97,19 +125,19 @@ function marketEmoji(market: LiveMarketEntry) {
   return '◎';
 }
 
-function marketLabel(market: LiveMarketEntry) {
+function marketLabel(market: MarketTableEntry) {
   if (market.tokenSymbol) return market.tokenSymbol;
   if (market.category) return market.category.toUpperCase();
   return market.sourceLabel.toUpperCase();
 }
 
-function marketTags(market: LiveMarketEntry) {
+function marketTags(market: MarketTableEntry) {
   const tags = [market.sourceLabel];
   if (market.category) tags.push(market.category);
   return tags.slice(0, 3);
 }
 
-function sparklineData(market: LiveMarketEntry) {
+function sparklineData(market: MarketTableEntry) {
   return Array.from({ length: 10 }, (_, index) => {
     const drift = index < 5 ? -1 : 1;
     return Math.max(3, Math.min(97, market.yesPercent + drift));
@@ -134,13 +162,84 @@ function MiniSparkline({ data, bullish }: { data: number[]; bullish: boolean }) 
   );
 }
 
-export default function MarketsTable({ onSelectToken }: { onSelectToken: (token: string) => void }) {
+function battleRows(feed: AgentBattleFeed | undefined): MarketTableEntry[] {
+  return (feed?.battles || []).map((battle, index) => {
+    const [left, right] = battle.sides;
+    const leftSymbol = left.label || (left.tokenSymbol ? `$${left.tokenSymbol}` : 'LEFT');
+    const rightSymbol = right.label || (right.tokenSymbol ? `$${right.tokenSymbol}` : 'RIGHT');
+    const totalVolume = (left.volumeH24 || 0) + (right.volumeH24 || 0);
+    const leading = battle.leadingSideId === left.id ? left : right;
+    const queueLabel = index === 0 ? 'Current' : `Next ${index}`;
+    const timingLabel = index === 0 ? formatBattleCountdown(battle.timeRemainingSeconds) : `${battle.confidenceSpread}% gap`;
+
+    return {
+      id: battle.id,
+      battleId: battle.id,
+      rowType: 'battle',
+      queueLabel,
+      rowEmoji: leading.emoji || '⚔',
+      source: 'agent',
+      sourceLabel: queueLabel,
+      title: `${left.emoji} ${leftSymbol} VS ${right.emoji} ${rightSymbol}`,
+      description: battle.title,
+      category: timingLabel,
+      status: battle.status,
+      createdAt: battle.startsAt,
+      dueDate: battle.endsAt,
+      tokenSymbol: `${leftSymbol}/${rightSymbol}`,
+      chainId: left.chainId || right.chainId,
+      chainKey: null,
+      chainLabel: queueLabel,
+      chainLogoUrl: null,
+      escrowLocked: false,
+      escrowLockedDisplay: 'NO',
+      escrowHeadline: index < 3 ? 'LIVE' : 'QUEUED',
+      escrowSubline: battle.winnerLogic,
+      escrowTxHash: null,
+      poolAmount: totalVolume,
+      poolDisplay: timingLabel,
+      yesPercent: left.confidence,
+      noPercent: right.confidence,
+      yesDisplay: left.change,
+      noDisplay: right.change,
+      yesLabel: leftSymbol,
+      noLabel: rightSymbol,
+      participantCount: battle.spectators,
+      commentCount: battle.events.length,
+      marketUrl: null,
+      coverImageUrl: null,
+      creatorName: 'BantahBro Engine',
+      isAgentMarket: true,
+    };
+  });
+}
+
+export default function MarketsTable({
+  mode = 'markets',
+  onSelectToken,
+  onSelectBattle,
+}: {
+  mode?: 'markets' | 'battles';
+  onSelectToken: (token: string) => void;
+  onSelectBattle?: (battleId: string) => void;
+}) {
   const [sortMode, setSortMode] = useState<'hot' | 'new' | 'volume'>('hot');
-  const { data, isLoading } = useQuery<MarketsResponse>({
+  const { data, isLoading: isMarketsLoading } = useQuery<MarketsResponse>({
     queryKey: ['/api/bantahbro/markets', { limit: '36' }],
+    enabled: mode === 'markets',
+  });
+  const { data: battlesData, isLoading: isBattlesLoading } = useQuery<AgentBattleFeed>({
+    queryKey: ['/api/bantahbro/agent-battles/live', { limit: '36' }],
+    enabled: mode === 'battles',
+    refetchInterval: 15000,
   });
 
-  const markets = [...(data?.entries || [])].sort((left, right) => {
+  const isLoading = mode === 'battles' ? isBattlesLoading : isMarketsLoading;
+  const rawRows: MarketTableEntry[] = mode === 'battles'
+    ? battleRows(battlesData)
+    : (data?.entries || []).map((market) => ({ ...market, rowType: 'market' as const }));
+
+  const markets = [...rawRows].sort((left, right) => {
     if (sortMode === 'new') {
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
     }
@@ -155,17 +254,20 @@ export default function MarketsTable({ onSelectToken }: { onSelectToken: (token:
   });
 
   const twitterNotice =
-    data?.sources.twitter.count === 0 && data?.sources.twitter.message
+    mode === 'markets' && data?.sources.twitter.count === 0 && data?.sources.twitter.message
       ? data.sources.twitter.message
       : null;
   const agentCount = markets.filter((market) => market.source === 'agent').length;
+  const tableTitle = mode === 'battles' ? 'LIVE BATTLE LISTINGS' : 'BANTAH Onchain P2P Predictions';
+  const tableIcon = mode === 'battles' ? '⚔' : 'ðŸ”¥';
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-background shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 [&>span:first-child]:hidden">
           <span className="text-base">🔥</span>
-          <span className="text-sm font-bold text-foreground">BANTAH Onchain P2P Predictions</span>
+          <span className="text-base font-black">{mode === 'battles' ? 'BTL' : 'B'}</span>
+          <span className="text-sm font-bold text-foreground">{tableTitle}</span>
         </div>
         <select
           value={sortMode}
@@ -183,12 +285,12 @@ export default function MarketsTable({ onSelectToken }: { onSelectToken: (token:
           <div className="hidden md:flex items-center gap-2 lg:gap-3 px-3 py-1.5 border-b border-border bg-muted/30 text-xs font-bold text-muted-foreground uppercase tracking-wide">
             <span className="w-4 shrink-0 text-center">#</span>
             <span className="w-9 shrink-0">Art</span>
-            <span className="flex-1 min-w-0">Market</span>
-            <span className="min-w-[104px] shrink-0">Chains</span>
-            <span className="hidden lg:block min-w-[96px] shrink-0 text-right">Pool</span>
-            <span className="hidden lg:block min-w-[104px] shrink-0 text-center">Escrow locked</span>
-            <span className="min-w-[60px] shrink-0 text-center">YES</span>
-            <span className="min-w-[60px] shrink-0 text-center">NO</span>
+            <span className="flex-1 min-w-0">{mode === 'battles' ? 'Battle' : 'Market'}</span>
+            <span className="min-w-[104px] shrink-0">{mode === 'battles' ? 'Queue' : 'Chains'}</span>
+            <span className="hidden lg:block min-w-[96px] shrink-0 text-right">{mode === 'battles' ? 'Timer / Gap' : 'Pool'}</span>
+            <span className="hidden lg:block min-w-[104px] shrink-0 text-center">{mode === 'battles' ? 'Status' : 'Escrow locked'}</span>
+            <span className="min-w-[60px] shrink-0 text-center">{mode === 'battles' ? 'Left' : 'YES'}</span>
+            <span className="min-w-[60px] shrink-0 text-center">{mode === 'battles' ? 'Right' : 'NO'}</span>
             <span className="hidden lg:block w-[60px] shrink-0 text-center">Trend</span>
             <span className="w-[14px] shrink-0" />
           </div>
@@ -215,7 +317,13 @@ export default function MarketsTable({ onSelectToken }: { onSelectToken: (token:
           : markets.map((market, index) => (
               <div
                 key={market.id}
-                onClick={() => onSelectToken(market.tokenSymbol || marketLabel(market))}
+                onClick={() => {
+                  if (market.rowType === 'battle' && market.battleId) {
+                    onSelectBattle?.(market.battleId);
+                    return;
+                  }
+                  onSelectToken(market.tokenSymbol || marketLabel(market));
+                }}
                 className="flex items-center gap-2 lg:gap-3 px-3 py-2 border-b border-border hover:bg-muted/40 cursor-pointer transition group"
               >
                 <span className="text-xs font-bold text-muted-foreground w-4 shrink-0 text-center">{index + 1}</span>
@@ -276,7 +384,9 @@ export default function MarketsTable({ onSelectToken }: { onSelectToken: (token:
 
                 <div className="hidden lg:flex flex-col items-end shrink-0 text-xs font-mono">
                   <span className="text-foreground font-bold">{market.poolDisplay}</span>
-                  <span className="text-muted-foreground">Ends {formatTimeRemaining(market.dueDate)}</span>
+                  <span className="text-muted-foreground">
+                    {market.rowType === 'battle' ? market.escrowHeadline : `Ends ${formatTimeRemaining(market.dueDate)}`}
+                  </span>
                 </div>
 
                 <div
@@ -284,18 +394,18 @@ export default function MarketsTable({ onSelectToken }: { onSelectToken: (token:
                   title={market.escrowTxHash ? `Escrow transaction: ${market.escrowTxHash}` : undefined}
                 >
                   <span className={market.escrowLocked ? 'font-bold text-secondary' : 'font-bold text-destructive'}>
-                    {market.escrowLockedDisplay}
+                    {market.escrowHeadline || market.escrowLockedDisplay}
                   </span>
-                  <span className="text-muted-foreground">P2P escrow</span>
+                  <span className="max-w-[96px] truncate text-muted-foreground">{market.escrowSubline || 'P2P escrow'}</span>
                 </div>
 
                 <div className="flex flex-col items-center bg-secondary/10 border border-secondary/30 rounded px-2 py-1.5 shrink-0 hover:bg-secondary/20 transition min-w-[60px]">
-                  <span className="text-xs font-bold text-secondary">YES {market.yesPercent}%</span>
+                  <span className="max-w-[52px] truncate text-xs font-bold text-secondary">{market.yesLabel || 'YES'} {market.yesPercent}%</span>
                   <span className="text-xs text-muted-foreground font-mono hidden sm:block">{market.yesDisplay}</span>
                 </div>
 
                 <div className="flex flex-col items-center bg-destructive/10 border border-destructive/30 rounded px-2 py-1.5 shrink-0 hover:bg-destructive/20 transition min-w-[60px]">
-                  <span className="text-xs font-bold text-destructive">NO {market.noPercent}%</span>
+                  <span className="max-w-[52px] truncate text-xs font-bold text-destructive">{market.noLabel || 'NO'} {market.noPercent}%</span>
                   <span className="text-xs text-muted-foreground font-mono hidden sm:block">{market.noDisplay}</span>
                 </div>
 
@@ -309,13 +419,19 @@ export default function MarketsTable({ onSelectToken }: { onSelectToken: (token:
 
         {!isLoading && markets.length === 0 && (
           <div className="px-4 py-6 text-sm text-muted-foreground">
-            No live markets are available yet.
+            {mode === 'battles' ? 'No live battles are available yet.' : 'No live markets are available yet.'}
           </div>
         )}
 
-        {!isLoading && (
+        {!isLoading && mode === 'markets' && (
           <div className="px-3 py-2 border-b border-border text-xs text-muted-foreground">
             Source mix: {data?.sources.onchain.count || 0} onchain, {agentCount} BantahBro agent, {data?.sources.telegram.count || 0} Telegram, {data?.sources.twitter.count || 0} Twitter
+          </div>
+        )}
+
+        {!isLoading && mode === 'battles' && (
+          <div className="px-3 py-2 border-b border-border text-xs text-muted-foreground">
+            Source mix: {markets.length} live Agent Battles, Dexscreener-backed token data, refreshed every 15s
           </div>
         )}
 
@@ -334,7 +450,7 @@ export default function MarketsTable({ onSelectToken }: { onSelectToken: (token:
           </div>
         )}
 
-        {!isLoading && (
+        {!isLoading && mode === 'markets' && (
           <div className="mx-3 my-3 bg-primary/10 border border-primary/30 rounded-lg px-4 py-3">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
@@ -357,6 +473,22 @@ export default function MarketsTable({ onSelectToken }: { onSelectToken: (token:
               </div>
               <button className="text-xs font-bold bg-primary text-primary-foreground px-3 py-1.5 rounded hover:opacity-90 transition whitespace-nowrap">
                 Learn more →
+              </button>
+            </div>
+          </div>
+        )}
+        {!isLoading && mode === 'battles' && (
+          <div className="mx-3 my-3 bg-primary/10 border border-primary/30 rounded-lg px-4 py-3">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="text-sm font-bold text-foreground">Battle lobby is live.</div>
+                <div className="text-xs text-muted-foreground">Rows use real battle feed data and open the Agent Battles arena.</div>
+              </div>
+              <button
+                onClick={() => markets[0]?.battleId && onSelectBattle?.(markets[0].battleId)}
+                className="text-xs font-bold bg-primary text-primary-foreground px-3 py-1.5 rounded hover:opacity-90 transition whitespace-nowrap"
+              >
+                Open arena →
               </button>
             </div>
           </div>

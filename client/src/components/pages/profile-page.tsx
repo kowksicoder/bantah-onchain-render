@@ -21,6 +21,15 @@ const profileStats = [
   { label: 'Joined', value: 'Jan 2025', icon: '📅' },
 ]
 
+const mobileProfileStatLabels: Record<string, string> = {
+  'Markets Joined': 'Markets',
+  'Win Rate': 'Win',
+  'Total Profit': 'Profit',
+  'Longest Streak': 'Streak',
+  Rank: 'Rank',
+  Joined: 'Joined',
+}
+
 export default function ProfilePage() {
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'activity' | 'settings'>('activity')
@@ -75,18 +84,21 @@ export default function ProfilePage() {
 
           {/* Stats Grid */}
           {isLoading ? (
-            <div className="grid grid-cols-3 gap-2 mt-4">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-2.5 sm:mt-4">
               {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 rounded" />
+                <Skeleton key={i} className="h-10 rounded sm:h-14" />
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2 mt-4">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-2.5 sm:mt-4">
               {profileStats.map((stat) => (
-                <div key={stat.label} className="bg-muted/40 border border-border rounded p-2 text-center">
-                  <div className="text-base mb-0.5">{stat.icon}</div>
-                  <div className="text-sm font-mono font-bold text-foreground">{stat.value}</div>
-                  <div className="text-xs text-muted-foreground">{stat.label}</div>
+                <div key={stat.label} className="bb-tap min-w-0 rounded-md border border-border/70 bg-muted/35 px-1.5 py-1 text-center sm:rounded sm:p-2">
+                  <div className="text-xs leading-none sm:mb-0.5 sm:text-base">{stat.icon}</div>
+                  <div className="truncate font-mono text-[11px] font-bold leading-tight text-foreground sm:text-sm">{stat.value}</div>
+                  <div className="truncate text-[9px] font-semibold leading-tight text-muted-foreground sm:text-xs">
+                    <span className="sm:hidden">{mobileProfileStatLabels[stat.label] ?? stat.label}</span>
+                    <span className="hidden sm:inline">{stat.label}</span>
+                  </div>
                 </div>
               ))}
             </div>

@@ -1,23 +1,38 @@
-const DEFAULT_BASE = 'https://betchatapp.geminigroq.repl.co';
+const DEFAULT_BASE = "https://bantah.com";
+const DEFAULT_SETTINGS = {
+  bantah_base: DEFAULT_BASE,
+  bantah_notify: true,
+  bantah_interval_minutes: 5,
+};
 
 function getSettings() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get({ bantah_base: DEFAULT_BASE, bantah_notify: true, bantah_interval_minutes: 5 }, (res) => {
+    chrome.storage.sync.get(DEFAULT_SETTINGS, (res) => {
       resolve(res);
     });
   });
 }
 
 function saveSettings(settings) {
-  chrome.storage.sync.set(settings);
+  return new Promise((resolve) => {
+    chrome.storage.sync.set(settings, resolve);
+  });
+}
+
+function normalizeBaseUrl(value) {
+  try {
+    return new URL(value || DEFAULT_BASE).origin;
+  } catch (_error) {
+    return DEFAULT_BASE;
+  }
 }
 
 function openUrl(base, path = '/') {
   try {
-    const url = new URL(path, base).toString();
+    const url = new URL(path, normalizeBaseUrl(base)).toString();
     chrome.tabs.create({ url });
-  } catch (e) {
-    chrome.tabs.create({ url: base });
+  } catch (_error) {
+    chrome.tabs.create({ url: normalizeBaseUrl(base) });
   }
 }
 
@@ -33,16 +48,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const intervalInput = document.getElementById('interval');
 
   const settings = await getSettings();
-  baseInput.value = settings.bantah_base || DEFAULT_BASE;
+  baseInput.value = normalizeBaseUrl(settings.bantah_base);
   notifyToggle.checked = settings.bantah_notify !== false;
   intervalInput.value = settings.bantah_interval_minutes || 5;
 
-  saveBtn.addEventListener('click', () => {
-    const v = baseInput.value || DEFAULT_BASE;
+  saveBtn.addEventListener('click', async () => {
+    const v = normalizeBaseUrl(baseInput.value);
     const minutes = parseInt(intervalInput.value, 10) || 5;
     const notify = notifyToggle.checked;
-    saveSettings({ bantah_base: v, bantah_interval_minutes: minutes, bantah_notify: notify });
-    // reconfigure background alarm
+    await saveSettings({ bantah_base: v, bantah_interval_minutes: minutes, bantah_notify: notify });
     chrome.alarms.create('bantah_poll_notifications', { periodInMinutes: Math.max(1, minutes) });
     window.close();
   });
@@ -50,16 +64,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   openRoot.addEventListener('click', () => openUrl(baseInput.value || DEFAULT_BASE, '/'));
   openEvents.addEventListener('click', () => openUrl(baseInput.value || DEFAULT_BASE, '/events'));
   openCreate.addEventListener('click', () => openUrl(baseInput.value || DEFAULT_BASE, '/events/create'));
-  openTab.addEventListener('click', () => chrome.tabs.create({ url: baseInput.value || DEFAULT_BASE }));
+  openTab.addEventListener('click', () => chrome.tabs.create({ url: normalizeBaseUrl(baseInput.value || DEFAULT_BASE) }));
 
   quickLogin.addEventListener('click', () => {
-    // Quick login: open site homepage with query param to trigger login UI if your app supports it
     openUrl(baseInput.value || DEFAULT_BASE, '/?show_login=1');
   });
 
-  notifyToggle.addEventListener('change', () => {
+  notifyToggle.addEventListener('change', async () => {
     const minutes = parseInt(intervalInput.value, 10) || 5;
-    saveSettings({ bantah_base: baseInput.value || DEFAULT_BASE, bantah_interval_minutes: minutes, bantah_notify: notifyToggle.checked });
+    await saveSettings({
+      bantah_base: normalizeBaseUrl(baseInput.value || DEFAULT_BASE),
+      bantah_interval_minutes: minutes,
+      bantah_notify: notifyToggle.checked,
+    });
     if (notifyToggle.checked) {
       chrome.alarms.create('bantah_poll_notifications', { periodInMinutes: Math.max(1, minutes) });
     } else {
@@ -67,8 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Trigger an immediate poll
   document.getElementById('open-root').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'trigger-poll' });
+    chrome.runtime.sendMessage({ action: 'trigger-poll' });
   });
 });

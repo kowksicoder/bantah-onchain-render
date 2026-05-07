@@ -102,7 +102,7 @@ function emptyMessage(filter: FilterKey) {
   return 'Posts from synced sources will appear here once BantahBro receives them.'
 }
 
-export default function FeedPage() {
+export default function FeedPage({ compact = false }: { compact?: boolean } = {}) {
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -178,11 +178,11 @@ export default function FeedPage() {
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       <div className="flex-1 flex flex-col bg-card border border-border rounded overflow-hidden">
         {/* Header */}
-        <div className="border-b border-border bg-background px-4 py-3 shrink-0">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingUp size={18} className="text-primary" />
-            <span className="font-bold text-foreground">Activity Feed</span>
-            <span className="text-xs text-muted-foreground ml-auto">
+        <div className={`border-b border-border bg-background shrink-0 ${compact ? 'px-2 py-2' : 'px-4 py-3'}`}>
+          <div className={`flex items-center gap-2 ${compact ? 'mb-2' : 'mb-3'}`}>
+            <TrendingUp size={compact ? 15 : 18} className="text-primary" />
+            <span className={`${compact ? 'text-xs' : ''} font-bold text-foreground`}>Activity Feed</span>
+            <span className={`text-xs text-muted-foreground ml-auto ${compact ? 'hidden' : ''}`}>
               Synced from BantahBro · 𝕏 Twitter · ✈ Telegram
             </span>
           </div>
@@ -191,7 +191,7 @@ export default function FeedPage() {
               <button
                 key={f.key}
                 onClick={() => setActiveFilter(f.key)}
-                className={`px-3 py-1 rounded text-xs font-bold whitespace-nowrap transition shrink-0 ${
+                className={`${compact ? 'px-2 py-1 text-[10px]' : 'px-3 py-1 text-xs'} rounded font-bold whitespace-nowrap transition shrink-0 ${
                   activeFilter === f.key
                     ? f.key === 'twitter'
                       ? 'bg-sky-400 text-background'
@@ -249,7 +249,7 @@ export default function FeedPage() {
               {displayed.map(item => {
                 const src = SOURCE_META[item.source]
                 return (
-                  <div key={item.id} className="px-4 py-4 hover:bg-muted/20 transition">
+                  <div key={item.id} className={`${compact ? 'px-2 py-2' : 'px-4 py-4'} hover:bg-muted/20 transition`}>
                     {/* User row */}
                     <div className="flex items-start gap-2 mb-2">
                       <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-lg shrink-0">

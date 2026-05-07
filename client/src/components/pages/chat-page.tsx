@@ -292,18 +292,18 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
 
   return (
     <div className="w-full h-full flex flex-col bg-background">
-      <div className="border-b border-border bg-card px-2.5 sm:px-3 py-2">
+      <div className="border-b border-border bg-card px-2 py-1.5 sm:px-3 sm:py-2">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0">
-            <ActiveIcon size={15} />
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0">
+            <ActiveIcon size={14} />
           </div>
           <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-bold text-foreground leading-tight">{activeConfig.title}</h1>
-            <p className="text-[11px] sm:text-xs text-muted-foreground leading-tight">{activeConfig.subtitle}</p>
+            <h1 className="text-sm sm:text-lg font-bold text-foreground leading-tight">{activeConfig.title}</h1>
+            <p className="hidden sm:block text-xs text-muted-foreground leading-tight">{activeConfig.subtitle}</p>
           </div>
         </div>
 
-        <div className="mt-2 flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-1.5 sm:mt-2 flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TOOL_ORDER.map((tool) => {
             const config = TOOL_CONFIG[tool]
             const ToolIcon = config.icon
@@ -313,20 +313,20 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
               <button
                 key={tool}
                 onClick={() => onToolChange?.(tool)}
-                className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${
+                className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] sm:gap-1.5 sm:px-2.5 sm:text-xs transition ${
                   isActive
                     ? 'border-primary bg-primary/15 text-primary font-bold'
                     : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-primary/40'
                 }`}
               >
                 <ToolIcon size={12} />
-                <span>{config.label}</span>
+                <span className={isActive ? 'inline' : 'hidden sm:inline'}>{config.label}</span>
               </button>
             )
           })}
         </div>
 
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-2 hidden sm:flex flex-wrap gap-1.5">
           {activeConfig.prompts.map((prompt) => (
             <button
               key={prompt}
@@ -339,11 +339,14 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4">
+      <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-2 sm:space-y-4">
         {activeMessages.map((message) => (
-          <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div
+            key={message.id}
+            className={`${message.id.endsWith('-intro') ? 'hidden sm:flex' : 'flex'} ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
             <div
-              className={`max-w-xs sm:max-w-md px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm sm:text-base ${
+              className={`max-w-[86%] sm:max-w-md px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm sm:text-base ${
                 message.role === 'user'
                   ? 'bg-accent text-background'
                   : 'bg-muted border border-border text-foreground'
@@ -412,7 +415,7 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-border bg-card p-3 sm:p-4 space-y-2">
+      <div className="border-t border-border bg-card p-2 sm:p-4 sm:space-y-2">
         <div className="flex gap-2">
           <input
             type="text"
@@ -436,7 +439,7 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
             <span className="hidden sm:inline">Send</span>
           </button>
         </div>
-        <p className="text-xs text-muted-foreground">{activeConfig.helperText}</p>
+        <p className="hidden sm:block text-xs text-muted-foreground">{activeConfig.helperText}</p>
       </div>
     </div>
   )

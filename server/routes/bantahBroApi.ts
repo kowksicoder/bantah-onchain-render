@@ -60,10 +60,16 @@ import {
   getBantahBroSocialFeed,
   type BantahBroFeedSource,
 } from "../bantahBro/socialFeedService";
+import { getLiveBantahBroAgentBattles } from "../bantahBro/agentBattleService";
+import {
+  getBantahBroTrollboxFeed,
+  recordBantahBroTrollboxMessage,
+} from "../bantahBro/trollboxService";
 import { PrivyAuthMiddleware } from "../privyAuth";
 import { db } from "../db";
 import { storage } from "../storage";
 import { getBantahBroTelegramBot } from "../telegramBot";
+import { getTelegramSync } from "../telegramSync";
 import { sendManagedBantahAgentRuntimeMessage } from "../bantahElizaRuntimeManager";
 import { agents, transactions, users } from "@shared/schema";
 
@@ -84,6 +90,13 @@ const bantahBroChatRequestSchema = z.object({
     .enum(["assistant", "analyze", "rug", "runner", "alerts", "markets", "bxbt", "launcher"])
     .default("assistant"),
   sessionId: z.string().min(1).max(120).optional(),
+});
+
+const bantahBroTrollboxPostSchema = z.object({
+  roomId: z.string().trim().min(1).max(120).default("agent-battle"),
+  battleId: z.string().trim().min(1).max(180).optional(),
+  user: z.string().trim().min(1).max(64).optional(),
+  message: z.string().trim().min(1).max(1000),
 });
 
 function parseBoolean(value: unknown): boolean {
@@ -229,6 +242,64 @@ router.get("/hot-tickers", async (req, res) => {
   try {
     const feed = await getBantahBroHotTickers(parseLimit(req.query.limit, 5, 5));
     res.json(feed);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/agent-battles/live", async (req, res) => {
+  try {
+    const feed = await getLiveBantahBroAgentBattles(parseLimit(req.query.limit, 3, 5));
+    res.json(feed);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/trollbox", async (req, res) => {
+  try {
+    res.json(
+      getBantahBroTrollboxFeed({
+        roomId: String(req.query.roomId || "agent-battle"),
+        battleId: req.query.battleId ? String(req.query.battleId) : null,
+        limit: parseLimit(req.query.limit, 60, 100),
+      }),
+    );
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/trollbox", async (req, res) => {
+  try {
+    const parsed = bantahBroTrollboxPostSchema.parse(req.body || {});
+    const user = parsed.user || "Web Degen";
+    const message = recordBantahBroTrollboxMessage({
+      roomId: parsed.roomId,
+      battleId: parsed.battleId || null,
+      source: "web",
+      user,
+      message: parsed.message,
+    });
+
+    let forwardedToTelegram = false;
+    const telegramSync = getTelegramSync();
+    if (telegramSync?.isReady()) {
+      forwardedToTelegram = await telegramSync.sendMessageToTelegram(
+        parsed.message,
+        `${user} via BantahBro TrollBox`,
+      );
+    }
+
+    res.json({
+      message,
+      forwardedToTelegram,
+      feed: getBantahBroTrollboxFeed({
+        roomId: parsed.roomId,
+        battleId: parsed.battleId || null,
+        limit: 60,
+      }),
+    });
   } catch (error) {
     handleError(res, error);
   }

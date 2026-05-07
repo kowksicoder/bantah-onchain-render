@@ -62,7 +62,7 @@ export default function Home({ initialSection = 'dashboard' }: { initialSection?
   );
 
   const renderWithRightPanel = (content: ReactNode, rightPanelClassName = 'hidden lg:flex') => (
-    <div className="flex-1 flex gap-0.5 overflow-hidden p-0.5 pb-20 md:pb-0.5 flex-col md:flex-row">
+    <div className={`flex-1 flex gap-0.5 overflow-hidden p-0.5 ${activeSection === 'launcher' ? 'pb-0.5' : 'pb-20 md:pb-0.5'} flex-col md:flex-row`}>
       <div className="flex-1 min-w-0 flex overflow-hidden">
         {content}
       </div>
@@ -78,7 +78,7 @@ export default function Home({ initialSection = 'dashboard' }: { initialSection?
         return renderWithRightPanel(<ChatPage activeTool={activeTool} onToolChange={setActiveTool} />);
       case 'battles':
         return (
-          <div className="flex-1 flex gap-0.5 overflow-hidden p-0.5 pb-20 md:pb-0.5">
+          <div className="flex-1 flex overflow-hidden p-0">
             <BattlesPage onNavigate={setActiveSection} />
           </div>
         );
@@ -121,16 +121,18 @@ export default function Home({ initialSection = 'dashboard' }: { initialSection?
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <TopBar
-          onNavigate={setActiveSection}
-          activeSection={activeSection}
-          activeTool={activeTool}
-          onToolSelect={setActiveTool}
-        />
+        <div className={activeSection === 'battles' ? 'hidden md:block' : 'block'}>
+          <TopBar
+            onNavigate={setActiveSection}
+            activeSection={activeSection}
+            activeTool={activeTool}
+            onToolSelect={setActiveTool}
+          />
+        </div>
         {renderPage()}
       </div>
 
-      <MobileBottomNav activeSection={activeSection} onNavigate={setActiveSection} />
+      {activeSection !== 'battles' && activeSection !== 'launcher' && <MobileBottomNav activeSection={activeSection} onNavigate={setActiveSection} />}
     </div>
   );
 }

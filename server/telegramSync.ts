@@ -4,6 +4,10 @@ import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
 import Pusher from "pusher";
 import { storage } from "./storage";
+import {
+  recordBantahBroTrollboxMessage,
+  resolveBantahBroTrollboxRoom,
+} from "./bantahBro/trollboxService";
 
 interface TelegramConfig {
   apiId: number;
@@ -105,6 +109,25 @@ export class TelegramSyncService {
     const senderName = await this.getSenderName(message);
     const messageText = message.message;
     const timestamp = new Date(message.date * 1000).toISOString();
+
+    // Sync real Telegram group chat into the BantahBro TrollBox. Messages
+    // forwarded from the web TrollBox are already recorded before forwarding.
+    if (!/via BantahBro TrollBox/i.test(messageText)) {
+      const room = resolveBantahBroTrollboxRoom(messageText);
+      recordBantahBroTrollboxMessage({
+        ...room,
+        source: "telegram",
+        user: senderName,
+        handle: senderName.startsWith("@") ? senderName : null,
+        message: messageText,
+        createdAt: timestamp,
+        telegram: {
+          chatId: this.groupId,
+          messageId: message.id?.toString() || null,
+          username: senderName.startsWith("@") ? senderName.slice(1) : null,
+        },
+      });
+    }
 
     // Check if message is for a specific event (hashtag format: #event123)
     const eventMatch = messageText.match(/#event(\d+)/);

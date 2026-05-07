@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
 import Sidebar from './sidebar'
+import { useTheme } from '@/lib/theme-provider'
 import type { AppSection, BantahTool } from '@/app/page'
 
 interface MobileDrawerProps {
@@ -22,6 +23,8 @@ export default function MobileDrawer({
   onNavigate,
   onToolSelect,
 }: MobileDrawerProps) {
+  const { theme, toggleTheme } = useTheme()
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden'
@@ -44,9 +47,19 @@ export default function MobileDrawer({
         }`}
       >
         <div className="flex flex-col h-full overflow-hidden">
-          <div className="flex items-center justify-between p-2 border-b border-border">
-            <span className="text-sm font-bold text-primary">MENU</span>
-            <button onClick={onClose} className="p-1 hover:bg-sidebar-accent rounded transition">
+          <div className="flex items-center justify-between gap-2 p-2 border-b border-border">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-primary">MENU</span>
+              <button
+                onClick={toggleTheme}
+                className="bb-tap rounded border border-border bg-sidebar-accent/60 px-2 py-1 text-xs font-black text-sidebar-foreground"
+                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              >
+                <span className="mr-1">{theme === 'dark' ? '☀️' : '🌙'}</span>
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </button>
+            </div>
+            <button onClick={onClose} className="bb-tap p-1 hover:bg-sidebar-accent rounded transition">
               <X size={20} />
             </button>
           </div>

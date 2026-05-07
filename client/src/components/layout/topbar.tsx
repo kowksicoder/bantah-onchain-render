@@ -6,6 +6,7 @@ import { useTheme } from '@/lib/theme-provider'
 import { useState, useRef, useEffect } from 'react'
 import MobileDrawer from './mobile-drawer'
 import type { AppSection, BantahTool } from '@/app/page'
+import type { AgentBattle, AgentBattleFeed } from '@/types/agentBattle'
 
 interface TopBarProps {
   onNavigate?: (section: AppSection) => void
@@ -93,6 +94,21 @@ function formatCompact(value?: number | null) {
   }).format(value)
 }
 
+function formatBattleDuration(totalSeconds?: number) {
+  const safe = Math.max(0, Math.round(totalSeconds || 0))
+  const minutes = Math.floor(safe / 60)
+  const seconds = safe % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function battleCardTone(battle: AgentBattle) {
+  const [left, right] = battle.sides
+  const leader = battle.leadingSideId === right.id ? right : left
+  if (leader.direction === 'down') return 'border-red-500/30 bg-red-500/10 text-red-300'
+  if (leader.direction === 'up') return 'border-green-500/30 bg-green-500/10 text-green-300'
+  return 'border-primary/30 bg-primary/10 text-primary'
+}
+
 const SEARCH_DATA: SearchItem[] = [
   { emoji: '🐸', name: 'PEPEFUN', type: 'Token', section: 'dashboard' },
   { emoji: '₿', name: 'BTC', type: 'Token', section: 'dashboard' },
@@ -133,8 +149,14 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
   })
   const { data: hotTickerFeed, isLoading: hotTickersLoading } = useQuery<HotTickerResponse>({
     queryKey: ['/api/bantahbro/hot-tickers', { limit: '5' }],
-    enabled: activeSection !== 'chat',
+    enabled: activeSection !== 'chat' && activeSection !== 'battles',
     staleTime: 5_000,
+    refetchInterval: 5_000,
+  })
+  const { data: battleStripFeed, isLoading: battleStripLoading } = useQuery<AgentBattleFeed>({
+    queryKey: ['/api/bantahbro/agent-battles/live', { limit: '3' }],
+    enabled: activeSection === 'battles',
+    staleTime: 3_000,
     refetchInterval: 5_000,
   })
 
@@ -146,6 +168,7 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
       ).slice(0, 6)
     : []
   const hotMarkets = hotTickerFeed?.entries || []
+  const battleStripBattles = battleStripFeed?.battles || []
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -159,7 +182,7 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
   }, [])
 
   useEffect(() => {
-    if (activeSection === 'chat' || !hotTickerFeed?.entries?.length) return
+    if (activeSection === 'chat' || activeSection === 'battles' || !hotTickerFeed?.entries?.length) return
 
     const nextPrices: Record<string, number | null> = {}
     const nextFlashes: Record<string, PriceFlashState> = {}
@@ -293,10 +316,18 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
             </button>
             <button
               onClick={toggleTheme}
-              className="p-1.5 hover:bg-sidebar-accent rounded transition"
+              className="hidden md:flex p-1.5 hover:bg-sidebar-accent rounded transition"
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             >
               <span className="text-xl">{theme === 'dark' ? '☀️' : '🌙'}</span>
+            </button>
+            <button
+              onClick={() => onNavigate?.('profile')}
+              className="bb-tap flex md:hidden h-8 w-8 items-center justify-center rounded-full bg-input ring-1 ring-border transition hover:bg-sidebar-accent"
+              title="Open profile"
+              aria-label="Open profile"
+            >
+              <img src="/bantahbrologo.png" alt="Profile" width={22} height={22} className="rounded-full object-cover" />
             </button>
             <button
               onClick={() => onNavigate?.('profile')}
@@ -309,7 +340,7 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
           </div>
         </div>
 
-        {activeSection !== 'chat' && (
+        {activeSection !== 'chat' && activeSection !== 'battles' && (
         <div className="hidden sm:flex items-center gap-2 px-2 py-1.5 overflow-x-auto border-t border-border bg-background/50">
           {hotTickersLoading && hotMarkets.length === 0 && (
             <div className="flex items-center gap-1.5 bg-input px-3 py-1 rounded text-sm whitespace-nowrap text-muted-foreground">
@@ -339,6 +370,53 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
             View all →
           </button>
         </div>
+        )}
+
+        {activeSection === 'battles' && (
+          <div className="hidden sm:flex items-center gap-2 px-2 py-1.5 overflow-x-auto border-t border-border bg-background/50">
+            {battleStripLoading && battleStripBattles.length === 0 && (
+              <div className="flex items-center gap-1.5 bg-input px-3 py-1 rounded text-sm whitespace-nowrap text-muted-foreground">
+                Loading live battles...
+              </div>
+            )}
+            {battleStripBattles.map((battle, index) => {
+              const [left, right] = battle.sides
+              const leader = battle.leadingSideId === right.id ? right : left
+              const tone = battleCardTone(battle)
+              return (
+                <button
+                  key={battle.id}
+                  onClick={() => onNavigate?.('battles')}
+                  title={`${battle.title} - ${leader.label} leads by ${battle.confidenceSpread}%`}
+                  className={`relative flex min-w-[16rem] items-center gap-2 rounded border px-3 py-1 text-left text-sm transition hover:bg-sidebar-accent ${tone}`}
+                >
+                  {index < 3 && (
+                    <span className="absolute -right-px -top-px rounded-bl rounded-tr bg-destructive px-1.5 py-0.5 text-[9px] font-black uppercase leading-none text-white shadow-sm">
+                      Live
+                    </span>
+                  )}
+                  <span className="text-[10px] font-black uppercase tracking-wide text-foreground/80">
+                    {index === 0 ? 'Current' : `Next ${index}`}
+                  </span>
+                  <span className="font-bold text-foreground truncate">
+                    {left.emoji} {left.label}
+                  </span>
+                  <span className="text-[10px] font-black text-muted-foreground">VS</span>
+                  <span className="font-bold text-foreground truncate">
+                    {right.emoji} {right.label}
+                  </span>
+                  <span className="ml-auto shrink-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-xs text-foreground">
+                    {index === 0 ? formatBattleDuration(battle.timeRemainingSeconds) : `${battle.confidenceSpread}% gap`}
+                  </span>
+                </button>
+              )
+            })}
+            {!battleStripLoading && battleStripBattles.length === 0 && (
+              <div className="flex items-center gap-1.5 bg-input px-3 py-1 rounded text-sm whitespace-nowrap text-muted-foreground">
+                Waiting for live battle pairs...
+              </div>
+            )}
+          </div>
         )}
       </div>
 

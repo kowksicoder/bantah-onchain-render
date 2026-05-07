@@ -5,7 +5,6 @@ import {
   BarChart3,
   Bell,
   Bot,
-  Home,
   Megaphone,
   MessageSquare,
   Rocket,
@@ -15,7 +14,9 @@ import {
   Trophy,
   Zap,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import type { AppSection, BantahTool } from '@/app/page'
+import type { AgentBattleFeed } from '@/types/agentBattle'
 
 interface SidebarProps {
   activeSection?: AppSection
@@ -25,8 +26,7 @@ interface SidebarProps {
   onClose?: () => void
 }
 
-const menuItems: { icon: typeof Home; label: string; section: AppSection }[] = [
-  { icon: Home, label: 'Feed', section: 'feed' },
+const menuItems: { icon: typeof BarChart3; label: string; section: AppSection }[] = [
   { icon: BarChart3, label: 'Markets', section: 'dashboard' },
   { icon: Zap, label: 'Agent Battles', section: 'battles' },
   { icon: Bot, label: 'Agents', section: 'agents' },
@@ -61,6 +61,13 @@ export default function Sidebar({
   onToolSelect,
   onClose,
 }: SidebarProps) {
+  const { data: battleFeed } = useQuery<AgentBattleFeed>({
+    queryKey: ['/api/bantahbro/agent-battles/live', { limit: '12' }],
+    staleTime: 3_000,
+    refetchInterval: 5_000,
+  })
+  const liveBattleCount = battleFeed?.battles?.length ?? 0
+
   const handleClick = (section: AppSection) => {
     onNavigate?.(section)
     onClose?.()
@@ -106,7 +113,12 @@ export default function Sidebar({
                 }`}
               >
                 <item.icon size={15} />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {item.section === 'battles' && (
+                  <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-black leading-none text-white">
+                    {liveBattleCount}
+                  </span>
+                )}
               </button>
             )
           })}

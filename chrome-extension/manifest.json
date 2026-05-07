@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Bantah Companion",
-  "version": "0.1.0",
-  "description": "Quick access to Bantah web app: open the site or quick routes from the browser toolbar.",
+  "version": "0.2.0",
+  "description": "Create Bantah events from X, news, sports, and market pages, with quick access from the browser toolbar.",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Bantah Companion",
@@ -33,11 +33,5 @@
     "128": "icons/icon128.png",
     "256": "icons/icon256.png",
     "512": "icons/icon512.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["overlay.html", "overlay.js", "overlay.css"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  }
 }

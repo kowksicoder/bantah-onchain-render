@@ -76,23 +76,39 @@
   --bb-sidebar-accent: #17281d;
 }
 
-.bantahbro-next-ui * {
-  scrollbar-width: thin;
-  scrollbar-color: var(--bb-border) var(--bb-card);
+@media (min-width: 1025px) and (hover: hover) and (pointer: fine) {
+  .bantahbro-next-ui * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--bb-border) var(--bb-card);
+  }
+
+  .bantahbro-next-ui ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .bantahbro-next-ui ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: var(--bb-border);
+  }
+
+  .bantahbro-next-ui ::-webkit-scrollbar-track {
+    background: var(--bb-card);
+  }
 }
 
-.bantahbro-next-ui ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+@media (max-width: 1024px), (hover: none) and (pointer: coarse) {
+  .bantahbro-next-ui,
+  .bantahbro-next-ui * {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
 
-.bantahbro-next-ui ::-webkit-scrollbar-thumb {
-  border-radius: 9999px;
-  background: var(--bb-border);
-}
-
-.bantahbro-next-ui ::-webkit-scrollbar-track {
-  background: var(--bb-card);
+  .bantahbro-next-ui ::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
 }
 
 .bantahbro-next-ui .rounded-sm {

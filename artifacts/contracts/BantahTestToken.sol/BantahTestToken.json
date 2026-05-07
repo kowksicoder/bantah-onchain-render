@@ -331,7 +331,7 @@
   "linkReferences": {},
   "deployedLinkReferences": {},
   "immutableReferences": {
-    "8": [
+    "2135": [
       {
         "length": 32,
         "start": 293
@@ -339,5 +339,5 @@
     ]
   },
   "inputSourceName": "project/contracts/BantahTestToken.sol",
-  "buildInfoId": "solc-0_8_24-2d627c1bd51e7e99bfa7b5c2faa2e2980661d862"
+  "buildInfoId": "solc-0_8_24-f5c482c2abd5d958cce84895efd482563e74af37"
 }

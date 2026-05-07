@@ -44,6 +44,8 @@ export interface BantahBroHotTickerEntry {
   marketCap: number | null;
   liquidityUsd: number | null;
   volumeH24: number | null;
+  buysH24: number;
+  sellsH24: number;
   tokenAddress: string | null;
   pairUrl: string | null;
   source: HotTickerSource;
@@ -219,6 +221,8 @@ function buildEntryFromAnalysis(params: {
     marketCap: primaryPair.marketCap,
     liquidityUsd: primaryPair.liquidityUsd,
     volumeH24: primaryPair.volume.h24,
+    buysH24: primaryPair.txns.h24.buys,
+    sellsH24: primaryPair.txns.h24.sells,
     tokenAddress: primaryPair.baseToken.address,
     pairUrl: primaryPair.url,
     source: "dexscreener",

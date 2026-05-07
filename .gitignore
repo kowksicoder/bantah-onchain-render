@@ -12,6 +12,7 @@ vite.config.ts.*
 .env.production
 
 # Temp/log/debug files
+.logs/
 *.log
 *.out
 *.err

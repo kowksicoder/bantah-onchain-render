@@ -16,12 +16,13 @@ interface MainContentProps {
 
 const TOP_TABS = [
   { id: 'markets', icon: 'B', label: 'BANTAH Onchain', sub: 'P2P Predictions.' },
+  { id: 'battles', icon: '⚔', label: 'BATTLES', sub: 'Live battle listings', badge: 'LIVE', badgeColor: 'bg-destructive text-white' },
   { id: 'signals', icon: 'S', label: 'SIGNALS', sub: 'Trending from top platforms', badge: 'NEW', badgeColor: 'bg-secondary text-background' },
 ] as const;
 
 type TopTab = (typeof TOP_TABS)[number]['id'];
 
-export default function MainContent({ selectedToken, setSelectedToken }: MainContentProps) {
+export default function MainContent({ selectedToken, setSelectedToken, onNavigate }: MainContentProps) {
   const [topTab, setTopTab] = useState<TopTab>('markets');
   const [showChart, setShowChart] = useState(false);
 
@@ -44,7 +45,7 @@ export default function MainContent({ selectedToken, setSelectedToken }: MainCon
                   : 'hover:bg-muted/50'
               }`}
             >
-              <span className="text-lg shrink-0">{tab.icon}</span>
+              <span className="text-lg shrink-0">{tab.id === 'battles' ? 'BTL' : tab.icon}</span>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-xs font-bold text-foreground">{tab.label}</span>
@@ -87,6 +88,9 @@ export default function MainContent({ selectedToken, setSelectedToken }: MainCon
 
         {topTab === 'markets' && (
           <MarketsTable onSelectToken={handleSelectToken} />
+        )}
+        {topTab === 'battles' && (
+          <MarketsTable mode="battles" onSelectToken={handleSelectToken} onSelectBattle={() => onNavigate?.('battles')} />
         )}
         {topTab === 'signals' && (
           <SignalsSection />
