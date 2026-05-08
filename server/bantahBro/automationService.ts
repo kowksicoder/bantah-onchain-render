@@ -30,6 +30,7 @@ type AutomationConfig = {
   runnerMarketDurationHours: number;
   chargeBxbtForAutoMarkets: boolean;
   enableWatchAlerts: boolean;
+  telegramBroadcastsEnabled: boolean;
   twitterMonitorEnabled: boolean;
   twitterReplyLoopEnabled: boolean;
 };
@@ -190,6 +191,12 @@ function loadAutomationConfig(): AutomationConfig {
       false,
     ),
     enableWatchAlerts: parseBooleanEnv("BANTAHBRO_ENABLE_WATCH_ALERTS", false),
+    // Automation is allowed to observe and build internal state, but Telegram
+    // sends must stay opt-in so scanner/test loops never look like real usage.
+    telegramBroadcastsEnabled: parseBooleanEnv(
+      "BANTAHBRO_TELEGRAM_AUTOMATION_BROADCAST_ENABLED",
+      false,
+    ),
     twitterMonitorEnabled: parseBooleanEnv(
       "BANTAHBRO_TWITTER_MONITOR_ENABLED",
       false,
@@ -237,13 +244,22 @@ function shouldPublishAutomatedAlert(
   return rugDelta >= 8 || momentumDelta >= 8 || confidenceDelta >= 0.1;
 }
 
-async function broadcastAlertIfPossible(alert: BantahBroAlert, analysis?: Awaited<ReturnType<typeof analyzeToken>>) {
+async function broadcastAlertIfPossible(
+  config: AutomationConfig,
+  alert: BantahBroAlert,
+  analysis?: Awaited<ReturnType<typeof analyzeToken>>,
+) {
+  if (!config.telegramBroadcastsEnabled) return;
   const telegramBot = getBantahBroTelegramBot();
   if (!telegramBot) return;
   await telegramBot.broadcastBantahBroAlert(alert, analysis);
 }
 
-async function broadcastReceiptIfPossible(receipt: ReturnType<typeof buildReceiptFromAlert>) {
+async function broadcastReceiptIfPossible(
+  config: AutomationConfig,
+  receipt: ReturnType<typeof buildReceiptFromAlert>,
+) {
+  if (!config.telegramBroadcastsEnabled) return;
   const telegramBot = getBantahBroTelegramBot();
   if (!telegramBot) return;
   await telegramBot.broadcastBantahBroReceipt(receipt);
@@ -326,7 +342,7 @@ async function runTokenMonitorCycle(config: AutomationConfig) {
         confidence: published.confidence,
       });
       automationStatus.publishedAlerts += 1;
-      await broadcastAlertIfPossible(published, analysis);
+      await broadcastAlertIfPossible(config, published, analysis);
 
       elizaLogger.info(
         `[BantahBro Automation] Published ${published.type} for ${published.chainId}:${published.tokenAddress}`,
@@ -360,7 +376,7 @@ async function runAlertSchedulerCycle(config: AutomationConfig) {
       const receipt = publishBantahBroReceipt(buildReceiptFromAlert(sourceAlert, analysis));
       publishReceiptAlert(sourceAlert, analysis, receipt);
       automationStatus.publishedReceipts += 1;
-      await broadcastReceiptIfPossible(receipt);
+      await broadcastReceiptIfPossible(config, receipt);
 
       elizaLogger.info(
         `[BantahBro Automation] Published receipt ${receipt.id} for alert ${sourceAlert.id}`,
@@ -411,7 +427,7 @@ async function runMarketTriggerCycle(config: AutomationConfig) {
       automationStatus.createdMarkets += 1;
 
       if (result.marketAlert) {
-        await broadcastAlertIfPossible(result.marketAlert, result.analysis);
+        await broadcastAlertIfPossible(config, result.marketAlert, result.analysis);
       }
 
       elizaLogger.info(

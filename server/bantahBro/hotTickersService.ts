@@ -31,6 +31,7 @@ type HotTickerSlot = {
 export interface BantahBroHotTickerEntry {
   id: string;
   emoji: string;
+  logoUrl: string | null;
   displaySymbol: string;
   actualSymbol: string | null;
   tokenName: string | null;
@@ -208,6 +209,7 @@ function buildEntryFromAnalysis(params: {
   return {
     id: params.id,
     emoji: params.emoji,
+    logoUrl: primaryPair.imageUrl,
     displaySymbol: params.displaySymbol || (symbol.startsWith("$") ? symbol : `$${symbol}`),
     actualSymbol: primaryPair.baseToken.symbol || null,
     tokenName: primaryPair.baseToken.name || null,

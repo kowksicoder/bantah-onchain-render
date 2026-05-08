@@ -107,6 +107,74 @@ export async function fetchTrendingPolymarketMarketsFromEvents(eventLimit = 20):
   return normalizePolymarketMarkets(flattenedMarkets);
 }
 
+function currentFiveMinuteEpochSeconds() {
+  return Math.floor(Date.now() / 300_000) * 300;
+}
+
+function btcFiveMinuteEventSlug(epochSeconds: number) {
+  return `btc-updown-5m-${epochSeconds}`;
+}
+
+async function fetchPolymarketEventBySlug(slug: string): Promise<any | null> {
+  try {
+    const response = await axios.get(`https://gamma-api.polymarket.com/events/slug/${slug}`, {
+      timeout: 10000,
+      validateStatus: (status) => (status >= 200 && status < 300) || status === 404,
+    });
+    if (response.status === 404) return null;
+    return response.data && typeof response.data === "object" ? response.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPolymarketBtcFiveMinuteMarkets(limit = 12): Promise<ExternalMarket[]> {
+  const safeLimit = Math.min(Math.max(Math.round(limit || 12), 1), 30);
+  const baseEpoch = currentFiveMinuteEpochSeconds();
+  const epochOffsets = Array.from({ length: safeLimit + 8 }, (_, index) => (index - 2) * 300);
+  const events = await Promise.all(
+    epochOffsets.map((offset) => fetchPolymarketEventBySlug(btcFiveMinuteEventSlug(baseEpoch + offset))),
+  );
+
+  const rawMarkets = events.flatMap((event) => {
+    if (!event || !Array.isArray(event.markets)) return [];
+    const eventContext = {
+      title: event.title,
+      ticker: event.ticker,
+      image: event.image,
+      icon: event.icon,
+      tags: event.tags,
+      liquidity: event.liquidity,
+      liquidityNum: event.liquidity,
+      volume24hr: event.volume24hr,
+    };
+
+    return event.markets.map((market: any) => ({
+      ...market,
+      events: [eventContext],
+      tags: Array.isArray(market?.tags) && market.tags.length > 0
+        ? market.tags
+        : [
+            ...(Array.isArray(event?.tags) ? event.tags : []),
+            { label: "Crypto", slug: "crypto" },
+            { label: "BTC 5M", slug: "btc-5m" },
+          ],
+    }));
+  });
+
+  return normalizePolymarketMarkets(rawMarkets)
+    .filter((market) => {
+      const text = `${market.question} ${market.slug || ""} ${(market.tags || []).join(" ")}`.toLowerCase();
+      return market.status === "open" && market.isTradable && /\b(bitcoin|btc)\b/.test(text) && /\b(5\s*min|5m|5\s*minute)\b/.test(text);
+    })
+    .sort((a, b) => {
+      const aEnd = a.endDate ? new Date(a.endDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const bEnd = b.endDate ? new Date(b.endDate).getTime() : Number.MAX_SAFE_INTEGER;
+      return aEnd - bEnd;
+    })
+    .slice(0, safeLimit);
+}
+
 export async function getPolymarketMarketById(marketId: string): Promise<ExternalMarket | null> {
   const needle = String(marketId || "").trim();
   if (!needle) return null;

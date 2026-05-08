@@ -115,36 +115,31 @@ export default function LeaderboardPage() {
               ))}
             </div>
           </div>
-          {!isLoading && (
-            <div className="mt-2 text-xs text-muted-foreground">
-              {data?.sources.onchain.count || 0} onchain entries and {data?.sources.bantahbro.count || 0} BantahBro entries merged into one board.
-            </div>
-          )}
         </div>
 
-        {!isLoading && sourceFilter === 'all' && podiumEntries.length >= 3 && (
-          <div className="border-b border-border bg-background/50 px-4 py-4">
-            <div className="flex items-end justify-center gap-4">
-              {podiumEntries.map((entry, index) => {
-                const heights = ['h-20', 'h-28', 'h-16'];
-                const positions = ['2nd', '1st', '3rd'];
-
-                return (
-                  <div key={entry.id} className="flex flex-col items-center gap-1">
-                    <div className="text-2xl">{sourceEmoji(entry.source)}</div>
-                    <div className="text-xs font-bold text-foreground">{entry.name}</div>
-                    <div className="text-xs text-secondary font-mono">{scoreLabel(entry)}</div>
-                    <div className={`${heights[index]} w-16 bg-primary/20 border border-primary/30 rounded-t flex items-center justify-center`}>
-                      <span className="text-sm font-bold text-primary">{positions[index]}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         <div className="flex-1 overflow-y-auto">
+          {!isLoading && sourceFilter === 'all' && podiumEntries.length >= 3 && (
+            <div className="border-b border-border bg-background/50 px-4 py-4">
+              <div className="flex items-end justify-center gap-4">
+                {podiumEntries.map((entry, index) => {
+                  const heights = ['h-20', 'h-28', 'h-16'];
+                  const positions = ['2nd', '1st', '3rd'];
+
+                  return (
+                    <div key={entry.id} className="flex flex-col items-center gap-1">
+                      <div className="text-2xl">{sourceEmoji(entry.source)}</div>
+                      <div className="text-xs font-bold text-foreground">{entry.name}</div>
+                      <div className="text-xs text-secondary font-mono">{scoreLabel(entry)}</div>
+                      <div className={`${heights[index]} w-16 bg-primary/20 border border-primary/30 rounded-t flex items-center justify-center`}>
+                        <span className="text-sm font-bold text-primary">{positions[index]}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-12 px-4 py-2 text-xs font-bold text-muted-foreground bg-background border-b border-border">
             <div className="col-span-1">#</div>
             <div className="col-span-4">Trader</div>

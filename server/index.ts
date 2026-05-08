@@ -36,6 +36,9 @@ import {
   isBantahBroElizaTelegramEnabled,
 } from "./bantahBro/systemAgent";
 import { startBantahBroAutomationService } from "./bantahBro/automationService";
+import { startBantahBroAgentBattleTelegramBroadcaster } from "./bantahBro/agentBattleTelegramBroadcaster";
+import { startBantahBroAgentBattleSettlementWorker } from "./bantahBro/agentBattleSettlementWorker";
+import { BLINK_ACTION_HEADERS, isBlinkActionRequest } from "./blinkActionHeaders";
 
 // -------------------------------------------------------------------
 // Helpers
@@ -144,6 +147,20 @@ app.use(express.urlencoded({ extended: false, limit: "50mb" }));
 
 // File uploads
 app.use("/api/admin/", upload.any());
+
+// Blinks require permissive CORS preflight headers. This must run before the
+// global app CORS middleware, which otherwise handles OPTIONS first.
+app.use((req, res, next) => {
+  if (!isBlinkActionRequest(req)) {
+    return next();
+  }
+
+  res.set(BLINK_ACTION_HEADERS);
+  if (req.method === "OPTIONS") {
+    return res.status(204).send();
+  }
+  return next();
+});
 
 // CORS
 app.use(
@@ -307,6 +324,24 @@ app.use((req, res, next) => {
     }
 
     try {
+      const battleBroadcastStatus = startBantahBroAgentBattleTelegramBroadcaster();
+      console.log(
+        `[OK] BantahBro Telegram battle broadcaster: enabled=${battleBroadcastStatus.enabled} started=${battleBroadcastStatus.started} intervalMs=${battleBroadcastStatus.intervalMs} limit=${battleBroadcastStatus.limit}${battleBroadcastStatus.reason ? ` reason=${battleBroadcastStatus.reason}` : ""}`,
+      );
+    } catch (err) {
+      console.error("[WARN] Failed to start BantahBro Telegram battle broadcaster:", err);
+    }
+
+    try {
+      const settlementStatus = startBantahBroAgentBattleSettlementWorker();
+      console.log(
+        `[OK] BantahBro battle settlement worker: enabled=${settlementStatus.enabled} started=${settlementStatus.started} intervalMs=${settlementStatus.intervalMs} limit=${settlementStatus.limit} maxPairs=${settlementStatus.maxPairsPerRound}${settlementStatus.reason ? ` reason=${settlementStatus.reason}` : ""}`,
+      );
+    } catch (err) {
+      console.error("[WARN] Failed to start BantahBro battle settlement worker:", err);
+    }
+
+    try {
       const automationStatus = await startBantahBroAutomationService();
       console.log(
         `[OK] BantahBro automation ready: enabled=${automationStatus.enabled} watchlist=${automationStatus.watchlistSize}`,
@@ -408,6 +443,15 @@ export async function initAppForServerless() {
       );
     } catch (err) {
       console.error("[WARN] BantahBro automation failed (non-critical)", err);
+    }
+
+    try {
+      const settlementStatus = startBantahBroAgentBattleSettlementWorker();
+      console.log(
+        `[OK] BantahBro battle settlement worker: enabled=${settlementStatus.enabled} started=${settlementStatus.started} intervalMs=${settlementStatus.intervalMs} limit=${settlementStatus.limit} maxPairs=${settlementStatus.maxPairsPerRound}${settlementStatus.reason ? ` reason=${settlementStatus.reason}` : ""}`,
+      );
+    } catch (err) {
+      console.error("[WARN] BantahBro battle settlement worker failed (non-critical)", err);
     }
 
     // Initialize database

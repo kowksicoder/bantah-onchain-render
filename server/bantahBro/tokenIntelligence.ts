@@ -15,6 +15,9 @@ type DexScreenerPair = Record<string, unknown>;
 const DEXSCREENER_API_BASE =
   process.env.DEXSCREENER_API_BASE?.replace(/\/+$/, "") ||
   "https://api.dexscreener.com";
+const DEXSCREENER_FETCH_TIMEOUT_MS = Number(
+  process.env.BANTAHBRO_DEXSCREENER_FETCH_TIMEOUT_MS || 5_000,
+);
 
 function toNumber(value: unknown, fallback = 0): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -32,6 +35,26 @@ function toNullableNumber(value: unknown): number | null {
 
 function toStringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function toHttpUrlOrNull(value: unknown): string | null {
+  const candidate = toStringOrNull(value);
+  if (!candidate) return null;
+
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function firstHttpUrl(...values: unknown[]): string | null {
+  for (const value of values) {
+    const url = toHttpUrlOrNull(value);
+    if (url) return url;
+  }
+  return null;
 }
 
 function getRecord(value: unknown): Record<string, unknown> {
@@ -68,9 +91,10 @@ function momentumLevel(score: number): BantahBroMomentumScore["momentumLevel"] {
   return "cold";
 }
 
-function normalizePair(pair: DexScreenerPair): BantahBroPairSnapshot {
+export function normalizePair(pair: DexScreenerPair): BantahBroPairSnapshot {
   const baseToken = getRecord(pair.baseToken);
   const quoteToken = getRecord(pair.quoteToken);
+  const info = getRecord(pair.info);
   const liquidity = getRecord(pair.liquidity);
   const txns = pair.txns;
   const volume = pair.volume;
@@ -86,6 +110,14 @@ function normalizePair(pair: DexScreenerPair): BantahBroPairSnapshot {
     chainId: String(pair.chainId || ""),
     dexId: toStringOrNull(pair.dexId),
     url: toStringOrNull(pair.url),
+    imageUrl: firstHttpUrl(
+      info.imageUrl,
+      info.logoUrl,
+      info.iconUrl,
+      baseToken.logoURI,
+      baseToken.logoUrl,
+      baseToken.imageUrl,
+    ),
     pairAddress: String(pair.pairAddress || ""),
     baseToken: {
       address: String(baseToken.address || ""),
@@ -125,7 +157,7 @@ function normalizePair(pair: DexScreenerPair): BantahBroPairSnapshot {
   };
 }
 
-function choosePrimaryPair(pairs: BantahBroPairSnapshot[]) {
+export function choosePrimaryPair(pairs: BantahBroPairSnapshot[]) {
   return [...pairs].sort((a, b) => {
     const liquidityDelta = b.liquidityUsd - a.liquidityUsd;
     if (Math.abs(liquidityDelta) > 1) return liquidityDelta;
@@ -448,12 +480,13 @@ function buildSuggestedActions(
   return actions;
 }
 
-async function fetchDexScreenerTokenPairs(ref: BantahBroTokenRef) {
+export async function fetchDexScreenerTokenPairs(ref: BantahBroTokenRef) {
   const url = `${DEXSCREENER_API_BASE}/token-pairs/v1/${encodeURIComponent(
     ref.chainId,
   )}/${encodeURIComponent(ref.tokenAddress)}`;
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(DEXSCREENER_FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -558,6 +591,7 @@ async function fetchDexScreenerSearchPairs(query: string) {
 
   const response = await fetch(url.toString(), {
     headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(DEXSCREENER_FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {

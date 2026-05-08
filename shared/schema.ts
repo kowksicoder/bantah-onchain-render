@@ -221,6 +221,179 @@ export const tokenLaunches = pgTable(
   }),
 );
 
+export const bantahBroListedBattles = pgTable(
+  "bantahbro_listed_battles",
+  {
+    id: varchar("id", { length: 255 }).primaryKey().notNull(),
+    engineBattleId: varchar("engine_battle_id", { length: 255 }).notNull().unique(),
+    status: varchar("status", { length: 24 })
+      .$type<"listed">()
+      .notNull()
+      .default("listed"),
+    source: varchar("source", { length: 24 })
+      .$type<"engine" | "manual" | "sponsored">()
+      .notNull()
+      .default("engine"),
+    listedBy: varchar("listed_by", { length: 255 }),
+    battle: jsonb("battle")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    listedAt: timestamp("listed_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    engineBattleIdx: index("idx_bantahbro_listed_battles_engine_id").on(table.engineBattleId),
+    listedAtIdx: index("idx_bantahbro_listed_battles_listed_at").on(table.listedAt),
+    sourceIdx: index("idx_bantahbro_listed_battles_source").on(table.source),
+  }),
+);
+
+export const predictionVisualizationPositions = pgTable(
+  "prediction_visualization_positions",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    userId: varchar("user_id", { length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    battleId: varchar("battle_id", { length: 255 }).notNull(),
+    sourcePlatform: varchar("source_platform", { length: 64 }).notNull(),
+    sourceMarketId: varchar("source_market_id", { length: 255 }).notNull(),
+    sourceMarketUrl: text("source_market_url").notNull(),
+    marketTitle: text("market_title").notNull(),
+    side: varchar("side", { length: 8 }).$type<"yes" | "no">().notNull(),
+    outcome: varchar("outcome", { length: 8 }).$type<"YES" | "NO">().notNull(),
+    factionName: varchar("faction_name", { length: 160 }).notNull(),
+    sourceTokenId: text("source_token_id"),
+    walletAddress: varchar("wallet_address", { length: 96 }),
+    amountUsd: decimal("amount_usd", { precision: 12, scale: 2 }).notNull(),
+    maxPrice: decimal("max_price", { precision: 8, scale: 4 }).notNull(),
+    estimatedShares: decimal("estimated_shares", { precision: 18, scale: 6 }).notNull(),
+    status: varchar("status", { length: 24 })
+      .$type<"intent_saved" | "execution_checked" | "source_opened" | "submitted" | "filled" | "cancelled" | "failed">()
+      .notNull()
+      .default("intent_saved"),
+    executionStatus: varchar("execution_status", { length: 32 })
+      .$type<"read-only" | "external-action-ready" | "clob-planned">()
+      .notNull()
+      .default("clob-planned"),
+    externalOrderId: varchar("external_order_id", { length: 255 }),
+    externalStatus: varchar("external_status", { length: 64 }),
+    lastError: text("last_error"),
+    sourceOpenedAt: timestamp("source_opened_at"),
+    fillSyncedAt: timestamp("fill_synced_at"),
+    snapshot: jsonb("snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index("idx_prediction_visualization_positions_user_id").on(table.userId),
+    battleIdx: index("idx_prediction_visualization_positions_battle_id").on(table.battleId),
+    marketIdx: index("idx_prediction_visualization_positions_source_market_id").on(
+      table.sourceMarketId,
+    ),
+    statusIdx: index("idx_prediction_visualization_positions_status").on(table.status),
+    updatedIdx: index("idx_prediction_visualization_positions_updated_at").on(table.updatedAt),
+    uniqueUserBattle: unique("prediction_visualization_positions_user_battle_unique").on(
+      table.userId,
+      table.battleId,
+    ),
+  }),
+);
+
+export const agentBattleP2PPositions = pgTable(
+  "agent_battle_p2p_positions",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    userId: varchar("user_id", { length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    battleId: varchar("battle_id", { length: 255 }).notNull(),
+    roundId: varchar("round_id", { length: 320 }).notNull(),
+    roundStartsAt: timestamp("round_starts_at").notNull(),
+    roundEndsAt: timestamp("round_ends_at").notNull(),
+    sideId: text("side_id").notNull(),
+    sideLabel: varchar("side_label", { length: 160 }).notNull(),
+    sideSymbol: varchar("side_symbol", { length: 64 }),
+    sideLogoUrl: text("side_logo_url"),
+    opponentSideId: text("opponent_side_id"),
+      stakeAmount: decimal("stake_amount", { precision: 18, scale: 6 }).notNull(),
+      stakeCurrency: varchar("stake_currency", { length: 16 }).notNull().default("BXBT"),
+      escrowChallengeId: integer("escrow_challenge_id"),
+      escrowChainId: integer("escrow_chain_id"),
+      escrowTokenSymbol: varchar("escrow_token_symbol", { length: 16 }),
+      walletAddress: varchar("wallet_address", { length: 128 }),
+    escrowStatus: varchar("escrow_status", { length: 32 })
+      .$type<
+        | "intent_saved"
+        | "escrow_required"
+        | "escrow_locked"
+        | "settled"
+        | "cancelled"
+        | "failed"
+      >()
+      .notNull()
+      .default("intent_saved"),
+      escrowTxHash: varchar("escrow_tx_hash", { length: 80 }),
+      winnerSideId: text("winner_side_id"),
+      payoutAmount: decimal("payout_amount", { precision: 18, scale: 6 }),
+      payoutTxHash: varchar("payout_tx_hash", { length: 80 }),
+      snapshot: jsonb("snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index("idx_agent_battle_p2p_positions_user_id").on(table.userId),
+    battleIdx: index("idx_agent_battle_p2p_positions_battle_id").on(table.battleId),
+    roundIdx: index("idx_agent_battle_p2p_positions_round_id").on(table.roundId),
+    escrowStatusIdx: index("idx_agent_battle_p2p_positions_escrow_status").on(
+      table.escrowStatus,
+    ),
+    updatedIdx: index("idx_agent_battle_p2p_positions_updated_at").on(table.updatedAt),
+    uniqueUserRound: unique("agent_battle_p2p_positions_user_round_unique").on(
+      table.userId,
+      table.roundId,
+    ),
+  }),
+  );
+
+export const agentBattleP2PRounds = pgTable(
+  "agent_battle_p2p_rounds",
+  {
+    id: serial("id").primaryKey(),
+    battleId: varchar("battle_id", { length: 255 }).notNull(),
+    roundId: varchar("round_id", { length: 320 }).notNull().unique(),
+    roundStartsAt: timestamp("round_starts_at").notNull(),
+    roundEndsAt: timestamp("round_ends_at").notNull(),
+    escrowChallengeId: integer("escrow_challenge_id").unique(),
+    escrowChainId: integer("escrow_chain_id").notNull(),
+    escrowTokenSymbol: varchar("escrow_token_symbol", { length: 16 }).notNull(),
+    settlementStatus: varchar("settlement_status", { length: 32 }).notNull().default("open"),
+    winnerSideId: text("winner_side_id"),
+    settlementTxHashes: jsonb("settlement_tx_hashes")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    settlementError: text("settlement_error"),
+    settledAt: timestamp("settled_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    battleIdx: index("idx_agent_battle_p2p_rounds_battle_id").on(table.battleId),
+    roundIdx: index("idx_agent_battle_p2p_rounds_round_id").on(table.roundId),
+    escrowChallengeIdx: index("idx_agent_battle_p2p_rounds_escrow_challenge_id").on(
+      table.escrowChallengeId,
+    ),
+  }),
+);
+
 export const agentOrders = pgTable(
   "agent_orders",
   {

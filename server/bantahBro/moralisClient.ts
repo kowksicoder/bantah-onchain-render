@@ -9,6 +9,9 @@ const MORALIS_SOLANA_API_BASE =
 const MORALIS_EVM_API_BASE =
   process.env.MORALIS_EVM_API_BASE?.replace(/\/+$/, "") ||
   "https://deep-index.moralis.io/api/v2.2";
+const MORALIS_FETCH_TIMEOUT_MS = Number(
+  process.env.BANTAHBRO_MORALIS_FETCH_TIMEOUT_MS || 4_000,
+);
 
 function toNumber(value: unknown, fallback = 0): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -112,6 +115,7 @@ async function fetchJson(url: string, apiKey: string) {
       "X-API-Key": apiKey,
       "X-Api-Key": apiKey,
     },
+    signal: AbortSignal.timeout(MORALIS_FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -287,4 +291,3 @@ export async function fetchMoralisHolderMetrics(
     );
   }
 }
-

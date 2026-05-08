@@ -41,9 +41,13 @@ interface LiveMarketEntry {
 interface MarketTableEntry extends LiveMarketEntry {
   rowType?: 'market' | 'battle';
   rowEmoji?: string;
+  leftLogoUrl?: string | null;
+  rightLogoUrl?: string | null;
   queueLabel?: string;
   yesLabel?: string;
   noLabel?: string;
+  predictionVolumeAmount?: number;
+  predictionVolumeDisplay?: string;
   escrowHeadline?: string;
   escrowSubline?: string;
   battleId?: string;
@@ -169,18 +173,20 @@ function battleRows(feed: AgentBattleFeed | undefined): MarketTableEntry[] {
     const rightSymbol = right.label || (right.tokenSymbol ? `$${right.tokenSymbol}` : 'RIGHT');
     const totalVolume = (left.volumeH24 || 0) + (right.volumeH24 || 0);
     const leading = battle.leadingSideId === left.id ? left : right;
-    const queueLabel = index === 0 ? 'Current' : `Next ${index}`;
-    const timingLabel = index === 0 ? formatBattleCountdown(battle.timeRemainingSeconds) : `${battle.confidenceSpread}% gap`;
+    const timingLabel = formatBattleCountdown(battle.timeRemainingSeconds);
+    const predictionVolumeAmount = 0;
 
     return {
       id: battle.id,
       battleId: battle.id,
       rowType: 'battle',
-      queueLabel,
+      queueLabel: undefined,
       rowEmoji: leading.emoji || '⚔',
+      leftLogoUrl: left.logoUrl,
+      rightLogoUrl: right.logoUrl,
       source: 'agent',
-      sourceLabel: queueLabel,
-      title: `${left.emoji} ${leftSymbol} VS ${right.emoji} ${rightSymbol}`,
+      sourceLabel: 'Battle',
+      title: `${leftSymbol} VS ${rightSymbol}`,
       description: battle.title,
       category: timingLabel,
       status: battle.status,
@@ -189,7 +195,7 @@ function battleRows(feed: AgentBattleFeed | undefined): MarketTableEntry[] {
       tokenSymbol: `${leftSymbol}/${rightSymbol}`,
       chainId: left.chainId || right.chainId,
       chainKey: null,
-      chainLabel: queueLabel,
+      chainLabel: null,
       chainLogoUrl: null,
       escrowLocked: false,
       escrowLockedDisplay: 'NO',
@@ -198,6 +204,8 @@ function battleRows(feed: AgentBattleFeed | undefined): MarketTableEntry[] {
       escrowTxHash: null,
       poolAmount: totalVolume,
       poolDisplay: timingLabel,
+      predictionVolumeAmount,
+      predictionVolumeDisplay: `${formatCompact(predictionVolumeAmount)} BXBT`,
       yesPercent: left.confidence,
       noPercent: right.confidence,
       yesDisplay: left.change,
@@ -207,7 +215,7 @@ function battleRows(feed: AgentBattleFeed | undefined): MarketTableEntry[] {
       participantCount: battle.spectators,
       commentCount: battle.events.length,
       marketUrl: null,
-      coverImageUrl: null,
+      coverImageUrl: left.logoUrl || right.logoUrl || null,
       creatorName: 'BantahBro Engine',
       isAgentMarket: true,
     };
@@ -228,10 +236,18 @@ export default function MarketsTable({
     queryKey: ['/api/bantahbro/markets', { limit: '36' }],
     enabled: mode === 'markets',
   });
-  const { data: battlesData, isLoading: isBattlesLoading } = useQuery<AgentBattleFeed>({
+  const {
+    data: battlesData,
+    isLoading: isBattlesLoading,
+    isError: isBattlesError,
+    isFetching: isBattlesFetching,
+  } = useQuery<AgentBattleFeed>({
     queryKey: ['/api/bantahbro/agent-battles/live', { limit: '36' }],
     enabled: mode === 'battles',
-    refetchInterval: 15000,
+    refetchInterval: 15_000,
+    retry: 3,
+    retryDelay: 1_500,
+    placeholderData: (previousData) => previousData,
   });
 
   const isLoading = mode === 'battles' ? isBattlesLoading : isMarketsLoading;
@@ -286,8 +302,11 @@ export default function MarketsTable({
             <span className="w-4 shrink-0 text-center">#</span>
             <span className="w-9 shrink-0">Art</span>
             <span className="flex-1 min-w-0">{mode === 'battles' ? 'Battle' : 'Market'}</span>
-            <span className="min-w-[104px] shrink-0">{mode === 'battles' ? 'Queue' : 'Chains'}</span>
-            <span className="hidden lg:block min-w-[96px] shrink-0 text-right">{mode === 'battles' ? 'Timer / Gap' : 'Pool'}</span>
+            {mode !== 'battles' && <span className="min-w-[104px] shrink-0">Chains</span>}
+            <span className="hidden lg:block min-w-[96px] shrink-0 text-right">{mode === 'battles' ? 'Timer' : 'Pool'}</span>
+            {mode === 'battles' && (
+              <span className="hidden xl:block min-w-[108px] shrink-0 text-right">Prediction Vol.</span>
+            )}
             <span className="hidden lg:block min-w-[104px] shrink-0 text-center">{mode === 'battles' ? 'Status' : 'Escrow locked'}</span>
             <span className="min-w-[60px] shrink-0 text-center">{mode === 'battles' ? 'Left' : 'YES'}</span>
             <span className="min-w-[60px] shrink-0 text-center">{mode === 'battles' ? 'Right' : 'NO'}</span>
@@ -329,7 +348,32 @@ export default function MarketsTable({
                 <span className="text-xs font-bold text-muted-foreground w-4 shrink-0 text-center">{index + 1}</span>
 
                 <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-xl shrink-0 border border-border overflow-hidden">
-                  {market.coverImageUrl ? (
+                  {market.rowType === 'battle' && (market.leftLogoUrl || market.rightLogoUrl) ? (
+                    <div className="relative h-full w-full">
+                      {market.leftLogoUrl && (
+                        <img
+                          src={market.leftLogoUrl}
+                          alt={`${market.yesLabel || 'Left'} token logo`}
+                          className="absolute left-0 top-0 h-full w-[62%] rounded-full object-cover ring-1 ring-background"
+                          loading="lazy"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                      {market.rightLogoUrl && (
+                        <img
+                          src={market.rightLogoUrl}
+                          alt={`${market.noLabel || 'Right'} token logo`}
+                          className="absolute right-0 top-0 h-full w-[62%] rounded-full object-cover ring-1 ring-background"
+                          loading="lazy"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                    </div>
+                  ) : market.coverImageUrl ? (
                     <img
                       src={market.coverImageUrl}
                       alt={`${market.title} cover art`}
@@ -344,12 +388,20 @@ export default function MarketsTable({
                   )}
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm sm:text-[15px] font-bold text-foreground leading-tight truncate">
+                <div className={market.rowType === 'battle' ? 'flex-1 min-w-[14rem]' : 'flex-1 min-w-0'}>
+                  <div
+                    className={`text-sm sm:text-[15px] font-bold text-foreground leading-tight ${
+                      market.rowType === 'battle' ? 'whitespace-normal break-words' : 'truncate'
+                    }`}
+                  >
                     {market.title}
                   </div>
                   <div className="mt-1 flex items-center gap-1.5 min-w-0 overflow-hidden">
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-primary/90 shrink-0">
+                    <span
+                      className={`text-[10px] font-bold uppercase tracking-wide text-primary/90 shrink-0 ${
+                        market.rowType === 'battle' ? 'whitespace-normal break-words' : ''
+                      }`}
+                    >
                       {marketLabel(market)}
                     </span>
                     <span className="h-1 w-1 rounded-full bg-muted-foreground/40 shrink-0" />
@@ -367,27 +419,36 @@ export default function MarketsTable({
                   </div>
                 </div>
 
-                <div className="hidden md:flex items-center gap-1.5 min-w-[104px] shrink-0 text-xs text-muted-foreground">
-                  {market.chainLogoUrl && (
-                    <img
-                      src={market.chainLogoUrl}
-                      alt={market.chainLabel ? `${market.chainLabel} logo` : 'Chain logo'}
-                      className="h-5 w-5 rounded-full object-contain"
-                      loading="lazy"
-                      onError={(event) => {
-                        event.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  )}
-                  <span className="truncate">{market.chainLabel || '-'}</span>
-                </div>
+                {mode !== 'battles' && (
+                  <div className="hidden md:flex items-center gap-1.5 min-w-[104px] shrink-0 text-xs text-muted-foreground">
+                    {market.chainLogoUrl && (
+                      <img
+                        src={market.chainLogoUrl}
+                        alt={market.chainLabel ? `${market.chainLabel} logo` : 'Chain logo'}
+                        className="h-5 w-5 rounded-full object-contain"
+                        loading="lazy"
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    )}
+                    <span className="truncate">{market.chainLabel || '-'}</span>
+                  </div>
+                )}
 
-                <div className="hidden lg:flex flex-col items-end shrink-0 text-xs font-mono">
+                <div className="hidden lg:flex min-w-[96px] flex-col items-end shrink-0 text-xs font-mono">
                   <span className="text-foreground font-bold">{market.poolDisplay}</span>
                   <span className="text-muted-foreground">
                     {market.rowType === 'battle' ? market.escrowHeadline : `Ends ${formatTimeRemaining(market.dueDate)}`}
                   </span>
                 </div>
+
+                {mode === 'battles' && (
+                  <div className="hidden xl:flex min-w-[108px] flex-col items-end shrink-0 text-xs font-mono">
+                    <span className="font-bold text-foreground">{market.predictionVolumeDisplay || '0 BXBT'}</span>
+                    <span className="text-muted-foreground">joined sides</span>
+                  </div>
+                )}
 
                 <div
                   className="hidden lg:flex flex-col items-center justify-center shrink-0 min-w-[104px] text-xs"
@@ -400,12 +461,24 @@ export default function MarketsTable({
                 </div>
 
                 <div className="flex flex-col items-center bg-secondary/10 border border-secondary/30 rounded px-2 py-1.5 shrink-0 hover:bg-secondary/20 transition min-w-[60px]">
-                  <span className="max-w-[52px] truncate text-xs font-bold text-secondary">{market.yesLabel || 'YES'} {market.yesPercent}%</span>
+                  <span
+                    className={`text-xs font-bold text-secondary ${
+                      market.rowType === 'battle' ? 'max-w-none whitespace-normal break-words text-center' : 'max-w-[52px] truncate'
+                    }`}
+                  >
+                    {market.yesLabel || 'YES'} {market.yesPercent}%
+                  </span>
                   <span className="text-xs text-muted-foreground font-mono hidden sm:block">{market.yesDisplay}</span>
                 </div>
 
                 <div className="flex flex-col items-center bg-destructive/10 border border-destructive/30 rounded px-2 py-1.5 shrink-0 hover:bg-destructive/20 transition min-w-[60px]">
-                  <span className="max-w-[52px] truncate text-xs font-bold text-destructive">{market.noLabel || 'NO'} {market.noPercent}%</span>
+                  <span
+                    className={`text-xs font-bold text-destructive ${
+                      market.rowType === 'battle' ? 'max-w-none whitespace-normal break-words text-center' : 'max-w-[52px] truncate'
+                    }`}
+                  >
+                    {market.noLabel || 'NO'} {market.noPercent}%
+                  </span>
                   <span className="text-xs text-muted-foreground font-mono hidden sm:block">{market.noDisplay}</span>
                 </div>
 
@@ -419,19 +492,19 @@ export default function MarketsTable({
 
         {!isLoading && markets.length === 0 && (
           <div className="px-4 py-6 text-sm text-muted-foreground">
-            {mode === 'battles' ? 'No live battles are available yet.' : 'No live markets are available yet.'}
+            {mode === 'battles'
+              ? isBattlesError
+                ? 'Live battle engine is reconnecting. Dexscreener battles will appear as soon as the API responds.'
+                : isBattlesFetching || !battlesData
+                  ? 'Connecting to the live battle engine...'
+                  : 'No eligible live battles passed the current Dexscreener filters yet.'
+              : 'No live markets are available yet.'}
           </div>
         )}
 
         {!isLoading && mode === 'markets' && (
           <div className="px-3 py-2 border-b border-border text-xs text-muted-foreground">
             Source mix: {data?.sources.onchain.count || 0} onchain, {agentCount} BantahBro agent, {data?.sources.telegram.count || 0} Telegram, {data?.sources.twitter.count || 0} Twitter
-          </div>
-        )}
-
-        {!isLoading && mode === 'battles' && (
-          <div className="px-3 py-2 border-b border-border text-xs text-muted-foreground">
-            Source mix: {markets.length} live Agent Battles, Dexscreener-backed token data, refreshed every 15s
           </div>
         )}
 

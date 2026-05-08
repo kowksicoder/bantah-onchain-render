@@ -48,6 +48,7 @@ export const bantahBroPairSnapshotSchema = z.object({
   chainId: z.string(),
   dexId: z.string().nullable(),
   url: z.string().url().nullable(),
+  imageUrl: z.string().url().nullable(),
   pairAddress: z.string(),
   baseToken: bantahBroPairTokenSchema,
   quoteToken: bantahBroPairTokenSchema,

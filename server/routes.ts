@@ -84,6 +84,17 @@ import notificationsApi from './routes/notificationsApi';
 import adminNotificationsApi from './routes/adminNotificationsApi';
 import agentsApi from './routes/agentsApi';
 import bantahBroApi from './routes/bantahBroApi';
+import { registerBlinkActionRoutes } from './routes/blinkActionsApi';
+import { getBantahBroBattleEngineFeed } from './bantahBro/battleDiscoveryEngine';
+import {
+  listBantahBroBattleOverrides,
+  updateBantahBroBattleOverride,
+} from './bantahBro/battleOverridesService';
+import {
+  listBantahBroListedBattles,
+  publishBantahBroBattleCandidates,
+  unlistBantahBroBattle,
+} from './bantahBro/battleListingsService';
 import { notificationInfrastructure } from './notificationInfrastructure';
 import { normalizePolymarketMarkets } from "./externalMarketAdapters";
 import type { ExternalMarket } from "@shared/externalMarkets";
@@ -317,6 +328,12 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
   // Auth middleware
   await setupAuth(app);
+
+  // The battle discovery engine is an admin control surface. Keep old public links
+  // from rendering a blank BantahBro route by sending them to the admin page.
+  app.get(['/bantahbro/battle-engine/live', '/bantahbro/battle-engine/live/'], (_req, res) => {
+    res.redirect(302, '/admin/bantahbro-engine');
+  });
 
   // Partner program tables are isolated from existing challenge tables.
   // Ensure they exist at boot so partner endpoints work without a separate migration step.
@@ -3927,6 +3944,157 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
 
   // Admin routes with authentication
   app.use('/api/admin', adminAuth);
+
+  app.get('/api/admin/bantahbro/battle-engine/live', async (req, res) => {
+    try {
+      const parseAdminLimit = (value: unknown, fallback: number, max: number) => {
+        const parsed = Number.parseInt(String(value ?? ""), 10);
+        if (!Number.isInteger(parsed)) return fallback;
+        return Math.max(1, Math.min(parsed, max));
+      };
+
+      const feed = await getBantahBroBattleEngineFeed({
+        scanLimit: parseAdminLimit(req.query.scanLimit, 28, 80),
+        candidateLimit: parseAdminLimit(req.query.candidateLimit, 80, 240),
+        selectedLimit: parseAdminLimit(req.query.selectedLimit, 24, 60),
+        featuredLimit: parseAdminLimit(req.query.featuredLimit, 8, 12),
+        bypassCache: String(req.query.refresh || "").toLowerCase() === "true",
+      });
+
+      res.json(feed);
+    } catch (error) {
+      console.error("Error running BantahBro battle engine:", error);
+      res.status(502).json({
+        message: error instanceof Error ? error.message : "Failed to run BantahBro battle engine",
+      });
+    }
+  });
+
+  app.get('/api/admin/bantahbro/battle-engine/overrides', async (_req, res) => {
+    try {
+      res.json({ overrides: await listBantahBroBattleOverrides() });
+    } catch (error) {
+      console.error("Error listing BantahBro battle overrides:", error);
+      res.status(500).json({
+        message: error instanceof Error ? error.message : "Failed to list battle overrides",
+      });
+    }
+  });
+
+  app.get('/api/admin/bantahbro/battle-engine/listed', async (_req, res) => {
+    try {
+      res.json({ battles: await listBantahBroListedBattles() });
+    } catch (error) {
+      console.error("Error listing official BantahBro battles:", error);
+      res.status(500).json({
+        message: error instanceof Error ? error.message : "Failed to list official battles",
+      });
+    }
+  });
+
+  app.post('/api/admin/bantahbro/battle-engine/listed', async (req: AdminAuthRequest, res) => {
+    try {
+      const battles = Array.isArray(req.body?.battles) ? req.body.battles : [];
+      if (!battles.length) {
+        return res.status(400).json({ message: "Select at least one battle to list" });
+      }
+
+      const published = await publishBantahBroBattleCandidates(battles, {
+        listedBy: req.adminUser?.id ?? null,
+        source: "engine",
+      });
+
+      res.json({
+        published,
+        count: published.length,
+        message: `${published.length} battle${published.length === 1 ? "" : "s"} listed officially`,
+      });
+    } catch (error) {
+      console.error("Error publishing official BantahBro battles:", error);
+      res.status(400).json({
+        message: error instanceof Error ? error.message : "Failed to publish official battles",
+      });
+    }
+  });
+
+  app.post('/api/admin/bantahbro/battle-engine/listed/autolist', async (req: AdminAuthRequest, res) => {
+    try {
+      const parsedLimit = Number.parseInt(String(req.body?.limit ?? req.query.limit ?? "30"), 10);
+      const limit = Number.isInteger(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 60)) : 30;
+      const feed = await getBantahBroBattleEngineFeed({
+        scanLimit: Math.max(40, Math.min(80, limit * 3)),
+        candidateLimit: Math.max(120, limit * 8),
+        selectedLimit: limit,
+        featuredLimit: Math.min(12, limit),
+        bypassCache: true,
+      });
+      const candidateMap = new Map<string, typeof feed.selectedBattles[number]>();
+      for (const battle of feed.selectedBattles) candidateMap.set(battle.id, battle);
+      for (const battle of feed.candidates) candidateMap.set(battle.id, battle);
+      const candidates = Array.from(candidateMap.values()).slice(0, limit);
+      if (!candidates.length) {
+        return res.status(409).json({ message: "No eligible live engine battles to list right now" });
+      }
+
+      const published = await publishBantahBroBattleCandidates(candidates, {
+        listedBy: req.adminUser?.id ?? null,
+        source: "engine",
+      });
+
+      res.json({
+        published,
+        count: published.length,
+        scanned: feed.scanner.analyzedTokens,
+        candidateCount: feed.candidates.length,
+        message: `${published.length} live engine battle${published.length === 1 ? "" : "s"} listed officially`,
+      });
+    } catch (error) {
+      console.error("Error auto-listing BantahBro battles:", error);
+      res.status(400).json({
+        message: error instanceof Error ? error.message : "Failed to auto-list battles",
+      });
+    }
+  });
+
+  app.delete('/api/admin/bantahbro/battle-engine/listed/:battleId', async (req, res) => {
+    try {
+      const removed = await unlistBantahBroBattle(String(req.params.battleId || ""));
+      res.json({ removed, message: removed ? "Battle unlisted" : "Battle was not listed" });
+    } catch (error) {
+      console.error("Error unlisting BantahBro battle:", error);
+      res.status(400).json({
+        message: error instanceof Error ? error.message : "Failed to unlist battle",
+      });
+    }
+  });
+
+  app.patch('/api/admin/bantahbro/battle-engine/battles/:battleId/override', async (req: AdminAuthRequest, res) => {
+    try {
+      const parseOptionalBoolean = (value: unknown) => {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") {
+          if (value.toLowerCase() === "true") return true;
+          if (value.toLowerCase() === "false") return false;
+        }
+        return undefined;
+      };
+
+      const record = await updateBantahBroBattleOverride(String(req.params.battleId || ""), {
+        hidden: parseOptionalBoolean(req.body?.hidden),
+        pinned: parseOptionalBoolean(req.body?.pinned),
+        featured: parseOptionalBoolean(req.body?.featured),
+        note: typeof req.body?.note === "string" ? req.body.note : undefined,
+        updatedBy: req.adminUser?.id ?? null,
+      });
+
+      res.json({ override: record });
+    } catch (error) {
+      console.error("Error updating BantahBro battle override:", error);
+      res.status(400).json({
+        message: error instanceof Error ? error.message : "Failed to update battle override",
+      });
+    }
+  });
 
   app.get('/api/admin/stats', adminAuth, async (req, res) => {
     try {
@@ -7989,82 +8157,20 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
     }
   }
 
-  // Test Telegram broadcast endpoint
+  // Disabled: Telegram sends must come from real product usage, not mock/test blasts.
   app.post('/api/telegram/test-broadcast', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
-    try {
-      const telegramBot = getTelegramBot();
-
-      if (!telegramBot) {
-        return res.status(400).json({ message: "Telegram bot not configured" });
-      }
-
-      const message = req.body.message || "🧪 Test message from BetChat";
-      const success = await telegramBot.sendCustomMessage(message);
-
-      res.json({ 
-        success, 
-        message: success ? "Message sent successfully" : "Failed to send message - Make sure bot is added to your channel as admin" 
-      });
-    } catch (error) {
-      console.error("Error testing Telegram broadcast:", error);
-      res.status(500).json({ message: "Failed to test Telegram broadcast" });
-    }
+    return res.status(410).json({
+      success: false,
+      message: "Telegram test broadcasts are disabled. Alerts are sent only from real usage flows.",
+    });
   });
 
-  // Broadcast existing events to Telegram channel
+  // Disabled: bulk replaying old events can create mock/noisy Telegram alerts.
   app.post('/api/telegram/broadcast-existing', PrivyAuthMiddleware, async (req: AuthenticatedRequest, res) => {
-    try {
-      const telegramBot = getTelegramBot();
-
-      if (!telegramBot) {
-        return res.status(400).json({ message: "Telegram bot not configured" });
-      }
-
-      // Get all existing events
-      const existingEvents = await storage.getEvents();
-      let successCount = 0;
-      let totalCount = existingEvents.length;
-
-      for (const event of existingEvents) {
-        try {
-          // Get creator info
-          const creator = await storage.getUser(event.creatorId);
-
-          const success = await telegramBot.broadcastEvent({
-            id: event.id,
-            title: event.title,
-            description: event.description || undefined,
-            creator: {
-              name: creator?.firstName || creator?.username || 'Unknown',
-              username: creator?.username || undefined,
-            },
-            entryFee: event.entryFee.toString(),
-            endDate: event.endDate.toISOString(),
-            is_private: event.isPrivate,
-            max_participants: event.maxParticipants,
-            category: event.category,
-          });
-
-          if (success) {
-            successCount++;
-          }
-
-          // Add small delay to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } catch (error) {
-          console.error(`Failed to broadcast event ${event.id}:`, error);
-        }
-      }
-
-      res.json({ 
-        success: successCount > 0, 
-        message: `Broadcasted ${successCount} out of ${totalCount} existing events`,
-        details: { successCount, totalCount }
-      });
-    } catch (error) {
-      console.error("Error broadcasting existing events:", error);
-      res.status(500).json({ message: "Failed to broadcast existing events" });
-    }
+    return res.status(410).json({
+      success: false,
+      message: "Bulk Telegram broadcasts are disabled. Alerts are sent only from real usage flows.",
+    });
   });
 
   // Follow/Unfollow user route
@@ -10282,6 +10388,7 @@ export async function registerRoutes(app: Express, upload?: any): Promise<Server
   });
 
   // Register all other routes
+  registerBlinkActionRoutes(app);
   app.use('/api/notifications', notificationsApi);
   app.use('/api/admin/notifications', adminNotificationsApi);
   app.use('/api/agents', agentsApi);

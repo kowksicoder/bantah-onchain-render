@@ -51,14 +51,13 @@ import AdminSettings from "./pages/AdminSettings";
 import AdminWallet from "./pages/AdminWallet";
 import AdminTreasury from "./pages/AdminTreasury";
 import AdminPartners from "./pages/AdminPartners";
+import AdminBantahBroEngine from "./pages/AdminBantahBroEngine";
 
 import { DailyLoginModal } from '@/components/DailyLoginModal';
 import { useDailyLoginPopup } from '@/hooks/useDailyLoginPopup';
 import AdminLogin from "@/pages/AdminLogin";
 import { WebsiteTour, useTour } from "@/components/WebsiteTour";
-import { SplashScreen } from "@/components/SplashScreen";
 import AddToHomePrompt from "@/components/AddToHomePrompt";
-import TelegramTest from "./pages/TelegramTest";
 import TelegramLink from "@/pages/TelegramLink";
 import Bantzz from "./pages/Bantzz";
 import Stories from "./pages/Stories";
@@ -78,9 +77,12 @@ const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const Agents = lazy(() => import("./pages/Agents"));
 const AgentDetail = lazy(() => import("./pages/AgentDetail"));
 const BantahBro = lazy(() => import("./pages/BantahBro"));
+const BantahBroBattles = lazy(() => import("./pages/BantahBroBattles"));
 const BantahBroAgents = lazy(() => import("./pages/BantahBroAgents"));
 const BantahBroAds = lazy(() => import("./pages/BantahBroAds"));
 const BantahBroLauncher = lazy(() => import("./pages/BantahBroLauncher"));
+const BantahBroPolymarket = lazy(() => import("./pages/BantahBroPolymarket"));
+const BantahBroPolymarketBattle = lazy(() => import("./pages/BantahBroPolymarketBattle"));
 const BantahBroRugScorer = lazy(() => import("./pages/BantahBroRugScorer"));
 const PartnerPrograms = lazy(() => import("./pages/PartnerPrograms"));
 const PartnerSignup = lazy(() => import("./pages/PartnerSignup"));
@@ -106,6 +108,14 @@ function DefaultRouteFallback() {
       </div>
     </div>
   );
+}
+
+function AdminEngineRedirect() {
+  useEffect(() => {
+    window.location.replace('/admin/bantahbro-engine');
+  }, []);
+
+  return <DefaultRouteFallback />;
 }
 
 function AppRouter() {
@@ -261,9 +271,13 @@ function AppRouter() {
       <Route path="/skills" component={Skills} />
       <Route path="/partners" component={PartnerPrograms} />
       <Route path="/partner-signup" component={PartnerSignup} />
+      <Route path="/bantahbro/battle-engine/live" component={AdminEngineRedirect} />
+      <Route path="/bantahbro/battles" component={BantahBroBattles} />
       <Route path="/bantahbro/agents" component={BantahBroAgents} />
       <Route path="/bantahbro/ads" component={BantahBroAds} />
       <Route path="/bantahbro/launcher" component={BantahBroLauncher} />
+      <Route path="/bantahbro/polymarket/:battleId" component={BantahBroPolymarketBattle} />
+      <Route path="/bantahbro/polymarket" component={BantahBroPolymarket} />
       <Route path="/bantahbro/rug-scorer" component={BantahBroRugScorer} />
       <Route path="/bantahbro" component={BantahBro} />
       <Route path="/bantahbro/" component={BantahBro} />
@@ -285,6 +299,7 @@ function AppRouter() {
       <Route path="/event/:id" component={EventChatPage} />
 
       {/* Admin routes - accessible regardless of main authentication state */}
+      <Route path="/admin/bantahbro-engine" component={AdminBantahBroEngine} />
       <Route path="/admin" component={AdminDashboardOverview} />
       <Route path="/admin/payouts" component={AdminPayoutDashboard} />
       <Route path="/admin/events" component={AdminEventPayouts} />
@@ -348,7 +363,6 @@ function AppRouter() {
           <Route path="/terms-of-service" component={TermsOfService} />
           <Route path="/privacy-policy" component={PrivacyPolicy} />
           <Route path="/data-deletion-request" component={DataDeletionRequest} />
-          <Route path="/telegram/test" component={TelegramTest} />
           <Route path="/telegram-auth" component={TelegramLink} />
           <Route path="/telegram-link" component={TelegramLink} />
           <Route path="/bantzz" component={Bantzz} />
@@ -389,10 +403,6 @@ function AppRouter() {
 }
 
 function App() {
-  const [isBantahBroRoute] = useState(() =>
-    typeof window !== 'undefined' ? isBantahBroPath(window.location.pathname) : false
-  );
-  const [showSplash, setShowSplash] = useState(() => !isBantahBroRoute);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -406,10 +416,6 @@ function App() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handleSplashComplete = () => {
-    setShowSplash(false);
-  };
-
   return (
     <QueryClientProvider client={queryClient}>
       <PrivyProvider
@@ -419,25 +425,18 @@ function App() {
         <ThemeProvider>
           <EventsSearchProvider>
             <div className={`${isMobile ? 'mobile-app' : ''}`}>
-              {showSplash ? (
-                <SplashScreen
-                  onComplete={handleSplashComplete}
-                  variant={isBantahBroRoute ? 'bantahbro' : 'bantah'}
-                />
-              ) : (
-                <TooltipProvider>
-                  <Toaster />
-                  <AddToHomePrompt />
-                  <ErrorBoundary
-                    fallback={<div className="p-4 text-center">Something went wrong. Please refresh the page.</div>}
-                    onError={(error) => console.error("App Error:", error)}
-                  >
-                    <Router>
-                      <AppRouter />
-                    </Router>
-                  </ErrorBoundary>
-                </TooltipProvider>
-              )}
+              <TooltipProvider>
+                <Toaster />
+                <AddToHomePrompt />
+                <ErrorBoundary
+                  fallback={<div className="p-4 text-center">Something went wrong. Please refresh the page.</div>}
+                  onError={(error) => console.error("App Error:", error)}
+                >
+                  <Router>
+                    <AppRouter />
+                  </Router>
+                </ErrorBoundary>
+              </TooltipProvider>
             </div>
           </EventsSearchProvider>
         </ThemeProvider>

@@ -54,7 +54,19 @@ function BattleSideMini({ side, index }: { side: AgentBattleSide; index: number 
   return (
     <div className="flex flex-col items-center flex-1 min-w-0">
       <div className={`w-11 h-11 rounded-full ${tone.bg} border-2 ${tone.border} flex items-center justify-center text-2xl mb-1`}>
-        {side.emoji}
+        {side.logoUrl ? (
+          <img
+            src={side.logoUrl}
+            alt={`${side.label} logo`}
+            className="h-full w-full rounded-full object-cover"
+            loading="lazy"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : (
+          side.emoji
+        )}
       </div>
       <span className="text-xs font-bold text-foreground truncate max-w-full">{side.label}</span>
       <span className={`text-lg font-mono font-bold ${tone.text}`}>{side.confidence}%</span>
@@ -67,15 +79,18 @@ function BattleSideMini({ side, index }: { side: AgentBattleSide; index: number 
 }
 
 export default function AgentBattle({ onViewBattle }: { onViewBattle?: () => void }) {
-  const { data, isLoading, isError } = useQuery<AgentBattleFeed>({
+  const { data, isLoading, isError, isFetching } = useQuery<AgentBattleFeed>({
     queryKey: ['/api/bantahbro/agent-battles/live', { limit: '1' }],
     staleTime: 3_000,
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
+    retry: 3,
+    retryDelay: 1_500,
+    placeholderData: (previousData) => previousData,
   });
 
   const battle = data?.battles?.[0];
 
-  if (isLoading) {
+  if (isLoading || (isFetching && !battle)) {
     return (
       <div className="flex flex-col h-full overflow-hidden">
         <div className="border-b border-border bg-background px-3 py-2 flex items-center justify-between">
@@ -111,9 +126,11 @@ export default function AgentBattle({ onViewBattle }: { onViewBattle?: () => voi
         </div>
         <div className="flex-1 grid place-items-center px-3 text-center">
           <div>
-            <div className="text-sm font-bold text-foreground mb-1">No live battle feed yet</div>
+            <div className="text-sm font-bold text-foreground mb-1">
+              {isError ? 'Battle engine reconnecting' : 'Loading live battle feed'}
+            </div>
             <div className="text-xs text-muted-foreground">
-              Waiting for enough live Dexscreener tokens to pair into an Agent Battle.
+              Dexscreener-backed battles will appear here as soon as the live feed responds.
             </div>
           </div>
         </div>

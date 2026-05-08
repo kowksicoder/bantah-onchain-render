@@ -4,6 +4,7 @@ import { useState, useEffect, type ReactNode } from 'react';
 import Sidebar from '@/components/layout/sidebar';
 import TopBar from '@/components/layout/topbar';
 import MainContent from '@/components/layout/main-content';
+import type { MainContentTopTab } from '@/components/layout/main-content';
 import RightPanel from '@/components/layout/right-panel';
 import MobileBottomNav from '@/components/layout/mobile-bottom-nav';
 import ChatPage from '@/components/pages/chat-page';
@@ -16,6 +17,7 @@ import RugScorerPage from '@/components/pages/rug-scorer-page';
 import LauncherPage from '@/components/pages/launcher-page';
 import AgentsPage from '@/components/pages/agents-page';
 import AdsPage from '@/components/pages/ads-page';
+import PolymarketBattlePage from '@/components/pages/polymarket-battle-page';
 
 export type AppSection =
   | 'dashboard'
@@ -29,7 +31,8 @@ export type AppSection =
   | 'rug-scorer'
   | 'launcher'
   | 'profile'
-  | 'prediction';
+  | 'prediction'
+  | 'prediction-battle';
 
 export type BantahTool =
   | 'assistant'
@@ -40,10 +43,19 @@ export type BantahTool =
   | 'bxbt'
   | 'launcher';
 
-export default function Home({ initialSection = 'dashboard' }: { initialSection?: AppSection }) {
+export default function Home({
+  initialSection = 'dashboard',
+  initialDashboardTab = 'markets',
+  initialPredictionBattleId = '',
+}: {
+  initialSection?: AppSection;
+  initialDashboardTab?: MainContentTopTab;
+  initialPredictionBattleId?: string;
+}) {
   const [selectedToken, setSelectedToken] = useState('PEPEFUN');
   const [isMounted, setIsMounted] = useState(false);
   const [activeSection, setActiveSection] = useState<AppSection>(initialSection);
+  const [predictionBattleId] = useState(initialPredictionBattleId);
   const [activeTool, setActiveTool] = useState<BantahTool>('assistant');
 
   useEffect(() => {
@@ -96,6 +108,12 @@ export default function Home({ initialSection = 'dashboard' }: { initialSection?
         return renderWithRightPanel(<LauncherPage />);
       case 'profile':
         return renderWithRightPanel(<ProfilePage />);
+      case 'prediction-battle':
+        return (
+          <div className="flex-1 flex overflow-hidden p-0">
+            <PolymarketBattlePage battleId={predictionBattleId} />
+          </div>
+        );
       default:
         return renderWithRightPanel(
           <MainContent
@@ -103,6 +121,7 @@ export default function Home({ initialSection = 'dashboard' }: { initialSection?
             setSelectedToken={setSelectedToken}
             activeSection={activeSection}
             onNavigate={setActiveSection}
+            initialTab={initialDashboardTab}
           />,
           activeSection === 'prediction' ? 'w-full md:w-auto' : 'hidden lg:flex'
         );

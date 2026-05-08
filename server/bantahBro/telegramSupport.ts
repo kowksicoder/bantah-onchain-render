@@ -436,6 +436,12 @@ export function buildBantahBroAgentsUrl() {
   return buildBantahBroHomeUrl();
 }
 
+export function buildBantahBroBattlesUrl(battleId?: string | null) {
+  const url = new URL("/bantahbro/battles", getBantahBroWebBaseUrl());
+  if (battleId) url.searchParams.set("battle", battleId);
+  return url.toString();
+}
+
 export function buildBantahBroTelegramStartUrl() {
   return buildBantahBroHomeUrl();
 }

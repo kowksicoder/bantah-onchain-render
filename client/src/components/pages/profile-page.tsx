@@ -1,188 +1,166 @@
 'use client'
 
 import { useState } from 'react'
-import { Settings, Copy, Check, TrendingUp, Trophy, Zap } from 'lucide-react'
+import { Check, Copy, Settings } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/hooks/useAuth'
 
-const MOCK_ACTIVITY = [
-  { id: '1', action: 'Placed bet', detail: 'YES on "Will BTC break ATH?" — 1,500 BXBT', time: '2h ago', type: 'bet' },
-  { id: '2', action: 'Won market', detail: '"Will BTC break ATH by April?" — +1,240 BXBT', time: '1d ago', type: 'win' },
-  { id: '3', action: 'Placed bet', detail: 'NO on "Will ETH hit $5K?" — 800 BXBT', time: '1d ago', type: 'bet' },
-  { id: '4', action: 'Followed agent', detail: 'Now following BullBot AI', time: '2d ago', type: 'follow' },
-  { id: '5', action: 'Lost market', detail: '"Will DOGE hit $1 by March?" — -300 BXBT', time: '3d ago', type: 'loss' },
-]
+function getWalletAddress(user: unknown) {
+  const candidate = user as any
+  const walletAddress =
+    candidate?.wallet?.address ||
+    candidate?.walletAddress ||
+    candidate?.wallet_address ||
+    candidate?.linkedAccounts?.find?.((account: any) => account?.type === 'wallet')?.address ||
+    candidate?.linked_accounts?.find?.((account: any) => account?.type === 'wallet')?.address
 
-const profileStats = [
-  { label: 'Markets Joined', value: '34', icon: '📊' },
-  { label: 'Win Rate', value: '66.7%', icon: '🏆' },
-  { label: 'Total Profit', value: '+1,003 BXBT', icon: '💰' },
-  { label: 'Longest Streak', value: '5 Wins', icon: '🔥' },
-  { label: 'Rank', value: '#47', icon: '📈' },
-  { label: 'Joined', value: 'Jan 2025', icon: '📅' },
-]
+  return typeof walletAddress === 'string' && walletAddress.trim() ? walletAddress.trim() : null
+}
 
-const mobileProfileStatLabels: Record<string, string> = {
-  'Markets Joined': 'Markets',
-  'Win Rate': 'Win',
-  'Total Profit': 'Profit',
-  'Longest Streak': 'Streak',
-  Rank: 'Rank',
-  Joined: 'Joined',
+function shortenAddress(address: string | null) {
+  if (!address) return 'Wallet connected'
+  if (address.length <= 14) return address
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
 export default function ProfilePage() {
+  const { user, isAuthenticated, isLoading: authLoading, login } = useAuth()
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'activity' | 'settings'>('activity')
-  const [isLoading] = useState(false)
+  const walletAddress = getWalletAddress(user)
+  const displayAddress = shortenAddress(walletAddress)
 
   const copyAddress = () => {
-    navigator.clipboard.writeText('0xBantah...Bro')
+    if (!walletAddress) return
+    navigator.clipboard.writeText(walletAddress)
     setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setTimeout(() => setCopied(false), 1600)
   }
 
-  const activityColor: Record<string, string> = {
-    bet: 'text-primary',
-    win: 'text-secondary',
-    loss: 'text-destructive',
-    follow: 'text-accent',
+  if (authLoading) {
+    return (
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="rounded border border-border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-10 w-10 rounded-full" />
+            <div className="flex-1 space-y-1.5">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
-  const activityIcon: Record<string, string> = {
-    bet: '🎯',
-    win: '🏆',
-    loss: '💸',
-    follow: '🤖',
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="rounded border border-border bg-card p-3">
+          <div className="flex min-h-[260px] flex-col items-center justify-center rounded-md border border-dashed border-primary/30 bg-primary/5 px-4 text-center">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full border border-primary/30 bg-background text-2xl">
+              :)
+            </div>
+            <h2 className="text-base font-black text-foreground">Sign in to view your profile</h2>
+            <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
+              Your real battle history, payouts, and BXBT profile stats will show here after you connect.
+            </p>
+            <button
+              type="button"
+              onClick={() => login()}
+              className="bb-tap mt-4 rounded-md border border-primary/50 bg-primary px-4 py-2 text-xs font-black text-primary-foreground transition hover:bg-primary/90 active:translate-y-0.5"
+            >
+              Sign in with Privy
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <div className="flex-1 flex flex-col bg-card border border-border rounded overflow-hidden">
-        {/* Header */}
-        <div className="border-b border-border bg-background px-4 py-4">
-          <div className="flex items-start gap-3">
-            <div className="w-14 h-14 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center text-3xl shrink-0">
-              😊
+      <div className="flex-1 flex flex-col overflow-hidden rounded border border-border bg-card">
+        <div className="border-b border-border bg-background px-3 py-2.5">
+          <div className="flex items-center gap-2">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-primary/15 text-lg">
+              :)
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-lg font-bold text-foreground">0xBantah...Bro</h2>
-                <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded font-bold">DEGEN</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <h2 className="truncate text-sm font-black text-foreground">{displayAddress}</h2>
+                <span className="rounded bg-secondary/15 px-1.5 py-0.5 text-[10px] font-black uppercase text-secondary">
+                  Connected
+                </span>
               </div>
               <button
+                type="button"
                 onClick={copyAddress}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition mt-0.5"
+                disabled={!walletAddress}
+                className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {copied ? <Check size={12} className="text-secondary" /> : <Copy size={12} />}
-                <span className="font-mono">0xA1B2...C3D4</span>
+                {copied ? <Check size={11} className="text-secondary" /> : <Copy size={11} />}
+                <span className="font-mono">{displayAddress}</span>
               </button>
-              <p className="text-xs text-muted-foreground mt-1">Crypto degen. Betting on the future. 🚀</p>
             </div>
-            <button className="p-2 hover:bg-muted rounded transition shrink-0">
-              <Settings size={16} className="text-muted-foreground" />
+            <button className="bb-tap rounded border border-border bg-muted/30 p-2 transition hover:bg-muted">
+              <Settings size={14} className="text-muted-foreground" />
             </button>
           </div>
 
-          {/* Stats Grid */}
-          {isLoading ? (
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-2.5 sm:mt-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded sm:h-14" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-2.5 sm:mt-4">
-              {profileStats.map((stat) => (
-                <div key={stat.label} className="bb-tap min-w-0 rounded-md border border-border/70 bg-muted/35 px-1.5 py-1 text-center sm:rounded sm:p-2">
-                  <div className="text-xs leading-none sm:mb-0.5 sm:text-base">{stat.icon}</div>
-                  <div className="truncate font-mono text-[11px] font-bold leading-tight text-foreground sm:text-sm">{stat.value}</div>
-                  <div className="truncate text-[9px] font-semibold leading-tight text-muted-foreground sm:text-xs">
-                    <span className="sm:hidden">{mobileProfileStatLabels[stat.label] ?? stat.label}</span>
-                    <span className="hidden sm:inline">{stat.label}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            {[
+              ['Wallet', 'Live'],
+              ['Battles', 'Syncing'],
+              ['BXBT', 'Tracked'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded border border-border/70 bg-muted/25 px-2 py-1.5">
+                <div className="truncate text-[10px] font-semibold uppercase text-muted-foreground">{label}</div>
+                <div className="truncate text-xs font-black text-foreground">{value}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="border-b border-border bg-background flex">
+        <div className="flex border-b border-border bg-background px-2">
           {(['activity', 'settings'] as const).map((tab) => (
             <button
               key={tab}
+              type="button"
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 sm:flex-none px-4 py-2 text-xs font-bold capitalize transition border-b-2 ${
+              className={`border-b-2 px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
                 activeTab === tab
                   ? 'border-primary text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              {tab === 'activity' ? '⚡ Activity' : '⚙️ Settings'}
+              {tab}
             </button>
           ))}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-3">
           {activeTab === 'activity' ? (
-            isLoading ? (
-              <div className="p-3 space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex items-start gap-3 p-2">
-                    <Skeleton className="w-8 h-8 rounded-full shrink-0" />
-                    <div className="flex-1 space-y-1.5">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-3 w-full" />
-                    </div>
-                    <Skeleton className="h-3 w-16 shrink-0" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {MOCK_ACTIVITY.map((item) => (
-                  <div key={item.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm shrink-0">
-                      {activityIcon[item.type]}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`text-xs font-bold ${activityColor[item.type] ?? 'text-foreground'}`}>
-                        {item.action}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{item.detail}</div>
-                    </div>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{item.time}</span>
-                  </div>
-                ))}
-              </div>
-            )
+            <div className="rounded-md border border-border bg-background/60 p-3">
+              <div className="text-xs font-black uppercase tracking-wide text-foreground">No activity yet</div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Real escrow-backed battle joins, prediction wins, and payouts will appear here once you start using BantahBro.
+              </p>
+            </div>
           ) : (
-            <div className="p-4 space-y-4">
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-foreground">Preferences</h3>
-                {[
-                  { label: 'Email Notifications', desc: 'Receive alerts via email', enabled: true },
-                  { label: 'Push Notifications', desc: 'Browser push alerts', enabled: false },
-                  { label: 'Agent Signals', desc: 'Get signals from followed agents', enabled: true },
-                  { label: 'Market Reminders', desc: 'Remind me before markets close', enabled: true },
-                ].map((setting) => (
-                  <div key={setting.label} className="flex items-center justify-between p-3 bg-muted/30 border border-border rounded">
-                    <div>
-                      <div className="text-sm font-bold text-foreground">{setting.label}</div>
-                      <div className="text-xs text-muted-foreground">{setting.desc}</div>
-                    </div>
-                    <div className={`w-10 h-5 rounded-full transition relative cursor-pointer ${setting.enabled ? 'bg-primary' : 'bg-muted'}`}>
-                      <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${setting.enabled ? 'left-5' : 'left-0.5'}`} />
-                    </div>
-                  </div>
-                ))}
+            <div className="space-y-2">
+              <div className="rounded-md border border-border bg-background/60 p-3">
+                <div className="text-xs font-black uppercase tracking-wide text-foreground">Account</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Wallet auth is handled through Privy. Profile preferences can plug into the live user dashboard next.
+                </p>
               </div>
-              <div className="space-y-2">
-                <h3 className="text-sm font-bold text-foreground">Danger Zone</h3>
-                <button className="w-full text-xs font-bold text-destructive border border-destructive/40 rounded px-4 py-2 hover:bg-destructive/10 transition">
-                  Disconnect Wallet
-                </button>
-              </div>
+              <button
+                type="button"
+                className="bb-tap w-full rounded-md border border-border bg-muted/30 px-3 py-2 text-xs font-black text-foreground transition hover:bg-muted"
+              >
+                Manage profile settings
+              </button>
             </div>
           )}
         </div>
