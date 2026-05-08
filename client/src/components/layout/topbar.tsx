@@ -23,50 +23,6 @@ type SearchItem = {
   tool?: BantahTool
 }
 
-type HotTickerEntry = {
-  id: string
-  emoji: string
-  displaySymbol: string
-  actualSymbol: string | null
-  tokenName: string | null
-  change: string
-  direction: 'up' | 'down' | 'flat'
-  priceChangeH24: number
-  priceUsd: number | null
-  priceDisplay: string
-  chainId: string | null
-  chainLabel: string | null
-  marketCap: number | null
-  liquidityUsd: number | null
-  volumeH24: number | null
-  tokenAddress: string | null
-  pairUrl: string | null
-  source: 'dexscreener'
-  status: 'live'
-  holderEnriched: boolean
-  replacedQuery: string | null
-  reason: string | null
-}
-
-type HotTickerResponse = {
-  entries: HotTickerEntry[]
-  updatedAt: string
-  sources: {
-    dexscreener: {
-      available: boolean
-      active: boolean
-      count: number
-      message?: string
-    }
-    moralis: {
-      available: boolean
-      active: boolean
-      count: number
-      message?: string
-    }
-  }
-}
-
 type BantCreditStatsResponse = {
   token: 'BantCredit'
   lifetimeEarned: number
@@ -80,8 +36,6 @@ type BantCreditStatsResponse = {
   basis: string
   updatedAt: string
 }
-
-type PriceFlashState = 'up' | 'down' | 'refresh'
 
 const BXBT_CHART_EMBED_URL =
   'https://www.geckoterminal.com/solana/pools/FR9LUaxCwMhWF95QyScdvPbhDrApyFtomXDA38gsuqjE?embed=1&info=1&swaps=1&grayscale=1&light_chart=0&chart_type=price&resolution=30s'
@@ -139,25 +93,19 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [chartOpen, setChartOpen] = useState(false)
-  const [priceFlashes, setPriceFlashes] = useState<Record<string, PriceFlashState>>({})
   const searchRef = useRef<HTMLDivElement>(null)
-  const previousPricesRef = useRef<Record<string, number | null>>({})
   const { data: bantCreditStats, isLoading: bantCreditStatsLoading } = useQuery<BantCreditStatsResponse>({
     queryKey: ['/api/bantahbro/stats/bantcredit'],
     staleTime: 60_000,
     refetchInterval: 60_000,
   })
-  const { data: hotTickerFeed, isLoading: hotTickersLoading } = useQuery<HotTickerResponse>({
-    queryKey: ['/api/bantahbro/hot-tickers', { limit: '5' }],
-    enabled: activeSection !== 'chat' && activeSection !== 'battles',
-    staleTime: 5_000,
-    refetchInterval: 5_000,
-  })
   const { data: battleStripFeed, isLoading: battleStripLoading } = useQuery<AgentBattleFeed>({
-    queryKey: ['/api/bantahbro/agent-battles/live', { limit: '3' }],
-    enabled: activeSection === 'battles',
+    queryKey: ['/api/bantahbro/agent-battles/live', { limit: '12' }],
     staleTime: 3_000,
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
+    retry: 3,
+    retryDelay: 1_500,
+    placeholderData: (previousData) => previousData,
   })
 
   const searchResults = searchQuery.trim()
@@ -167,8 +115,8 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
           item.type.toLowerCase().includes(searchQuery.toLowerCase())
       ).slice(0, 6)
     : []
-  const hotMarkets = hotTickerFeed?.entries || []
   const battleStripBattles = battleStripFeed?.battles || []
+  const battleStripSlides = battleStripBattles.length > 0 ? [...battleStripBattles, ...battleStripBattles] : []
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -180,43 +128,6 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-
-  useEffect(() => {
-    if (activeSection === 'chat' || activeSection === 'battles' || !hotTickerFeed?.entries?.length) return
-
-    const nextPrices: Record<string, number | null> = {}
-    const nextFlashes: Record<string, PriceFlashState> = {}
-    const previousPrices = previousPricesRef.current
-
-    hotTickerFeed.entries.forEach((entry) => {
-      const currentPrice = typeof entry.priceUsd === 'number' && Number.isFinite(entry.priceUsd) ? entry.priceUsd : null
-      const previousPrice = previousPrices[entry.id]
-      nextPrices[entry.id] = currentPrice
-
-      if (previousPrice === undefined || previousPrice === null || currentPrice === null) {
-        nextFlashes[entry.id] = 'refresh'
-      } else if (currentPrice > previousPrice) {
-        nextFlashes[entry.id] = 'up'
-      } else if (currentPrice < previousPrice) {
-        nextFlashes[entry.id] = 'down'
-      } else {
-        nextFlashes[entry.id] = 'refresh'
-      }
-    })
-
-    previousPricesRef.current = nextPrices
-    setPriceFlashes(nextFlashes)
-
-    const timer = window.setTimeout(() => setPriceFlashes({}), 900)
-    return () => window.clearTimeout(timer)
-  }, [activeSection, hotTickerFeed?.updatedAt])
-
-  const priceFlashClass = (flash?: PriceFlashState) => {
-    if (flash === 'up') return 'animate-pulse bg-green-500/15 text-green-300 ring-1 ring-green-400/40'
-    if (flash === 'down') return 'animate-pulse bg-red-500/15 text-red-300 ring-1 ring-red-400/40'
-    if (flash === 'refresh') return 'animate-pulse bg-primary/15 text-primary ring-1 ring-primary/30'
-    return 'text-foreground'
-  }
 
   const handleSearchSelect = (item: SearchItem) => {
     if (item.tool) {
@@ -340,80 +251,99 @@ export default function TopBar({ onNavigate, activeSection, activeTool, onToolSe
           </div>
         </div>
 
-        {activeSection !== 'chat' && activeSection !== 'battles' && (
-        <div className="hidden sm:flex items-center gap-2 px-2 py-1.5 overflow-x-auto border-t border-border bg-background/50">
-          {hotTickersLoading && hotMarkets.length === 0 && (
-            <div className="flex items-center gap-1.5 bg-input px-3 py-1 rounded text-sm whitespace-nowrap text-muted-foreground">
-              Loading live prices...
-            </div>
-          )}
-          {hotMarkets.map((market) => (
-            <button
-              key={market.id}
-              onClick={() => onNavigate?.('dashboard')}
-              title={
-                `${market.displaySymbol} ${market.priceDisplay}${market.chainLabel ? ` on ${market.chainLabel}` : ''}${market.tokenName ? ` - ${market.tokenName}` : ''}${market.replacedQuery ? ` - Trending replacement for ${market.replacedQuery}` : ''}`
-              }
-              className="flex items-center gap-1.5 bg-input px-3 py-1 rounded text-sm hover:bg-sidebar-accent transition whitespace-nowrap"
-            >
-              <span className="text-lg">{market.emoji}</span>
-              <span className="font-bold">{market.displaySymbol}</span>
-              <span className={`font-mono rounded px-1 transition-colors duration-150 ${priceFlashClass(priceFlashes[market.id])}`}>
-                {market.priceDisplay}
-              </span>
-              <span className={market.direction === 'up' ? 'text-green-400' : market.direction === 'down' ? 'text-red-400' : 'text-muted-foreground'}>
-                {market.change}
-              </span>
-            </button>
-          ))}
-          <button onClick={() => onNavigate?.('dashboard')} className="text-sm text-primary hover:underline px-2">
-            View all →
-          </button>
-        </div>
-        )}
+        <style>{`
+          @keyframes bb-battle-strip-slide {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
 
-        {activeSection === 'battles' && (
-          <div className="hidden sm:flex items-center gap-2 px-2 py-1.5 overflow-x-auto border-t border-border bg-background/50">
+          .bb-battle-strip-track {
+            animation: bb-battle-strip-slide 52s linear infinite;
+          }
+
+          .bb-battle-strip-track:hover {
+            animation-play-state: paused;
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .bb-battle-strip-track {
+              animation: none;
+            }
+          }
+        `}</style>
+        {true && (
+          <div className="hidden sm:block overflow-hidden border-t border-border bg-background/50 px-2 py-1.5">
             {battleStripLoading && battleStripBattles.length === 0 && (
               <div className="flex items-center gap-1.5 bg-input px-3 py-1 rounded text-sm whitespace-nowrap text-muted-foreground">
                 Loading live battles...
               </div>
             )}
-            {battleStripBattles.map((battle, index) => {
-              const [left, right] = battle.sides
-              const leader = battle.leadingSideId === right.id ? right : left
-              const tone = battleCardTone(battle)
-              return (
-                <button
-                  key={battle.id}
-                  onClick={() => onNavigate?.('battles')}
-                  title={`${battle.title} - ${leader.label} leads by ${battle.confidenceSpread}%`}
-                  className={`relative flex min-w-[16rem] items-center gap-2 rounded border px-3 py-1 text-left text-sm transition hover:bg-sidebar-accent ${tone}`}
-                >
-                  {index < 3 && (
-                    <span className="absolute -right-px -top-px rounded-bl rounded-tr bg-destructive px-1.5 py-0.5 text-[9px] font-black uppercase leading-none text-white shadow-sm">
-                      Live
-                    </span>
-                  )}
-                  <span className="text-[10px] font-black uppercase tracking-wide text-foreground/80">
-                    {index === 0 ? 'Current' : `Next ${index}`}
-                  </span>
-                  <span className="font-bold text-foreground truncate">
-                    {left.emoji} {left.label}
-                  </span>
-                  <span className="text-[10px] font-black text-muted-foreground">VS</span>
-                  <span className="font-bold text-foreground truncate">
-                    {right.emoji} {right.label}
-                  </span>
-                  <span className="ml-auto shrink-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-xs text-foreground">
-                    {index === 0 ? formatBattleDuration(battle.timeRemainingSeconds) : `${battle.confidenceSpread}% gap`}
-                  </span>
-                </button>
-              )
-            })}
+            {battleStripSlides.length > 0 && (
+              <div className="bb-battle-strip-track flex w-max items-center gap-2">
+                {battleStripSlides.map((battle, displayIndex) => {
+                  const index = displayIndex % battleStripBattles.length
+                  const [left, right] = battle.sides
+                  const leader = battle.leadingSideId === right.id ? right : left
+                  const tone = battleCardTone(battle)
+                  return (
+                    <button
+                      key={`${battle.id}-${displayIndex}`}
+                      onClick={() => onNavigate?.('battles')}
+                      title={`${battle.title} - ${leader.label} leads by ${battle.confidenceSpread}%`}
+                      className={`relative inline-flex h-8 min-w-max shrink-0 items-center gap-2 whitespace-nowrap rounded border px-3 pr-7 text-left text-sm transition hover:bg-sidebar-accent ${tone}`}
+                    >
+                      {index < 3 && (
+                        <span className="absolute right-1 top-1/2 -translate-y-1/2 rounded bg-destructive px-1.5 py-0.5 text-[9px] font-black uppercase leading-none text-white shadow-sm">
+                          Live
+                        </span>
+                      )}
+                      <span className="shrink-0 text-[10px] font-black uppercase tracking-wide text-foreground/80">
+                        {index === 0 ? 'Current' : `Next ${index}`}
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 font-bold text-foreground">
+                        {left.logoUrl ? (
+                          <img
+                            src={left.logoUrl}
+                            alt=""
+                            className="h-4 w-4 shrink-0 rounded-full object-cover"
+                            loading="lazy"
+                            onError={(event) => {
+                              event.currentTarget.style.display = 'none'
+                            }}
+                          />
+                        ) : (
+                          <span>{left.emoji}</span>
+                        )}
+                        <span>{left.label}</span>
+                      </span>
+                      <span className="shrink-0 text-[10px] font-black text-muted-foreground">VS</span>
+                      <span className="inline-flex shrink-0 items-center gap-1 font-bold text-foreground">
+                        {right.logoUrl ? (
+                          <img
+                            src={right.logoUrl}
+                            alt=""
+                            className="h-4 w-4 shrink-0 rounded-full object-cover"
+                            loading="lazy"
+                            onError={(event) => {
+                              event.currentTarget.style.display = 'none'
+                            }}
+                          />
+                        ) : (
+                          <span>{right.emoji}</span>
+                        )}
+                        <span>{right.label}</span>
+                      </span>
+                      <span className="shrink-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-xs text-foreground">
+                        {index === 0 ? formatBattleDuration(battle.timeRemainingSeconds) : `${battle.confidenceSpread}% gap`}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             {!battleStripLoading && battleStripBattles.length === 0 && (
               <div className="flex items-center gap-1.5 bg-input px-3 py-1 rounded text-sm whitespace-nowrap text-muted-foreground">
-                Waiting for live battle pairs...
+                Loading live battles...
               </div>
             )}
           </div>

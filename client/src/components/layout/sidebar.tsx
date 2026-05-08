@@ -27,7 +27,7 @@ interface SidebarProps {
 }
 
 const menuItems: { icon: typeof BarChart3; label: string; section: AppSection }[] = [
-  { icon: BarChart3, label: 'Markets', section: 'dashboard' },
+  { icon: BarChart3, label: 'Prediction Markets', section: 'dashboard' },
   { icon: Zap, label: 'Agent Battles', section: 'battles' },
   { icon: Bot, label: 'Agents', section: 'agents' },
   { icon: Trophy, label: 'Leaderboard', section: 'leaderboard' },
@@ -46,14 +46,6 @@ const toolItems: { icon: typeof Search; label: string; tool: BantahTool; helper:
   { icon: Rocket, label: 'Launch Token', tool: 'launcher', helper: 'Draft + deploy' },
 ]
 
-const adPlacements = [
-  { icon: 'AD', label: 'Hot Ticker Slot', meta: 'Top bar' },
-  { icon: 'AD', label: 'Market Spotlight', meta: '24H feature' },
-  { icon: 'AD', label: 'Battle Sponsor', meta: '2 slots left' },
-  { icon: 'AD', label: 'Sidebar Feature', meta: 'Premium' },
-  { icon: 'AD', label: 'Feed Boost', meta: 'Open now' },
-]
-
 export default function Sidebar({
   activeSection,
   activeTool,
@@ -64,7 +56,7 @@ export default function Sidebar({
   const { data: battleFeed } = useQuery<AgentBattleFeed>({
     queryKey: ['/api/bantahbro/agent-battles/live', { limit: '12' }],
     staleTime: 3_000,
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
   })
   const liveBattleCount = battleFeed?.battles?.length ?? 0
 
@@ -154,31 +146,6 @@ export default function Sidebar({
           })}
         </div>
 
-        <div className="py-1 px-0 border-t border-border">
-          <div className="text-xs font-bold text-muted-foreground px-3 py-1 mt-1 tracking-wider">ADS PLACEMENT</div>
-          <div className="px-3 pb-1 text-[11px] text-muted-foreground leading-tight">
-            For coin teams that want visibility across BantahBro.
-          </div>
-          {adPlacements.map((placement) => (
-            <button
-              key={placement.label}
-              onClick={() => handleClick('ads')}
-              className="w-full text-left text-sm py-1 px-3 hover:bg-sidebar-accent hover:text-accent-foreground transition flex items-center justify-between text-sidebar-foreground"
-            >
-              <span className="flex items-center gap-1.5">
-                <span className="text-[10px] font-black text-primary border border-primary/30 rounded px-1 py-0.5">{placement.icon}</span>
-                <span>{placement.label}</span>
-              </span>
-              <span className="text-muted-foreground text-xs">{placement.meta}</span>
-            </button>
-          ))}
-          <button
-            onClick={() => handleClick('ads')}
-            className="w-full text-left text-sm py-1 px-3 text-primary hover:underline"
-          >
-            Advertise your coin
-          </button>
-        </div>
       </div>
 
       <div className="border-t border-border p-2 text-center">

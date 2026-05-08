@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { LineChart, X } from 'lucide-react';
 import TradingChart from '@/components/sections/trading-chart';
 import MarketsTable from '@/components/sections/markets-table';
-import SignalsSection from '@/components/sections/signals-section';
+import PredictionVisualizationSection from '@/components/sections/prediction-visualization-section';
 import type { AppSection } from '@/app/page';
 
 interface MainContentProps {
@@ -17,13 +17,13 @@ interface MainContentProps {
 const TOP_TABS = [
   { id: 'markets', icon: 'B', label: 'BANTAH Onchain', sub: 'P2P Predictions.' },
   { id: 'battles', icon: '⚔', label: 'BATTLES', sub: 'Live battle listings', badge: 'LIVE', badgeColor: 'bg-destructive text-white' },
-  { id: 'signals', icon: 'S', label: 'SIGNALS', sub: 'Trending from top platforms', badge: 'NEW', badgeColor: 'bg-secondary text-background' },
+  { id: 'signals', icon: 'PM', label: 'POLYMARKET', sub: 'YES/NO battle layer', badge: 'LIVE DATA', badgeColor: 'bg-secondary text-background' },
 ] as const;
 
-type TopTab = (typeof TOP_TABS)[number]['id'];
+export type MainContentTopTab = (typeof TOP_TABS)[number]['id'];
 
-export default function MainContent({ selectedToken, setSelectedToken, onNavigate }: MainContentProps) {
-  const [topTab, setTopTab] = useState<TopTab>('markets');
+export default function MainContent({ selectedToken, setSelectedToken, onNavigate, initialTab = 'markets' }: MainContentProps & { initialTab?: MainContentTopTab }) {
+  const [topTab, setTopTab] = useState<MainContentTopTab>(initialTab);
   const [showChart, setShowChart] = useState(false);
 
   const handleSelectToken = (token: string) => {
@@ -93,7 +93,7 @@ export default function MainContent({ selectedToken, setSelectedToken, onNavigat
           <MarketsTable mode="battles" onSelectToken={handleSelectToken} onSelectBattle={() => onNavigate?.('battles')} />
         )}
         {topTab === 'signals' && (
-          <SignalsSection />
+          <PredictionVisualizationSection />
         )}
       </div>
     </div>
