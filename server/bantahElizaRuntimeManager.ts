@@ -593,6 +593,8 @@ export async function sendManagedBantahAgentRuntimeMessage(
     userId?: string;
     userName?: string;
     tool?: string;
+    source?: "web" | "twitter";
+    context?: string;
   },
 ): Promise<{
   text: string;
@@ -601,9 +603,17 @@ export async function sendManagedBantahAgentRuntimeMessage(
   agentId: string;
   roomId: string;
 }> {
+  const source = params.source || "web";
   const entry =
-    managedRuntimes.get(agentId) ||
-    (await startManagedBantahAgentRuntime(agentId).then(() => managedRuntimes.get(agentId) || null));
+    source === "twitter" || source === "web"
+      ? managedWebChatRuntimes.get(agentId) ||
+        (await startManagedBantahAgentWebChatRuntime(agentId).then(
+          () => managedWebChatRuntimes.get(agentId) || null,
+        ))
+      : managedRuntimes.get(agentId) ||
+        (await startManagedBantahAgentRuntime(agentId).then(
+          () => managedRuntimes.get(agentId) || null,
+        ));
 
   if (!entry) {
     throw new Error("Managed Bantah Eliza runtime is unavailable.");
@@ -616,10 +626,12 @@ export async function sendManagedBantahAgentRuntimeMessage(
 
   const runtime = entry.runtime;
   const sessionId = String(params.sessionId || "default").slice(0, 96);
-  const userId = String(params.userId || `web-user-${sessionId}`).slice(0, 96);
-  const userName = String(params.userName || "BantahBro Web User").slice(0, 80);
-  const serverId = `bantahbro-web:${agentId}`;
-  const channelId = `bantahbro-web:${sessionId}`;
+  const userId = String(params.userId || `${source}-user-${sessionId}`).slice(0, 96);
+  const userName = String(
+    params.userName || (source === "twitter" ? "Twitter User" : "BantahBro Web User"),
+  ).slice(0, 80);
+  const serverId = `bantahbro-${source}:${agentId}`;
+  const channelId = `bantahbro-${source}:${sessionId}`;
   const worldId = createUniqueUuid(runtime, serverId);
   const roomId = createUniqueUuid(runtime, channelId);
   const entityId = createUniqueUuid(runtime, userId);
@@ -629,7 +641,7 @@ export async function sendManagedBantahAgentRuntimeMessage(
     roomId,
     name: userName,
     userName,
-    source: "web",
+    source,
     channelId,
     serverId,
     type: ChannelType.DM,
@@ -643,7 +655,7 @@ export async function sendManagedBantahAgentRuntimeMessage(
     roomId,
     content: {
       text: userText,
-      source: "web",
+      source,
       tool: params.tool || "assistant",
       timestamp: new Date().toISOString(),
     },
@@ -660,19 +672,33 @@ export async function sendManagedBantahAgentRuntimeMessage(
 
   let state = await runtime.composeState(message, ["ACTIONS", "CHARACTER", "RECENT_MESSAGES"]);
   const baseTemplate =
-    typeof runtime.character.templates?.telegramMessageHandlerTemplate === "string"
+    source === "twitter" && typeof runtime.character.templates?.twitterMessageHandlerTemplate === "string"
+      ? runtime.character.templates.twitterMessageHandlerTemplate
+      : typeof runtime.character.templates?.telegramMessageHandlerTemplate === "string"
       ? runtime.character.templates.telegramMessageHandlerTemplate
       : typeof runtime.character.templates?.messageHandlerTemplate === "string"
         ? runtime.character.templates.messageHandlerTemplate
         : messageHandlerTemplate;
-  const template = `${baseTemplate}
-
-<bantahbro_web_chat_context>
+  const sourceContext =
+    source === "twitter"
+      ? `<bantahbro_twitter_runtime_context>
+- This request came from X/Twitter.
+- Reply as BantahBro in a public-facing tweet style.
+- Keep the final response under 240 characters unless explicitly drafting a thread.
+- If the tweet asks for live token, market, rug-score, runner-score, alerts, BXBT, or battle data, use available actions/providers instead of guessing.
+- Do not claim you performed external Twitter actions. The transport layer handles posting after this response.
+${params.context ? `- Extra context: ${params.context}` : ""}
+</bantahbro_twitter_runtime_context>`
+      : `<bantahbro_web_chat_context>
 - This request came from the BantahBro web /chat page, not Telegram.
 - Tool tab: ${params.tool || "assistant"}.
 - Answer the user directly in the same BantahBro agent voice you use on Telegram.
 - For live price, token, market, rug-score, runner-score, alerts, BXBT, or Bantah market questions, use available actions/providers instead of guessing.
+${params.context ? `- Extra context: ${params.context}` : ""}
 </bantahbro_web_chat_context>`;
+  const template = `${baseTemplate}
+
+${sourceContext}`;
 
   const prompt = composePromptFromState({
     state,
@@ -717,7 +743,7 @@ export async function sendManagedBantahAgentRuntimeMessage(
       roomId,
       content: {
         ...content,
-        source: "web",
+        source,
       },
     });
 

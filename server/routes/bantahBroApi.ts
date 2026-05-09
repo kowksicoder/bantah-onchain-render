@@ -45,6 +45,16 @@ import {
 } from "../bantahBro/systemAgent";
 import { getBantahBroAutomationStatus } from "../bantahBro/automationService";
 import {
+  buildCurrentBattleTweetDraft,
+  buildCurrentBattleThreadDraft,
+  getBantahBroTwitterAgentStatus,
+  postCurrentBattleMediaTweet,
+  postCurrentBattleThread,
+  postCurrentBattleTweet,
+  previewBantahBroTwitterAgentResponse,
+  runBantahBroTwitterAgentCycle,
+} from "../bantahBro/twitterAgentService";
+import {
   getBantahBroBxbtStatus,
   rewardBantahBroBxbt,
   spendBantahBroBxbt,
@@ -61,6 +71,22 @@ import {
   type BantahBroFeedSource,
 } from "../bantahBro/socialFeedService";
 import { getLiveBantahBroAgentBattles } from "../bantahBro/agentBattleService";
+import {
+  getAgentBattleP2PPool,
+  markAgentBattleP2PEscrowLocked,
+  placeAgentBattleP2PStake,
+  settleAgentBattleP2PRound,
+} from "../bantahBro/agentBattleP2PService";
+import {
+  getLivePredictionVisualizationBattles,
+  preparePredictionVisualizationOrderIntent,
+} from "../bantahBro/predictionVisualizationService";
+import {
+  getPredictionVisualizationExecutionPreflight,
+  listPredictionVisualizationPositions,
+  markPredictionVisualizationPositionSourceOpened,
+  savePredictionVisualizationPosition,
+} from "../bantahBro/predictionVisualizationPositionService";
 import {
   getBantahBroTrollboxFeed,
   recordBantahBroTrollboxMessage,
@@ -97,6 +123,57 @@ const bantahBroTrollboxPostSchema = z.object({
   battleId: z.string().trim().min(1).max(180).optional(),
   user: z.string().trim().min(1).max(64).optional(),
   message: z.string().trim().min(1).max(1000),
+});
+
+const predictionVisualizationOrderIntentSchema = z.object({
+  side: z.enum(["yes", "no"]),
+  amountUsd: z.coerce.number().positive().max(100_000).default(10),
+  maxPrice: z.coerce.number().min(0.01).max(0.99).optional(),
+  walletAddress: z.string().trim().min(8).max(128).optional().nullable(),
+});
+
+const predictionVisualizationExecutionPreflightSchema = z.object({
+  walletAddress: z.string().trim().min(8).max(128).optional().nullable(),
+});
+
+const agentBattleP2PStakeSchema = z.object({
+  sideId: z.string().trim().min(1).max(500),
+  stakeAmount: z.coerce.number().positive().max(1_000_000),
+  stakeCurrency: z.enum(["BXBT", "USDC", "USDT", "ETH", "BNB"]).default("USDC"),
+  walletAddress: z.string().trim().min(8).max(128).optional().nullable(),
+});
+
+const agentBattleP2PEscrowSchema = z.object({
+  walletAddress: z.string().trim().min(8).max(128).optional().nullable(),
+  escrowTxHash: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{64}$/)
+    .optional()
+    .nullable(),
+});
+
+const agentBattleP2PSettlementSchema = z.object({
+  roundId: z.string().trim().min(1).max(320),
+  winnerSideId: z.string().trim().min(1).max(500),
+  maxPairs: z.coerce.number().int().positive().max(100).default(20),
+  dryRun: z.coerce.boolean().default(false),
+});
+
+const bantahBroTwitterBattlePostSchema = z.object({
+  battleId: z.string().trim().min(1).max(240).optional().nullable(),
+  force: z.coerce.boolean().default(false),
+  dryRun: z.coerce.boolean().default(true),
+});
+
+const bantahBroTwitterAgentRunSchema = z.object({
+  dryRun: z.coerce.boolean().optional(),
+  maxMentions: z.coerce.number().int().positive().max(100).optional(),
+  maxSearch: z.coerce.number().int().positive().max(100).optional(),
+});
+
+const bantahBroTwitterPreviewSchema = z.object({
+  text: z.string().trim().min(1).max(1000),
 });
 
 function parseBoolean(value: unknown): boolean {
@@ -249,12 +326,212 @@ router.get("/hot-tickers", async (req, res) => {
 
 router.get("/agent-battles/live", async (req, res) => {
   try {
-    const feed = await getLiveBantahBroAgentBattles(parseLimit(req.query.limit, 3, 5));
+    const feed = await getLiveBantahBroAgentBattles(parseLimit(req.query.limit, 3, 40));
     res.json(feed);
   } catch (error) {
     handleError(res, error);
   }
 });
+
+router.get("/agent-battles/:battleId/p2p/pool", async (req, res) => {
+  try {
+    const pool = await getAgentBattleP2PPool({
+      battleId: String(req.params.battleId || ""),
+    });
+    res.json(pool);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/agent-battles/:battleId/p2p/my", PrivyAuthMiddleware, async (req: any, res) => {
+  try {
+    const pool = await getAgentBattleP2PPool({
+      battleId: String(req.params.battleId || ""),
+      userId: req.user.id,
+    });
+    res.json(pool);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/agent-battles/:battleId/p2p/stake", PrivyAuthMiddleware, async (req: any, res) => {
+  try {
+    const parsed = agentBattleP2PStakeSchema.parse(req.body || {});
+    const response = await placeAgentBattleP2PStake({
+      userId: req.user.id,
+      battleId: String(req.params.battleId || ""),
+      sideId: parsed.sideId,
+      stakeAmount: parsed.stakeAmount,
+      stakeCurrency: parsed.stakeCurrency,
+      walletAddress: parsed.walletAddress || req.user.walletAddress || null,
+    });
+    res.json(response);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post(
+  "/agent-battles/p2p/positions/:positionId/escrow",
+  PrivyAuthMiddleware,
+  async (req: any, res) => {
+    try {
+      const parsed = agentBattleP2PEscrowSchema.parse(req.body || {});
+      const position = await markAgentBattleP2PEscrowLocked({
+        userId: req.user.id,
+        positionId: String(req.params.positionId || ""),
+        walletAddress: parsed.walletAddress || req.user.walletAddress || null,
+        escrowTxHash: parsed.escrowTxHash || null,
+      });
+      res.json({ position });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/admin/agent-battles/p2p/settle-round",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = agentBattleP2PSettlementSchema.parse(req.body || {});
+      const result = await settleAgentBattleP2PRound({
+        roundId: parsed.roundId,
+        winnerSideId: parsed.winnerSideId,
+        maxPairs: parsed.maxPairs,
+        dryRun: parsed.dryRun,
+      });
+      res.json(result);
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.get("/prediction-battles/live", async (req, res) => {
+  try {
+    const feed = await getLivePredictionVisualizationBattles(parseLimit(req.query.limit, 12, 30));
+    res.json(feed);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/prediction-battles/positions/my", PrivyAuthMiddleware, async (req: any, res) => {
+  try {
+    const positions = await listPredictionVisualizationPositions(
+      req.user.id,
+      parseLimit(req.query.limit, 20, 100),
+    );
+    res.json({
+      positions,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/prediction-battles/:battleId/order-intent", async (req, res) => {
+  try {
+    const parsed = predictionVisualizationOrderIntentSchema.parse(req.body || {});
+    const intent = await preparePredictionVisualizationOrderIntent({
+      battleId: String(req.params.battleId || ""),
+      side: parsed.side,
+      amountUsd: parsed.amountUsd,
+      maxPrice: parsed.maxPrice,
+    });
+    res.json(intent);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/prediction-battles/:battleId/positions", PrivyAuthMiddleware, async (req: any, res) => {
+  try {
+    const parsed = predictionVisualizationOrderIntentSchema.parse(req.body || {});
+    const response = await savePredictionVisualizationPosition({
+      userId: req.user.id,
+      battleId: String(req.params.battleId || ""),
+      side: parsed.side,
+      amountUsd: parsed.amountUsd,
+      maxPrice: parsed.maxPrice,
+      walletAddress: parsed.walletAddress,
+    });
+    res.json(response);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post(
+  "/prediction-battles/positions/:positionId/source-opened",
+  PrivyAuthMiddleware,
+  async (req: any, res) => {
+    try {
+      const position = await markPredictionVisualizationPositionSourceOpened({
+        userId: req.user.id,
+        positionId: String(req.params.positionId || ""),
+      });
+      res.json({ position });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/prediction-battles/positions/:positionId/execution-preflight",
+  PrivyAuthMiddleware,
+  async (req: any, res) => {
+    try {
+      const parsed = predictionVisualizationExecutionPreflightSchema.parse(req.body || {});
+      const preflight = await getPredictionVisualizationExecutionPreflight({
+        userId: req.user.id,
+        positionId: String(req.params.positionId || ""),
+        walletAddress: parsed.walletAddress,
+      });
+      res.json(preflight);
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/prediction-battles/positions/:positionId/submit-clob-order",
+  PrivyAuthMiddleware,
+  async (req: any, res) => {
+    try {
+      const parsed = predictionVisualizationExecutionPreflightSchema.parse(req.body || {});
+      const preflight = await getPredictionVisualizationExecutionPreflight({
+        userId: req.user.id,
+        positionId: String(req.params.positionId || ""),
+        walletAddress: parsed.walletAddress,
+      });
+
+      if (!preflight.executionReady) {
+        return res.status(503).json({
+          message:
+            "Polymarket CLOB submission is not ready. No order was submitted; open the source market for live execution.",
+          preflight,
+        });
+      }
+
+      return res.status(501).json({
+        message:
+          "CLOB preflight passed, but signed order submission is intentionally locked until wallet EIP-712 signing is wired.",
+        preflight,
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
 router.get("/trollbox", async (req, res) => {
   try {
@@ -500,6 +777,180 @@ router.get("/automation/status", async (_req, res) => {
     handleError(res, error);
   }
 });
+
+router.get("/twitter/status", async (_req, res) => {
+  try {
+    res.json(getBantahBroTwitterAgentStatus());
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/twitter/battle-post/preview", async (req, res) => {
+  try {
+    res.json({
+      status: getBantahBroTwitterAgentStatus(),
+      draft: await buildCurrentBattleTweetDraft(
+        typeof req.query.battleId === "string" ? req.query.battleId : null,
+      ),
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/twitter/thread/preview", async (req, res) => {
+  try {
+    res.json({
+      status: getBantahBroTwitterAgentStatus(),
+      draft: await buildCurrentBattleThreadDraft(
+        typeof req.query.battleId === "string" ? req.query.battleId : null,
+      ),
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post(
+  "/admin/twitter/battle-post",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = bantahBroTwitterBattlePostSchema.parse(req.body || {});
+      const draft = await buildCurrentBattleTweetDraft(parsed.battleId || null);
+
+      if (parsed.dryRun) {
+        return res.json({
+          posted: false,
+          dryRun: true,
+          status: getBantahBroTwitterAgentStatus(),
+          draft,
+        });
+      }
+
+      const result = await postCurrentBattleTweet({
+        battleId: parsed.battleId,
+        force: parsed.force,
+      });
+
+      return res.json({
+        posted: true,
+        dryRun: false,
+        status: getBantahBroTwitterAgentStatus(),
+        ...result,
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/admin/twitter/agent/run",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = bantahBroTwitterAgentRunSchema.parse(req.body || {});
+      const result = await runBantahBroTwitterAgentCycle({
+        dryRun: parsed.dryRun,
+        maxMentions: parsed.maxMentions,
+        maxSearch: parsed.maxSearch,
+      });
+      res.json({
+        status: getBantahBroTwitterAgentStatus(),
+        result,
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/admin/twitter/agent/preview",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = bantahBroTwitterPreviewSchema.parse(req.body || {});
+      res.json(await previewBantahBroTwitterAgentResponse(parsed.text));
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/admin/twitter/thread-post",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = bantahBroTwitterBattlePostSchema.parse(req.body || {});
+      const draft = await buildCurrentBattleThreadDraft(parsed.battleId || null);
+
+      if (parsed.dryRun) {
+        return res.json({
+          posted: false,
+          dryRun: true,
+          status: getBantahBroTwitterAgentStatus(),
+          draft,
+        });
+      }
+
+      const result = await postCurrentBattleThread({
+        battleId: parsed.battleId,
+        force: parsed.force,
+      });
+      return res.json({
+        posted: true,
+        dryRun: false,
+        status: getBantahBroTwitterAgentStatus(),
+        ...result,
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/admin/twitter/media-battle-post",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = bantahBroTwitterBattlePostSchema.parse(req.body || {});
+      const draft = await buildCurrentBattleTweetDraft(parsed.battleId || null);
+
+      if (parsed.dryRun) {
+        return res.json({
+          posted: false,
+          dryRun: true,
+          status: getBantahBroTwitterAgentStatus(),
+          draft,
+          note: "Dry run only. Media upload and tweet posting were skipped.",
+        });
+      }
+
+      const result = await postCurrentBattleMediaTweet({
+        battleId: parsed.battleId,
+        force: parsed.force,
+      });
+      return res.json({
+        posted: true,
+        dryRun: false,
+        status: getBantahBroTwitterAgentStatus(),
+        ...result,
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
 router.get("/leaderboard", async (req, res) => {
   try {

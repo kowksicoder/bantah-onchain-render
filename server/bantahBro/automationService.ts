@@ -12,6 +12,11 @@ import { createBantahBroMarketFromSignal } from "./marketService";
 import { analyzeToken } from "./tokenIntelligence";
 import { defaultBantahBroMarketCurrency } from "./telegramSupport";
 import { getBantahBroTelegramBot } from "../telegramBot";
+import {
+  getBantahBroTwitterAgentStatus,
+  postCurrentBattleTweet,
+  runBantahBroTwitterAgentCycle,
+} from "./twitterAgentService";
 
 type AutomationConfig = {
   enabled: boolean;
@@ -33,6 +38,8 @@ type AutomationConfig = {
   telegramBroadcastsEnabled: boolean;
   twitterMonitorEnabled: boolean;
   twitterReplyLoopEnabled: boolean;
+  twitterReadEnabled: boolean;
+  twitterSearchEnabled: boolean;
 };
 
 type LoopName = "tokenMonitor" | "alertScheduler" | "marketTrigger" | "twitterMonitor";
@@ -205,6 +212,8 @@ function loadAutomationConfig(): AutomationConfig {
       "BANTAHBRO_TWITTER_REPLY_LOOP_ENABLED",
       false,
     ),
+    twitterReadEnabled: parseBooleanEnv("BANTAHBRO_TWITTER_READ_ENABLED", false),
+    twitterSearchEnabled: parseBooleanEnv("BANTAHBRO_TWITTER_SEARCH_ENABLED", false),
   };
 }
 
@@ -444,18 +453,64 @@ async function runMarketTriggerCycle(config: AutomationConfig) {
 async function runTwitterMonitorCycle(config: AutomationConfig) {
   automationStatus.lastTwitterLoopAt = new Date().toISOString();
   automationStatus.twitterLoop.enabled =
-    config.twitterMonitorEnabled || config.twitterReplyLoopEnabled;
+    config.twitterMonitorEnabled ||
+    config.twitterReplyLoopEnabled ||
+    config.twitterReadEnabled ||
+    config.twitterSearchEnabled;
   automationStatus.twitterLoop.active = false;
-  automationStatus.twitterLoop.reason =
-    automationStatus.twitterLoop.enabled
-      ? "Twitter monitor/reply loop is scaffolded but the live Twitter transport is not wired yet."
-      : "disabled";
+
+  if (!automationStatus.twitterLoop.enabled) {
+    automationStatus.twitterLoop.reason = "disabled";
+    return;
+  }
+
+  const twitterStatus = getBantahBroTwitterAgentStatus();
+  automationStatus.twitterLoop.active =
+    twitterStatus.configured &&
+    (twitterStatus.postEnabled ||
+      twitterStatus.readEnabled ||
+      twitterStatus.searchEnabled ||
+      twitterStatus.replyEnabled);
 
   if (automationStatus.twitterLoop.enabled && !twitterWarningPrinted) {
     twitterWarningPrinted = true;
-    elizaLogger.warn(
-      "[BantahBro Automation] Twitter monitor/reply loop requested, but the live Twitter transport is not wired yet.",
-    );
+    elizaLogger.info("[BantahBro Automation] Twitter monitor loop requested.");
+  }
+
+  if (!twitterStatus.configured) {
+    automationStatus.twitterLoop.reason = twitterStatus.reason;
+    return;
+  }
+
+  const reasons: string[] = [];
+
+  try {
+    if (
+      config.twitterReplyLoopEnabled ||
+      config.twitterReadEnabled ||
+      config.twitterSearchEnabled ||
+      twitterStatus.readEnabled ||
+      twitterStatus.searchEnabled
+    ) {
+      const result = await runBantahBroTwitterAgentCycle();
+      reasons.push(result.reason);
+    }
+
+    if (config.twitterMonitorEnabled && twitterStatus.postEnabled) {
+      const result = await postCurrentBattleTweet();
+      reasons.push(`Posted live Agent Battle tweet ${result.tweet.id}.`);
+    } else if (config.twitterMonitorEnabled && !twitterStatus.postEnabled) {
+      reasons.push(twitterStatus.reason);
+    }
+
+    automationStatus.twitterLoop.reason =
+      reasons.filter(Boolean).join(" | ") || "Twitter loop checked; no action required.";
+  } catch (error) {
+    const message = toErrorMessage(error);
+    automationStatus.twitterLoop.reason = message;
+    if (!/already been posted/i.test(message)) {
+      elizaLogger.warn(`[BantahBro Automation] Twitter battle post skipped: ${message}`);
+    }
   }
 }
 
@@ -514,11 +569,14 @@ export async function startBantahBroAutomationService() {
   automationStatus.enabled = config.enabled;
   automationStatus.watchlistSize = config.watchlist.length;
   automationStatus.twitterLoop.enabled =
-    config.twitterMonitorEnabled || config.twitterReplyLoopEnabled;
+    config.twitterMonitorEnabled ||
+    config.twitterReplyLoopEnabled ||
+    config.twitterReadEnabled ||
+    config.twitterSearchEnabled;
   automationStatus.twitterLoop.active = false;
   automationStatus.twitterLoop.reason =
     automationStatus.twitterLoop.enabled
-      ? "Twitter monitor/reply loop is scaffolded but waiting on a live Twitter transport."
+      ? getBantahBroTwitterAgentStatus().reason
       : "disabled";
 
   if (!config.enabled) {

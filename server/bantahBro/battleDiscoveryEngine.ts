@@ -1,4 +1,4 @@
-import { analyzeToken } from "./tokenIntelligence";
+import { analyzeToken, lookupMarketByQuery } from "./tokenIntelligence";
 import type { BantahBroTokenAnalysis } from "@shared/bantahBro";
 import { getBantahBroBattleOverrideMap, type BantahBroBattleOverride } from "./battleOverridesService";
 import { getBantahBroListedBattleMap, type BantahBroListedBattle } from "./battleListingsService";
@@ -499,6 +499,63 @@ function buildCandidate(
       marketData: "dexscreener",
       engineVersion: "v1",
     },
+  };
+}
+
+export async function buildBattleCandidateFromQueries(params: {
+  leftQuery: string;
+  rightQuery: string;
+  listedIndex?: number;
+}): Promise<{
+  candidate: BantahBroBattleCandidate;
+  resolved: {
+    left: BantahBroBattleDiscoveryTokenProfile;
+    right: BantahBroBattleDiscoveryTokenProfile;
+  };
+}> {
+  const leftLookup = await lookupMarketByQuery({
+    query: params.leftQuery,
+    mode: "ticker-first",
+  });
+  const rightLookup = await lookupMarketByQuery({
+    query: params.rightQuery,
+    mode: "ticker-first",
+  });
+
+  if (!leftLookup.pair) {
+    throw new Error(`Could not resolve ${params.leftQuery} to a live Dexscreener pair.`);
+  }
+  if (!rightLookup.pair) {
+    throw new Error(`Could not resolve ${params.rightQuery} to a live Dexscreener pair.`);
+  }
+
+  const [leftAnalysis, rightAnalysis] = await Promise.all([
+    analyzeToken({
+      chainId: leftLookup.pair.chainId,
+      tokenAddress: leftLookup.pair.baseToken.address,
+    }),
+    analyzeToken({
+      chainId: rightLookup.pair.chainId,
+      tokenAddress: rightLookup.pair.baseToken.address,
+    }),
+  ]);
+
+  const left = profileFromAnalysis(leftAnalysis, 0);
+  const right = profileFromAnalysis(rightAnalysis, 1);
+
+  if (!left) {
+    throw new Error(`Could not build a battle profile for ${params.leftQuery}.`);
+  }
+  if (!right) {
+    throw new Error(`Could not build a battle profile for ${params.rightQuery}.`);
+  }
+  if (left.id === right.id) {
+    throw new Error("A battle needs two different live tokens.");
+  }
+
+  return {
+    candidate: buildCandidate(left, right, params.listedIndex || 0),
+    resolved: { left, right },
   };
 }
 
