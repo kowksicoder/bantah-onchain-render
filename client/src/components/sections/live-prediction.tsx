@@ -97,7 +97,7 @@ export default function LivePrediction({ token }: PredictionProps) {
             onClick={() => setSelectedChoice('yes')}
             className={`flex-1 rounded-lg py-3 flex flex-col items-center gap-0.5 font-bold transition border-2 ${
               selectedChoice === 'yes'
-                ? 'bg-secondary border-secondary text-background'
+                ? 'bg-secondary border-secondary text-secondary-foreground'
                 : 'bg-secondary/10 border-secondary/40 text-secondary hover:bg-secondary/20'
             }`}
           >
@@ -109,7 +109,7 @@ export default function LivePrediction({ token }: PredictionProps) {
             onClick={() => setSelectedChoice('no')}
             className={`flex-1 rounded-lg py-3 flex flex-col items-center gap-0.5 font-bold transition border-2 ${
               selectedChoice === 'no'
-                ? 'bg-destructive border-destructive text-background'
+                ? 'bg-destructive border-destructive text-destructive-foreground'
                 : 'bg-destructive/10 border-destructive/40 text-destructive hover:bg-destructive/20'
             }`}
           >

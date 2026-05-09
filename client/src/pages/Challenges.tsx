@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { useWallets } from "@privy-io/react-auth";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { getGlobalChannel } from "@/lib/pusher";
@@ -54,6 +53,7 @@ import {
 import { uploadImage } from "@/lib/uploadImage";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { useEnsureOnchainWallet } from "@/hooks/useEnsureOnchainWallet";
 import { UserAvatar } from "@/components/UserAvatar";
 import { PlayfulLoadingOverlay } from "@/components/ui/playful-loading";
 import DateTimePicker from "react-datetime-picker";
@@ -175,7 +175,7 @@ function TokenMark({ token }: { token: OnchainTokenSymbol }) {
 
 export default function Challenges() {
   const { user, isAuthenticated, isLoading: authLoading, login, getAccessToken } = useAuth();
-  const { wallets } = useWallets();
+  const { ensureOnchainWallet, wallets } = useEnsureOnchainWallet();
   const [location] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1467,6 +1467,9 @@ export default function Challenges() {
         contractModeEnabled && resolvedSelectedChainConfig?.escrowSupportsChallengeLock === true;
 
       if (supportsChallengeAwareEscrow) {
+        const { walletAddress } = await ensureOnchainWallet("create this challenge");
+        payload.walletAddress = walletAddress;
+
         const draftResult = await apiRequest("POST", "/api/challenges/draft", payload);
         const draftChallenge = draftResult?.challenge || draftResult;
         const draftChallengeId = Number(draftChallenge?.id);
@@ -1474,20 +1477,9 @@ export default function Challenges() {
           throw new Error("Unable to reserve this challenge onchain right now.");
         }
 
-        const preferredWalletAddress = (
-          [
-            (user as any)?.walletAddress,
-            (user as any)?.primaryWalletAddress,
-            (user as any)?.wallet?.address,
-            Array.isArray((user as any)?.walletAddresses)
-              ? (user as any)?.walletAddresses?.[0]
-              : null,
-          ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
-        ) as string | null;
-
         const escrowTx = await executeOnchainEscrowStakeTx({
           wallets: wallets as any,
-          preferredWalletAddress,
+          preferredWalletAddress: walletAddress,
           onchainConfig,
           chainId: selectedChainId,
           challengeId: draftChallengeId,
@@ -1509,20 +1501,11 @@ export default function Challenges() {
       }
 
       if (contractModeEnabled) {
-        const preferredWalletAddress = (
-          [
-            (user as any)?.walletAddress,
-            (user as any)?.primaryWalletAddress,
-            (user as any)?.wallet?.address,
-            Array.isArray((user as any)?.walletAddresses)
-              ? (user as any)?.walletAddresses?.[0]
-              : null,
-          ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
-        ) as string | null;
+        const { walletAddress } = await ensureOnchainWallet("create this challenge");
 
         const escrowTx = await executeOnchainEscrowStakeTx({
           wallets: wallets as any,
-          preferredWalletAddress,
+          preferredWalletAddress: walletAddress,
           onchainConfig,
           chainId: selectedChainId,
           tokenSymbol: selectedToken,
@@ -1655,20 +1638,11 @@ export default function Challenges() {
         if (!onchainConfig) {
           throw new Error("Onchain config is unavailable right now.");
         }
-        const preferredWalletAddress = (
-          [
-            (user as any)?.walletAddress,
-            (user as any)?.primaryWalletAddress,
-            (user as any)?.wallet?.address,
-            Array.isArray((user as any)?.walletAddresses)
-              ? (user as any)?.walletAddresses?.[0]
-              : null,
-          ].find((entry) => typeof entry === "string" && entry.trim().length > 0) || null
-        ) as string | null;
+        const { walletAddress } = await ensureOnchainWallet("join this challenge");
 
         const escrowTx = await executeOnchainEscrowStakeTx({
           wallets: wallets as any,
-          preferredWalletAddress,
+          preferredWalletAddress: walletAddress,
           onchainConfig,
           chainId: Number(
             challenge?.chainId || challenge?.chain_id || onchainConfig?.defaultChainId,

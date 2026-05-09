@@ -13,7 +13,9 @@ import { useLocation } from "wouter";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { executeOnchainEscrowStakeTx, type OnchainRuntimeConfig, type OnchainTokenSymbol } from "@/lib/onchainEscrow";
 import { useToast } from "@/hooks/use-toast";
+import { useEnsureOnchainWallet } from "@/hooks/useEnsureOnchainWallet";
 import { getUserDisplayName, usePublicUserBasic } from "@/hooks/usePublicUserBasic";
 import { 
   Trophy, 
@@ -40,6 +42,7 @@ export function NotificationCard({ notification, onMarkAsRead }: NotificationCar
   const { handleNotificationAction } = useNotifications();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { ensureOnchainWallet, wallets } = useEnsureOnchainWallet();
   const queryClient = useQueryClient();
   
   // Modal states
@@ -71,7 +74,38 @@ export function NotificationCard({ notification, onMarkAsRead }: NotificationCar
   // Challenge mutation
   const challengeMutation = useMutation({
     mutationFn: async (challengeData: any) => {
-      return await apiRequest("POST", "/api/challenges", challengeData);
+      const { walletAddress } = await ensureOnchainWallet("create this challenge");
+      const onchainConfig = (await apiRequest("GET", "/api/onchain/config")) as OnchainRuntimeConfig;
+      const chainId = Number(
+        onchainConfig.defaultChainId || Object.keys(onchainConfig.chains || {})[0] || 8453,
+      );
+      const tokenSymbol = (onchainConfig.defaultToken || "ETH") as OnchainTokenSymbol;
+      const payload = {
+        ...challengeData,
+        settlementRail: "onchain",
+        chainId,
+        tokenSymbol,
+        dueDate:
+          challengeData?.dueDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      if (onchainConfig.contractEnabled) {
+        const escrowTx = await executeOnchainEscrowStakeTx({
+          wallets: wallets as any,
+          preferredWalletAddress: walletAddress,
+          onchainConfig,
+          chainId,
+          tokenSymbol,
+          amount: String(payload.amount ?? ""),
+        });
+
+        Object.assign(payload, {
+          walletAddress: escrowTx.walletAddress,
+          escrowTxHash: escrowTx.escrowTxHash,
+        });
+      }
+
+      return await apiRequest("POST", "/api/challenges", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
@@ -601,4 +635,3 @@ export function NotificationCard({ notification, onMarkAsRead }: NotificationCar
     </>
   );
 }
-

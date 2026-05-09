@@ -15,6 +15,27 @@ import {
 } from "@shared/bantahBro";
 import { analyzeToken } from "../bantahBro/tokenIntelligence";
 import {
+  getRugScorerV2Dashboard,
+  searchRugScorerV2Token,
+} from "../bantahBro/rugScorerV2Service";
+import {
+  buildBantahBroChatScanReply,
+  buildBantahBroScanPrompt,
+  extractBantahBroSurfaceScanIntent,
+  runBantahBroSurfaceScan,
+} from "../bantahBro/rugScorerSurface";
+import {
+  deleteRugScorerV2Watch,
+  listRugScorerV2History,
+  listRugScorerV2Reports,
+  listRugScorerV2Watchlist,
+  recordRugScorerV2Scan,
+  recordRugScorerV2ScanBatch,
+  saveRugScorerV2Report,
+  saveRugScorerV2Watch,
+  updateRugScorerV2ReportStatus,
+} from "../bantahBro/rugScorerV2Persistence";
+import {
   getBantahBroAlert,
   listBantahBroAlerts,
   listBantahBroReceiptsByToken,
@@ -91,13 +112,17 @@ import {
   getBantahBroTrollboxFeed,
   recordBantahBroTrollboxMessage,
 } from "../bantahBro/trollboxService";
-import { PrivyAuthMiddleware } from "../privyAuth";
+import { maybeHandleBantahBroCommandSurface } from "../bantahBro/commandSurface";
+import { prepareBantahBroWalletAction } from "../bantahBro/walletActionSurface";
+import { PrivyAuthMiddleware, verifyPrivyToken } from "../privyAuth";
 import { db } from "../db";
 import { storage } from "../storage";
 import { getBantahBroTelegramBot } from "../telegramBot";
 import { getTelegramSync } from "../telegramSync";
 import { sendManagedBantahAgentRuntimeMessage } from "../bantahElizaRuntimeManager";
 import { agents, transactions, users } from "@shared/schema";
+import { bantahBroWalletPrepareRequestSchema } from "@shared/bantahBroWallet";
+import { normalizeEvmAddress, parseWalletAddresses } from "@shared/onchainConfig";
 
 const router = Router();
 
@@ -113,7 +138,19 @@ const BANTCREDIT_TRANSACTION_TYPES = [
 const bantahBroChatRequestSchema = z.object({
   message: z.string().min(1).max(2000),
   tool: z
-    .enum(["assistant", "analyze", "rug", "runner", "alerts", "markets", "bxbt", "launcher"])
+    .enum([
+      "assistant",
+      "wallet",
+      "discover",
+      "battle",
+      "analyze",
+      "rug",
+      "runner",
+      "alerts",
+      "markets",
+      "bxbt",
+      "launcher",
+    ])
     .default("assistant"),
   sessionId: z.string().min(1).max(120).optional(),
 });
@@ -158,6 +195,25 @@ const agentBattleP2PSettlementSchema = z.object({
   winnerSideId: z.string().trim().min(1).max(500),
   maxPairs: z.coerce.number().int().positive().max(100).default(20),
   dryRun: z.coerce.boolean().default(false),
+});
+
+const rugScorerV2WatchSchema = z.object({
+  userKey: z.string().trim().min(3).max(180),
+  chainId: z.string().trim().min(1).max(64),
+  tokenAddress: z.string().trim().min(3).max(180),
+});
+
+const rugScorerV2ReportSchema = z.object({
+  reporterKey: z.string().trim().min(3).max(180),
+  chainId: z.string().trim().min(1).max(64),
+  tokenAddress: z.string().trim().min(3).max(180),
+  severity: z.enum(["low", "medium", "high"]).default("medium"),
+  reason: z.string().trim().min(2).max(180),
+  notes: z.string().trim().max(1000).optional().nullable(),
+});
+
+const rugScorerV2ReportStatusSchema = z.object({
+  status: z.enum(["open", "reviewed", "dismissed"]),
 });
 
 const bantahBroTwitterBattlePostSchema = z.object({
@@ -249,6 +305,156 @@ function parseFeedSource(value: unknown): BantahBroFeedSource | undefined {
     return source;
   }
   return undefined;
+}
+
+async function resolveOptionalBantahBroChatActor(req: any) {
+  const existingUser = req.user;
+  if (existingUser?.id) {
+    return {
+      userId: existingUser.id as string,
+      username: typeof existingUser.username === "string" ? existingUser.username : null,
+      firstName: typeof existingUser.firstName === "string" ? existingUser.firstName : null,
+      walletAddress: normalizeEvmAddress(existingUser.walletAddress),
+    };
+  }
+
+  const authHeader = String(req.headers?.authorization || "").trim();
+  if (!authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+
+  try {
+    const claims = await verifyPrivyToken(token);
+    const userId = claims?.userId || (claims as any)?.sub;
+    if (typeof userId !== "string" || !userId) {
+      return null;
+    }
+
+    const user = await storage.getUser(userId);
+    if (!user) return null;
+
+    return {
+      userId: user.id,
+      username: user.username || null,
+      firstName: user.firstName || null,
+      walletAddress:
+        normalizeEvmAddress((user as any).primaryWalletAddress) ||
+        parseWalletAddresses((user as any).walletAddresses)[0] ||
+        null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function inferBantahBroChatTool(message: string, tool: z.infer<typeof bantahBroChatRequestSchema>["tool"]) {
+  if (tool !== "assistant") {
+    return tool;
+  }
+
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return tool;
+
+  if (
+    /\b(wallet|balance|portfolio|holdings?|positions?)\b/.test(text) ||
+    /\b(create|make|new)\b.*\bwallet\b/.test(text) ||
+    /\b(send|transfer|tip)\b/.test(text) ||
+    /\b(buy|sell|swap|bridge|approve|revoke|snipe|stake|claim airdrops?|copy trade|stop loss|take profit)\b/.test(text)
+  ) {
+    return "wallet";
+  }
+
+  if (
+    /\b(trending|discover|dexscreener|meme coins?|what('?s| is).*\bhot\b|what('?s| is).*\brunning\b|hot on|hot now)\b/.test(
+      text,
+    )
+  ) {
+    return "discover";
+  }
+
+  if (/\b(battle|battles|arena|vs|versus|join)\b/.test(text)) {
+    return "battle";
+  }
+
+  if (/\b(runner|momentum|breakout)\b/.test(text)) {
+    return "runner";
+  }
+
+  if (/\b(rug|scam|safe|risky|risk)\b/.test(text)) {
+    return "rug";
+  }
+
+  if (/\b(market cap|fdv|holders?|liquidity|creator|analy[sz]e|scan|score)\b/.test(text)) {
+    return "analyze";
+  }
+
+  return tool;
+}
+
+function getBantahBroChatRuntimeTimeoutMs() {
+  const parsed = Number.parseInt(String(process.env.BANTAHBRO_CHAT_RUNTIME_TIMEOUT_MS || "").trim(), 10);
+  if (Number.isInteger(parsed) && parsed >= 5_000) {
+    return parsed;
+  }
+  return 18_000;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function buildBantahBroChatRuntimeFallback(message: string, tool: string) {
+  const normalizedTool = String(tool || "assistant");
+  if (normalizedTool === "discover") {
+    return [
+      "The live agent reply took too long, so I stopped the wait.",
+      "",
+      "For fastest discovery answers, try prompts like:",
+      "show me trending meme coins on Base",
+      "what is hot on Solana",
+    ].join("\n");
+  }
+
+  if (normalizedTool === "battle") {
+    return [
+      "The live agent reply took too long, so I stopped the wait.",
+      "",
+      "For fastest battle answers, try:",
+      "show live battles",
+      "create $PEPE vs $BONK",
+    ].join("\n");
+  }
+
+  if (normalizedTool === "wallet") {
+    return [
+      "The live agent reply took too long, so I stopped the wait.",
+      "",
+      "Wallet balance, create-wallet, and execution-status questions are handled fastest from Wallet Ops.",
+    ].join("\n");
+  }
+
+  return [
+    "The live agent reply took too long, so I stopped the wait.",
+    "",
+    "Try a more specific prompt, or switch to Discover, Battle Desk, Wallet Ops, Analyze Token, or Rug Score for the fastest live answers.",
+    "",
+    `Your prompt: ${message}`,
+  ].join("\n");
 }
 
 function requireAdmin(req: any, res: any, next: any) {
@@ -700,6 +906,154 @@ router.get("/rug-score/:chainId/:tokenAddress", async (req, res) => {
   }
 });
 
+router.get("/rug-v2/dashboard", async (req, res) => {
+  try {
+    const dashboard = await getRugScorerV2Dashboard({
+      scanLimit: parseLimit(req.query.scanLimit, 28, 60),
+      force: parseBoolean(req.query.force),
+    });
+    void recordRugScorerV2ScanBatch([
+      ...dashboard.pinned,
+      ...dashboard.trending,
+      ...dashboard.popular,
+    ]).catch((error) => {
+      console.warn("[BantahBro Rug V2] Failed to persist dashboard scan:", error);
+    });
+    res.json(dashboard);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/rug-v2/search", async (req, res) => {
+  try {
+    const query = String(req.query.q || req.query.query || "").trim();
+    const chainId = typeof req.query.chainId === "string" ? req.query.chainId : null;
+    const payload = await searchRugScorerV2Token({ query, chainId });
+    void recordRugScorerV2Scan(payload.token).catch((error) => {
+      console.warn("[BantahBro Rug V2] Failed to persist search scan:", error);
+    });
+    res.json(payload);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/rug-v2/history", async (req, res) => {
+  try {
+    const chainId = String(req.query.chainId || "").trim();
+    const tokenAddress = String(req.query.tokenAddress || "").trim();
+    if (!chainId || !tokenAddress) {
+      return res.status(400).json({ message: "chainId and tokenAddress are required." });
+    }
+    const history = await listRugScorerV2History({
+      chainId,
+      tokenAddress,
+      limit: parseLimit(req.query.limit, 24, 100),
+    });
+    res.json({ history, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/rug-v2/watchlist", async (req, res) => {
+  try {
+    const userKey = String(req.query.userKey || "").trim();
+    const watchlist = await listRugScorerV2Watchlist({
+      userKey,
+      limit: parseLimit(req.query.limit, 30, 100),
+    });
+    res.json({ watchlist, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/rug-v2/watchlist", async (req, res) => {
+  try {
+    const parsed = rugScorerV2WatchSchema.parse(req.body || {});
+    const payload = await searchRugScorerV2Token({
+      query: parsed.tokenAddress,
+      chainId: parsed.chainId,
+    });
+    await recordRugScorerV2Scan(payload.token).catch((error) => {
+      console.warn("[BantahBro Rug V2] Failed to persist watch scan:", error);
+    });
+    const watch = await saveRugScorerV2Watch({
+      userKey: parsed.userKey,
+      token: payload.token,
+    });
+    res.json({ watch, token: payload.token, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.delete("/rug-v2/watchlist/:watchId", async (req, res) => {
+  try {
+    const userKey = String(req.query.userKey || req.body?.userKey || "").trim();
+    if (!userKey) return res.status(400).json({ message: "userKey is required." });
+    const watch = await deleteRugScorerV2Watch({
+      id: String(req.params.watchId || ""),
+      userKey,
+    });
+    res.json({ watch, removed: Boolean(watch), updatedAt: new Date().toISOString() });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/rug-v2/reports", async (req, res) => {
+  try {
+    const reports = await listRugScorerV2Reports({
+      chainId: typeof req.query.chainId === "string" ? req.query.chainId : null,
+      tokenAddress: typeof req.query.tokenAddress === "string" ? req.query.tokenAddress : null,
+      limit: parseLimit(req.query.limit, 30, 100),
+    });
+    res.json({ reports, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/rug-v2/reports", async (req, res) => {
+  try {
+    const parsed = rugScorerV2ReportSchema.parse(req.body || {});
+    const payload = await searchRugScorerV2Token({
+      query: parsed.tokenAddress,
+      chainId: parsed.chainId,
+    });
+    await recordRugScorerV2Scan(payload.token).catch((error) => {
+      console.warn("[BantahBro Rug V2] Failed to persist report scan:", error);
+    });
+    const report = await saveRugScorerV2Report({
+      reporterKey: parsed.reporterKey,
+      token: payload.token,
+      severity: parsed.severity,
+      reason: parsed.reason,
+      notes: parsed.notes,
+    });
+    res.json({ report, token: payload.token, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.patch("/rug-v2/reports/:reportId", async (req, res) => {
+  try {
+    const parsed = rugScorerV2ReportStatusSchema.parse(req.body || {});
+    const report = await updateRugScorerV2ReportStatus({
+      id: String(req.params.reportId || ""),
+      status: parsed.status,
+    });
+    if (!report) return res.status(404).json({ message: "Report not found." });
+    res.json({ report, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
 router.get("/holders/:tokenAddress", async (req, res) => {
   try {
     const ref = toTokenRef(req.params, req.query);
@@ -1011,6 +1365,8 @@ router.get("/bxbt/status", async (_req, res) => {
 router.post("/chat", async (req, res) => {
   try {
     const parsed = bantahBroChatRequestSchema.parse(req.body || {});
+    const effectiveTool = inferBantahBroChatTool(parsed.message, parsed.tool);
+    const actor = await resolveOptionalBantahBroChatActor(req);
     const launchIntent = handleTokenLaunchIntent(parsed.message);
     if (parsed.tool === "launcher" || launchIntent.handled) {
       if (launchIntent.handled) {
@@ -1035,12 +1391,117 @@ router.post("/chat", async (req, res) => {
       });
     }
 
-    const systemAgent = await ensureBantahBroSystemAgent({ preferLiveWallet: true });
-    const reply = await sendManagedBantahAgentRuntimeMessage(systemAgent.agentId, {
+    const surfaceReply = await maybeHandleBantahBroCommandSurface({
       text: parsed.message,
-      tool: parsed.tool,
-      sessionId: parsed.sessionId || `web-${parsed.tool}`,
+      tool: effectiveTool,
+      source: "web",
+      actor,
     });
+
+    if (surfaceReply) {
+      const replyWithLinks =
+        Array.isArray(surfaceReply.links) && surfaceReply.links.length > 0
+          ? [
+              surfaceReply.reply,
+              "",
+              ...surfaceReply.links.map((link) => `${link.label}: ${link.url}`),
+            ].join("\n")
+          : surfaceReply.reply;
+
+      return res.json({
+        reply: replyWithLinks,
+        actions: surfaceReply.actions,
+        providers: surfaceReply.providers,
+        links: surfaceReply.links,
+        walletAction: surfaceReply.walletAction,
+        agent: null,
+        roomId: parsed.sessionId || `web-${parsed.tool}`,
+      });
+    }
+
+    if (effectiveTool === "analyze" || effectiveTool === "rug" || effectiveTool === "runner") {
+      const scanMode = effectiveTool;
+      const scanIntent = extractBantahBroSurfaceScanIntent(parsed.message, {
+        allowPhraseFallback: true,
+      });
+
+      if (scanMode === "rug" && !scanIntent) {
+        return res.json({
+          reply: buildBantahBroScanPrompt("rug"),
+          actions: ["RUG_SCORER_V2_GUIDE"],
+          providers: ["rug-v2"],
+          agent: null,
+          roomId: parsed.sessionId || `web-${parsed.tool}`,
+        });
+      }
+
+      if (scanIntent) {
+        try {
+          const scan = await runBantahBroSurfaceScan({
+            query: scanIntent.query,
+            chainId: scanIntent.chainId,
+          });
+
+          if (scan) {
+            return res.json({
+              reply: buildBantahBroChatScanReply(scan, scanMode),
+              actions: ["RUG_SCORER_V2_SCAN"],
+              providers: ["dexscreener", "goplus", "moralis"],
+              scan: {
+                token: scan.token,
+                intent: scan.intent,
+                scanUrl: scan.scanUrl,
+              },
+              agent: null,
+              roomId: parsed.sessionId || `web-${parsed.tool}`,
+            });
+          }
+        } catch (scanError) {
+          const canFallbackToRuntime =
+            scanIntent.confidence === "medium" && (scanMode === "analyze" || scanMode === "runner");
+
+          if (!canFallbackToRuntime) {
+            const message =
+              scanError instanceof Error ? scanError.message : "The live scan could not complete.";
+            const scanLabel =
+              scanMode === "analyze" ? "token" : scanMode === "runner" ? "runner" : "rug";
+            return res.json({
+              reply: `I could not complete the live ${scanLabel} scan.\n\n${message}\n\n${buildBantahBroScanPrompt(scanMode)}`,
+              actions: ["RUG_SCORER_V2_SCAN_FAILED"],
+              providers: ["rug-v2"],
+              agent: null,
+              roomId: parsed.sessionId || `web-${parsed.tool}`,
+            });
+          }
+        }
+      }
+    }
+
+    const systemAgent = await ensureBantahBroSystemAgent({ preferLiveWallet: true });
+    let reply;
+    try {
+      reply = await withTimeout(
+        sendManagedBantahAgentRuntimeMessage(systemAgent.agentId, {
+          text: parsed.message,
+          tool: effectiveTool,
+          sessionId: parsed.sessionId || `web-${effectiveTool}`,
+        }),
+        getBantahBroChatRuntimeTimeoutMs(),
+        "BantahBro runtime timed out.",
+      );
+    } catch (_runtimeError) {
+      return res.json({
+        reply: buildBantahBroChatRuntimeFallback(parsed.message, effectiveTool),
+        actions: ["AGENT_RUNTIME_FALLBACK"],
+        providers: [],
+        agent: {
+          agentId: systemAgent.agentId,
+          agentName: systemAgent.agentName,
+          runtimeStatus: systemAgent.runtimeStatus,
+        },
+        roomId: parsed.sessionId || `web-${effectiveTool}`,
+      });
+    }
 
     res.json({
       reply: reply.text,
@@ -1052,6 +1513,24 @@ router.post("/chat", async (req, res) => {
         runtimeStatus: systemAgent.runtimeStatus,
       },
       roomId: reply.roomId,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/wallet-actions/prepare", async (req, res) => {
+  try {
+    const parsed = bantahBroWalletPrepareRequestSchema.parse(req.body ?? {});
+    const actor = await resolveOptionalBantahBroChatActor(req);
+    const prepared = await prepareBantahBroWalletAction({
+      action: parsed.action,
+      actor,
+      walletAddress: parsed.walletAddress,
+    });
+
+    res.json({
+      action: prepared,
     });
   } catch (error) {
     handleError(res, error);

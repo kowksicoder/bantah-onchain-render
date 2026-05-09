@@ -118,6 +118,12 @@ function formatPriceAxis(value?: number | null) {
   return value.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+function readBattleIdFromUrl() {
+  if (typeof window === 'undefined') return null;
+  const battleId = new URLSearchParams(window.location.search).get('battle');
+  return battleId?.trim() || null;
+}
+
 function formatSignedPercent(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '0.00%';
   const absolute = Math.abs(value);
@@ -274,7 +280,7 @@ function sideTone(side: AgentBattleSide, index: number) {
       border: 'border-secondary',
       bg: 'bg-secondary/10',
       text: 'text-secondary',
-      button: 'bg-secondary text-background',
+      button: 'bg-secondary text-secondary-foreground',
       tag: 'ATTACKING',
     };
   }
@@ -284,7 +290,7 @@ function sideTone(side: AgentBattleSide, index: number) {
       border: 'border-destructive',
       bg: 'bg-destructive/10',
       text: 'text-destructive',
-      button: 'bg-destructive text-background',
+      button: 'bg-destructive text-destructive-foreground',
       tag: 'UNDER PRESSURE',
     };
   }
@@ -301,7 +307,7 @@ function sideTone(side: AgentBattleSide, index: number) {
         border: 'border-accent',
         bg: 'bg-accent/10',
         text: 'text-accent',
-        button: 'bg-accent text-background',
+        button: 'bg-accent text-accent-foreground',
         tag: side.status.toUpperCase(),
       };
 }
@@ -742,65 +748,65 @@ function ChooseSidePanel({
 
   return (
     <div className="flex h-full min-h-[13.75rem] flex-col rounded-md border border-border bg-card/95 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="truncate rounded-md bg-primary/10 px-2 py-1 text-[11px] font-black uppercase text-foreground">
+      <div className="rounded-md border border-primary/20 bg-primary/10 px-3 py-2 text-center text-sm font-black uppercase leading-tight text-foreground whitespace-normal">
         {battleMarketTitle(left)}
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="text-[11px] font-black uppercase tracking-wide text-foreground">Choose Your Side</div>
+      <div className="mt-2 flex flex-col items-center gap-1 text-center">
+        <div className="text-[11px] font-black uppercase tracking-[0.16em] text-foreground">Choose Your Side</div>
         <div className="rounded bg-muted px-2 py-0.5 text-[10px] font-black uppercase text-muted-foreground">Stake ref: 100 BXBT</div>
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-1.5">
         <button
           onClick={() => onJoin(left)}
-          className={`rounded-md border p-2 text-left transition active:scale-[0.99] ${
+          className={`rounded-md border px-2 py-1.5 text-left transition active:scale-[0.99] ${
             selectedIsLeft
-              ? 'border-green-400/80 bg-green-500/25 shadow-[inset_0_0_22px_rgba(34,197,94,.16)]'
-              : 'border-green-500/35 bg-green-500/15 hover:bg-green-500/25'
+              ? 'border-green-300/90 bg-green-600/40 shadow-[inset_0_0_22px_rgba(34,197,94,.22)]'
+              : 'border-green-400/55 bg-green-600/25 hover:bg-green-600/35'
           }`}
         >
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-green-500/15 text-2xl">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-green-500/20 text-2xl">
               <BattleTokenMark side={left} className="h-full w-full rounded-full object-cover" />
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-black uppercase leading-none text-green-300">YES</div>
-              <div className="mt-1 truncate text-[10px] font-black uppercase text-foreground">{battleSymbol(left)}</div>
+              <div className="text-xs font-black uppercase leading-none text-green-200">YES</div>
+              <div className="mt-0.5 truncate text-[10px] font-black uppercase text-foreground">{battleSymbol(left)}</div>
             </div>
           </div>
-          <div className="mt-2 flex items-end justify-between gap-2">
+          <div className="mt-1.5 flex items-end justify-between gap-2">
             <span className="text-[10px] font-bold uppercase text-muted-foreground">Confidence</span>
-            <span className="font-mono text-sm font-black text-green-300">{left.confidence}%</span>
+            <span className="font-mono text-[13px] font-black text-green-200">{left.confidence}%</span>
           </div>
-          <div className="mt-1 flex items-end justify-between gap-2">
+          <div className="mt-0.5 flex items-end justify-between gap-2">
             <span className="text-[10px] font-bold uppercase text-muted-foreground">Potential win</span>
-            <span className="font-mono text-xs font-black text-foreground">{formatBxbt(estimatedPayout(left))}</span>
+            <span className="font-mono text-[11px] font-black text-foreground">{formatBxbt(estimatedPayout(left))}</span>
           </div>
         </button>
         <button
           onClick={() => onJoin(right)}
-          className={`rounded-md border p-2 text-left transition active:scale-[0.99] ${
+          className={`rounded-md border px-2 py-1.5 text-left transition active:scale-[0.99] ${
             selectedSide.id === right.id
-              ? 'border-red-400/80 bg-red-500/25 shadow-[inset_0_0_22px_rgba(239,68,68,.16)]'
-              : 'border-red-500/35 bg-red-500/15 hover:bg-red-500/25'
+              ? 'border-red-300/90 bg-red-600/40 shadow-[inset_0_0_22px_rgba(239,68,68,.22)]'
+              : 'border-red-400/55 bg-red-600/25 hover:bg-red-600/35'
           }`}
         >
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-500/15 text-2xl">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-500/20 text-2xl">
               <BattleTokenMark side={right} className="h-full w-full rounded-full object-cover" />
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-black uppercase leading-none text-red-300">NO</div>
-              <div className="mt-1 truncate text-[10px] font-black uppercase text-foreground">{battleSymbol(right)}</div>
+              <div className="text-xs font-black uppercase leading-none text-red-200">NO</div>
+              <div className="mt-0.5 truncate text-[10px] font-black uppercase text-foreground">{battleSymbol(right)}</div>
             </div>
           </div>
-          <div className="mt-2 flex items-end justify-between gap-2">
+          <div className="mt-1.5 flex items-end justify-between gap-2">
             <span className="text-[10px] font-bold uppercase text-muted-foreground">Confidence</span>
-            <span className="font-mono text-sm font-black text-red-300">{right.confidence}%</span>
+            <span className="font-mono text-[13px] font-black text-red-200">{right.confidence}%</span>
           </div>
-          <div className="mt-1 flex items-end justify-between gap-2">
+          <div className="mt-0.5 flex items-end justify-between gap-2">
             <span className="text-[10px] font-bold uppercase text-muted-foreground">Potential win</span>
-            <span className="font-mono text-xs font-black text-foreground">{formatBxbt(estimatedPayout(right))}</span>
+            <span className="font-mono text-[11px] font-black text-foreground">{formatBxbt(estimatedPayout(right))}</span>
           </div>
         </button>
       </div>
@@ -1666,7 +1672,7 @@ function MobileDetailsDeck({
         )}
 
         {activeTab === 'charts' && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <BattleChartPanel side={left} index={0} />
             <BattleChartPanel side={right} index={1} />
           </div>
@@ -1851,10 +1857,10 @@ function MobileChooseSideTab({
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-xl border border-border bg-muted/25 p-2">
-      <div className="mb-1 truncate rounded-lg border border-primary/20 bg-primary/10 px-2 py-1 text-[9px] font-black uppercase text-foreground">
+      <div className="mb-1 rounded-lg border border-primary/20 bg-primary/10 px-2 py-1.5 text-center text-[10px] font-black uppercase leading-tight text-foreground whitespace-normal">
         {battleMarketTitle(left)}
       </div>
-      <div className="text-[10px] font-black uppercase tracking-wide text-foreground">CHOOSE YOUR SIDE</div>
+      <div className="text-center text-[10px] font-black uppercase tracking-[0.14em] text-foreground">CHOOSE YOUR SIDE</div>
 
       <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-2 gap-1.5">
         <button
@@ -2033,9 +2039,9 @@ function MobileSocialPanel({
   onSubmitChat: (event: FormEvent) => void;
 }) {
   const tabs: Array<{ id: MobileSocialTab; label: string }> = [
+    { id: 'side', label: 'Predict' },
     { id: 'trollbox', label: 'Trollbox' },
     { id: 'events', label: 'Events' },
-    { id: 'side', label: 'Side' },
     { id: 'quick', label: 'Quick Trade' },
     { id: 'charts', label: 'Charts' },
     { id: 'stats', label: 'Stats' },
@@ -2207,7 +2213,7 @@ function MobileAgentBattleView({
   onSubmitChat: (event: FormEvent) => void;
   onNavigate?: (section: AppSection) => void;
 }) {
-  const [socialTab, setSocialTab] = useState<MobileSocialTab>('trollbox');
+  const [socialTab, setSocialTab] = useState<MobileSocialTab>('side');
   const [joinSide, setJoinSide] = useState<AgentBattleSide | null>(null);
   const defaultSide = left.confidence >= right.confidence ? left : right;
   const [chosenSide, setChosenSide] = useState<AgentBattleSide | null>(defaultSide);
@@ -2323,71 +2329,71 @@ function AgentBattleP2PStakeDialog({
 
   return (
     <Dialog open={Boolean(side)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-sm rounded-2xl border border-border bg-card p-3 text-card-foreground shadow-2xl sm:max-w-md">
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-[336px] rounded-[20px] border-0 bg-[#ffffff] p-2.5 font-mono text-[#0f172a] shadow-[0_22px_70px_rgba(15,23,42,0.18)] sm:max-w-[352px] sm:p-3 dark:bg-[#121212] dark:text-[#f2f2f2]">
         <DialogHeader className="space-y-1 text-left">
-          <DialogTitle className="text-base font-black uppercase">
+          <DialogTitle className="pr-6 text-[13px] font-black uppercase tracking-[0.08em] sm:text-sm">
             {side ? `P2P Stake: ${battleArmyName(side)}` : 'P2P Stake'}
           </DialogTitle>
-          <DialogDescription className="text-xs leading-relaxed text-muted-foreground">
+          <DialogDescription className="text-[10px] leading-relaxed text-[#64748b] dark:text-[#999999]">
             This uses the existing Bantah escrow contract with a battle-round escrow ID. No new BantahBro escrow contract is required.
           </DialogDescription>
         </DialogHeader>
 
         {side && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 rounded-xl border border-border bg-background p-2">
-              <div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-muted text-2xl">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 rounded-[16px] bg-[#f8fafc] p-2 dark:bg-[#1a1a1a]">
+              <div className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[#eef2ff] text-xl dark:bg-[#232035]">
                 <BattleTokenMark side={side} className="h-full w-full rounded-full object-cover" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-black text-foreground">{battleMarketTitle(side)}</div>
-                <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                <div className="truncate text-[12px] font-black text-[#0f172a] dark:text-[#f2f2f2]">{battleMarketTitle(side)}</div>
+                <div className="mt-0.5 truncate text-[10px] text-[#64748b] dark:text-[#999999]">
                   Round ends in {formatDuration(battle.timeRemainingSeconds)} · {side.priceDisplay}
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-xl border border-border bg-muted/25 p-2">
-                <div className="text-[10px] font-bold uppercase text-muted-foreground">This side pool</div>
-                <div className="mt-1 font-mono text-sm font-black text-foreground">
+            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+              <div className="rounded-[14px] bg-[#f8fafc] p-2 dark:bg-[#1a1a1a]">
+                <div className="text-[9px] font-bold uppercase text-[#64748b] dark:text-[#999999]">This side pool</div>
+                <div className="mt-0.5 font-mono text-[13px] font-black text-[#0f172a] dark:text-[#f2f2f2]">
                   {(poolSide?.totalStake || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} {escrowTokenSymbol}
                 </div>
-                <div className="text-[10px] text-muted-foreground">{poolSide?.bettorCount || 0} bettors</div>
+                <div className="text-[9px] text-[#64748b] dark:text-[#999999]">{poolSide?.bettorCount || 0} bettors</div>
               </div>
-              <div className="rounded-xl border border-border bg-muted/25 p-2">
-                <div className="text-[10px] font-bold uppercase text-muted-foreground">Other side pool</div>
-                <div className="mt-1 font-mono text-sm font-black text-foreground">
+              <div className="rounded-[14px] bg-[#f8fafc] p-2 dark:bg-[#1a1a1a]">
+                <div className="text-[9px] font-bold uppercase text-[#64748b] dark:text-[#999999]">Other side pool</div>
+                <div className="mt-0.5 font-mono text-[13px] font-black text-[#0f172a] dark:text-[#f2f2f2]">
                   {(opponentPoolSide?.totalStake || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} {escrowTokenSymbol}
                 </div>
-                <div className="text-[10px] text-muted-foreground">{opponentPoolSide?.bettorCount || 0} bettors</div>
+                <div className="text-[9px] text-[#64748b] dark:text-[#999999]">{opponentPoolSide?.bettorCount || 0} bettors</div>
               </div>
             </div>
 
-            <label className="block text-[10px] font-black uppercase text-muted-foreground">Stake amount</label>
-            <div className="flex items-center rounded-xl border border-border bg-input">
+            <label className="block text-[9px] font-black uppercase tracking-[0.08em] text-[#64748b] dark:text-[#999999]">Stake amount</label>
+            <div className="flex items-center rounded-[14px] bg-[#f1f5f9] dark:bg-[#1c1c1c]">
               <input
                 value={amount}
                 onChange={(event) => onAmountChange(event.target.value.replace(/[^\d.]/g, ''))}
                 inputMode="decimal"
-                className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-lg font-black text-foreground outline-none"
+                className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-base font-black text-[#0f172a] outline-none dark:text-[#f2f2f2]"
               />
-              <span className="px-3 text-xs font-black text-muted-foreground">{escrowTokenSymbol}</span>
+              <span className="px-3 text-[11px] font-black text-[#64748b] dark:text-[#999999]">{escrowTokenSymbol}</span>
             </div>
 
-            <div className={`rounded-xl border p-2 text-[11px] leading-relaxed ${
+            <div className={`rounded-[14px] p-2 text-[10px] leading-relaxed ${
               contractEnabled
-                ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
-                : 'border-amber-500/20 bg-amber-500/10 text-amber-200'
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-[#11261d] dark:text-emerald-200'
+                : 'bg-amber-50 text-amber-700 dark:bg-[#26180f] dark:text-amber-200'
             }`}>
               {contractEnabled
                 ? `Escrow: existing Bantah contract · round #${pool?.escrowChallengeId || 'reserving'} · chain ${escrowChainId || 'pending'}`
                 : 'Escrow contract mode is not configured yet. Real battle staking is disabled.'}
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border border-border bg-background px-2.5 py-2 text-xs">
-              <span className="text-muted-foreground">Wallet</span>
-              <span className="font-mono font-bold text-foreground">
+            <div className="flex items-center justify-between rounded-[14px] bg-[#f8fafc] px-2.5 py-2 text-[11px] dark:bg-[#1a1a1a]">
+              <span className="text-[#64748b] dark:text-[#999999]">Wallet</span>
+              <span className="font-mono font-bold text-[#0f172a] dark:text-[#f2f2f2]">
                 {isAuthenticated ? shortAddress(walletAddress) : 'Sign in required'}
               </span>
             </div>
@@ -2397,7 +2403,7 @@ function AgentBattleP2PStakeDialog({
                 type="button"
                 disabled={authLoading}
                 onClick={onLogin}
-                className="bb-tap w-full rounded-xl bg-primary py-2.5 text-sm font-black text-primary-foreground disabled:opacity-60"
+                className="bb-tap w-full rounded-[14px] bg-[#7c3aed] py-2 text-[12px] font-black text-white transition hover:bg-[#6d28d9] disabled:opacity-60"
               >
                 Sign in with Privy
               </button>
@@ -2406,7 +2412,7 @@ function AgentBattleP2PStakeDialog({
                 type="button"
                 disabled={!canSubmit || isSubmitting || !contractEnabled}
                 onClick={onSubmit}
-                className="bb-tap w-full rounded-xl bg-primary py-2.5 text-sm font-black text-primary-foreground disabled:opacity-60"
+                className="bb-tap w-full rounded-[14px] bg-[#7c3aed] py-2 text-[12px] font-black text-white transition hover:bg-[#6d28d9] disabled:opacity-60"
               >
                 {isSubmitting ? 'Locking Escrow...' : `Lock ${escrowTokenSymbol} Stake`}
               </button>
@@ -2478,11 +2484,12 @@ export default function BattlesPage({
     if (typeof window === 'undefined') return true;
     return window.localStorage.getItem(BATTLE_MODE_STORAGE_KEY) !== 'off';
   });
+  const [requestedBattleId, setRequestedBattleId] = useState<string | null>(() => readBattleIdFromUrl());
   const chatEndRef = useRef<HTMLDivElement>(null);
   const isExternalBattle = Boolean(externalBattle);
 
   const { data, isLoading, isError, isFetching } = useQuery<AgentBattleFeed>({
-    queryKey: ['/api/bantahbro/agent-battles/live', { limit: '3' }],
+    queryKey: ['/api/bantahbro/agent-battles/live', { limit: requestedBattleId ? '40' : '3' }],
     enabled: !isExternalBattle,
     staleTime: 3_000,
     refetchInterval: 5_000,
@@ -2491,7 +2498,11 @@ export default function BattlesPage({
     placeholderData: (previousData) => previousData,
   });
 
-  const battle = externalBattle || data?.battles?.[0];
+  const battle =
+    externalBattle ||
+    (requestedBattleId
+      ? data?.battles?.find((candidate) => candidate.id === requestedBattleId) || data?.battles?.[0]
+      : data?.battles?.[0]);
   const trollboxRoomId = 'agent-battle';
   const battleP2PUrl = !isExternalBattle && battle?.id
     ? `/api/bantahbro/agent-battles/${encodeURIComponent(battle.id)}/p2p/${isAuthenticated ? 'my' : 'pool'}`
@@ -2613,6 +2624,14 @@ export default function BattlesPage({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ block: 'end' });
   }, [trollboxMessages.length]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncBattleId = () => setRequestedBattleId(readBattleIdFromUrl());
+    window.addEventListener('popstate', syncBattleId);
+    syncBattleId();
+    return () => window.removeEventListener('popstate', syncBattleId);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

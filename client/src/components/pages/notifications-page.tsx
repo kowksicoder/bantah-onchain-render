@@ -148,7 +148,7 @@ export default function NotificationsPage() {
             <Bell size={18} className="text-primary" />
             <span className="font-bold text-foreground">Notifications</span>
             {unreadCount > 0 && (
-              <span className="bg-destructive text-background text-xs font-bold px-2 py-0.5 rounded-full">
+              <span className="bg-destructive text-destructive-foreground text-xs font-bold px-2 py-0.5 rounded-full">
                 {unreadCount}
               </span>
             )}

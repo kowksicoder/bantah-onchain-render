@@ -2,6 +2,7 @@ import type { Content, IAgentRuntime, Plugin } from "@elizaos/core";
 import { storage } from "./storage";
 import { analyzeToken } from "./bantahBro/tokenIntelligence";
 import { buildAlertFromAnalysis, buildReceiptFromAlert } from "./bantahBro/contentEngine";
+import { runBantahBroSurfaceScan } from "./bantahBro/rugScorerSurface";
 import {
   getBantahBroReceiptBySourceAlert,
   listBantahBroAlerts,
@@ -10,6 +11,7 @@ import {
 } from "./bantahBro/alertFeed";
 import { createBantahBroMarketFromSignal } from "./bantahBro/marketService";
 import { getBantahBroBxbtStatus } from "./bantahBro/bxbtUtility";
+import { maybeHandleBantahBroCommandSurface } from "./bantahBro/commandSurface";
 import { handleTokenLaunchIntent } from "./bantahBro/launchIntent";
 import { deployBantahLaunchToken } from "./bantahBro/tokenLauncher";
 import { getBantahBroSystemAgentStatus } from "./bantahBro/systemAgent";
@@ -195,6 +197,59 @@ function buildMainMenuButtons() {
   ];
 }
 
+async function handleSharedPowerCommand(
+  payload: TelegramMessageEventPayload,
+  text: string,
+  telegramId: string | null,
+) {
+  const tool =
+    /^\/wallet\b/i.test(text)
+      ? "wallet"
+      : /^\/discover\b|^\/trending\b/i.test(text)
+        ? "discover"
+        : /^\/battle\b|^\/battles\b/i.test(text)
+          ? "battle"
+          : /^\/analyze\b/i.test(text)
+            ? "analyze"
+            : /^\/rug\b/i.test(text)
+              ? "rug"
+              : /^\/runner\b/i.test(text)
+                ? "runner"
+                : null;
+  const linkedUser = telegramId ? await storage.getUserByTelegramId(telegramId).catch(() => null) : null;
+  const surfaceReply = await withTimeout(
+    maybeHandleBantahBroCommandSurface({
+      text,
+      tool,
+      source: "telegram",
+      actor: linkedUser
+        ? {
+            userId: linkedUser.id,
+            username: linkedUser.username || null,
+            firstName: linkedUser.firstName || null,
+            walletAddress: (linkedUser as any).primaryWalletAddress || null,
+          }
+        : null,
+    }),
+    "Command surface",
+  );
+
+  if (!surfaceReply) {
+    return false;
+  }
+
+  const linkButtons = surfaceReply.links
+    .slice(0, 2)
+    .map((link) => urlButton(link.label, link.url))
+    .filter(Boolean) as TelegramInlineButton[];
+
+  await sendTelegramText(payload, surfaceReply.reply, [
+    ...(linkButtons.length > 0 ? [linkButtons] : []),
+    [callbackButton("😎 Main Menu", "bb:menu:main")],
+  ]);
+  return true;
+}
+
 function getTelegramCommandTimeoutMs() {
   const parsed = Number.parseInt(
     String(process.env.BANTAHBRO_TELEGRAM_COMMAND_TIMEOUT_MS || "").trim(),
@@ -299,7 +354,17 @@ async function handleAnalyzeLikeCommand(
   }
 
   try {
-    const analysis = await withTimeout(analyzeToken(tokenRef), "Token analysis");
+    const scan = await withTimeout(
+      runBantahBroSurfaceScan({
+        query: tokenRef.tokenAddress,
+        chainId: tokenRef.chainId,
+      }),
+      "Rug Scorer V2 scan",
+    );
+    if (!scan) {
+      throw new Error("No live Rug Scorer result was returned for that token.");
+    }
+    const analysis = scan.analysis;
     const alert = publishBantahBroAlert(buildAlertFromAnalysis(analysis, mode));
     const { text: messageText, chartUrl, scanUrl } = buildBantahBroTelegramAlertMessage(alert, analysis);
     const systemAgent = await withTimeout(
@@ -719,6 +784,34 @@ export async function handleBantahBroTelegramCommandEvent(
     return handleReceiptCommand(payload, text);
   }
 
+  if (matchesSlashCommand(text, "balance")) {
+    return handleSharedPowerCommand(payload, "what is my wallet balance", telegramId);
+  }
+
+  if (matchesSlashCommand(text, "wallet")) {
+    return handleSharedPowerCommand(payload, text, telegramId);
+  }
+
+  if (matchesSlashCommand(text, "discover") || matchesSlashCommand(text, "trending")) {
+    return handleSharedPowerCommand(payload, text, telegramId);
+  }
+
+  if (matchesSlashCommand(text, "battle") || matchesSlashCommand(text, "battles")) {
+    return handleSharedPowerCommand(payload, text, telegramId);
+  }
+
+  if (
+    matchesSlashCommand(text, "buy") ||
+    matchesSlashCommand(text, "sell") ||
+    matchesSlashCommand(text, "swap") ||
+    matchesSlashCommand(text, "send") ||
+    matchesSlashCommand(text, "bridge") ||
+    matchesSlashCommand(text, "approve") ||
+    matchesSlashCommand(text, "revoke")
+  ) {
+    return handleSharedPowerCommand(payload, text, telegramId);
+  }
+
   if (!isPrivateChat) {
     return false;
   }
@@ -743,7 +836,7 @@ export async function handleBantahBroTelegramCommandEvent(
     return handleLeaderboardCommand(payload);
   }
 
-  return false;
+  return handleSharedPowerCommand(payload, text, telegramId);
 }
 
 async function handleCallbackAction(ctx: any, runtime: IAgentRuntime) {

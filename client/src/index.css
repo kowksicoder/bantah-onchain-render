@@ -177,6 +177,65 @@
   }
 }
 
+/* Privy modal overrides for BantahBro surfaces */
+#privy-dialog,
+#privy-modal-content {
+  --privy-border-radius-sm: 12px;
+  --privy-border-radius-md: 14px;
+  --privy-border-radius-mdlg: 16px;
+  --privy-border-radius-lg: 20px;
+  --privy-height-modal-compact: 430px;
+  --privy-color-background: #ffffff;
+  --privy-color-background-2: #f8fafc;
+  --privy-color-background-3: #f1f5f9;
+  --privy-color-border-default: transparent;
+  --privy-color-border-hover: transparent;
+  --privy-color-border-interactive: rgba(124, 58, 237, 0.14);
+  --privy-color-border-interactive-hover: rgba(124, 58, 237, 0.22);
+  --privy-color-border-focus: rgba(124, 58, 237, 0.18);
+}
+
+.dark #privy-dialog,
+.dark #privy-modal-content {
+  --privy-color-background: #121212;
+  --privy-color-background-2: #1a1a1a;
+  --privy-color-background-3: #202020;
+  --privy-color-border-default: transparent;
+  --privy-color-border-hover: transparent;
+  --privy-color-border-interactive: rgba(132, 73, 255, 0.16);
+  --privy-color-border-interactive-hover: rgba(132, 73, 255, 0.24);
+  --privy-color-border-focus: rgba(132, 73, 255, 0.2);
+}
+
+#privy-dialog,
+#privy-dialog *,
+#privy-modal-content,
+#privy-modal-content * {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
+
+#privy-dialog-backdrop {
+  background: rgba(15, 23, 42, 0.26) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+#privy-dialog #privy-modal-content {
+  box-shadow: 0 24px 72px rgba(15, 23, 42, 0.18) !important;
+}
+
+#privy-dialog #privy-modal-content button,
+#privy-dialog #privy-modal-content input,
+#privy-dialog #privy-modal-content textarea {
+  box-shadow: none !important;
+}
+
+@media (min-width: 441px) {
+  #privy-dialog #privy-modal-content {
+    width: min(336px, calc(100vw - 24px)) !important;
+  }
+}
+
 /* Mobile App Components */
 @layer components {
   .no-scrollbar,

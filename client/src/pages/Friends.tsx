@@ -27,6 +27,8 @@ import { MobileNavigation } from "@/components/MobileNavigation";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { getAgentSpecialtyLabel, getAgentSpecialtyMeta } from "@/lib/agentSpecialty";
 import { apiRequest } from "@/lib/queryClient";
+import { executeOnchainEscrowStakeTx, type OnchainRuntimeConfig, type OnchainTokenSymbol } from "@/lib/onchainEscrow";
+import { useEnsureOnchainWallet } from "@/hooks/useEnsureOnchainWallet";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { formatDistanceToNow } from "date-fns";
@@ -95,6 +97,7 @@ function RequestRowSkeleton() {
 }
   export default function Friends() {
     const { user } = useAuth();
+    const { ensureOnchainWallet, wallets } = useEnsureOnchainWallet();
     const [, navigate] = useLocation();
     const queryClient = useQueryClient();
     const [searchTerm, setSearchTerm] = useState("");
@@ -229,15 +232,40 @@ function RequestRowSkeleton() {
 
   const createChallengeMutation = useMutation({
     mutationFn: async (data: z.infer<typeof createChallengeSchema>) => {
+      const { walletAddress } = await ensureOnchainWallet("create this challenge");
+      const onchainConfig = (await apiRequest("GET", "/api/onchain/config")) as OnchainRuntimeConfig;
+      const chainId = Number(
+        onchainConfig.defaultChainId || Object.keys(onchainConfig.chains || {})[0] || 8453,
+      );
+      const tokenSymbol = (onchainConfig.defaultToken || "ETH") as OnchainTokenSymbol;
       const challengeData = {
         challenged: selectedUser?.id || data.challenged,
         title: data.title,
         description: data.description,
         category: data.category,
-        amount: parseFloat(data.amount),
-        dueDate: data.dueDate,
+        amount: String(data.amount),
+        dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
         settlementRail: "onchain",
+        chainId,
+        tokenSymbol,
       };
+
+      if (onchainConfig.contractEnabled) {
+        const escrowTx = await executeOnchainEscrowStakeTx({
+          wallets: wallets as any,
+          preferredWalletAddress: walletAddress,
+          onchainConfig,
+          chainId,
+          tokenSymbol,
+          amount: challengeData.amount,
+        });
+
+        Object.assign(challengeData, {
+          walletAddress: escrowTx.walletAddress,
+          escrowTxHash: escrowTx.escrowTxHash,
+        });
+      }
+
       return await apiRequest("POST", "/api/challenges", challengeData);
     },
     onSuccess: () => {
@@ -1134,4 +1162,3 @@ function RequestRowSkeleton() {
     </div>
   );
 }
-

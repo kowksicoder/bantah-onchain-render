@@ -13,8 +13,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
+import { executeOnchainEscrowStakeTx, type OnchainRuntimeConfig, type OnchainTokenSymbol } from "@/lib/onchainEscrow";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { useEnsureOnchainWallet } from "@/hooks/useEnsureOnchainWallet";
 import { formatDistanceToNow } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -62,6 +64,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
   const [challengeType, setChallengeType] = useState('prediction');
   const [localIsFollowing, setLocalIsFollowing] = useState<boolean | undefined>(undefined);
   const { user: currentUser } = useAuth();
+  const { ensureOnchainWallet, wallets } = useEnsureOnchainWallet();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -182,12 +185,37 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
   // Challenge mutation
   const challengeMutation = useMutation({
     mutationFn: async (challengeData: any) => {
+      const { walletAddress } = await ensureOnchainWallet("create this challenge");
+      const onchainConfig = (await apiRequest("GET", "/api/onchain/config")) as OnchainRuntimeConfig;
+      const chainId = Number(
+        onchainConfig.defaultChainId || Object.keys(onchainConfig.chains || {})[0] || 8453,
+      );
+      const tokenSymbol = (onchainConfig.defaultToken || "ETH") as OnchainTokenSymbol;
       const data = {
         ...challengeData,
         challenged: userId,
         dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Added due date
         settlementRail: "onchain",
+        chainId,
+        tokenSymbol,
       };
+
+      if (onchainConfig.contractEnabled) {
+        const escrowTx = await executeOnchainEscrowStakeTx({
+          wallets: wallets as any,
+          preferredWalletAddress: walletAddress,
+          onchainConfig,
+          chainId,
+          tokenSymbol,
+          amount: String(data.amount ?? ""),
+        });
+
+        Object.assign(data, {
+          walletAddress: escrowTx.walletAddress,
+          escrowTxHash: escrowTx.escrowTxHash,
+        });
+      }
+
       return await apiRequest("POST", `/api/challenges`, data);
     },
     onSuccess: () => {
@@ -719,4 +747,3 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
 };
 
 export default ProfileCard;
-

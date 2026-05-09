@@ -1,19 +1,29 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { usePrivy, useWallets } from '@privy-io/react-auth'
 import {
   Activity,
   BarChart3,
   Bell,
+  Compass,
   MessageSquare,
   Rocket,
   Search,
   Send,
+  Shield,
   TrendingUp,
+  Wallet,
+  Zap,
   type LucideIcon,
 } from 'lucide-react'
 import type { BantahTool } from '@/app/page'
 import { apiRequest } from '@/lib/queryClient'
+import { useAuth } from '@/hooks/useAuth'
+import { useToast } from '@/hooks/use-toast'
+import { executeBantahBroPreparedWalletAction } from '@/lib/walletActions'
+import type { BantahBroPreparedWalletAction, BantahBroWalletAction } from '@shared/bantahBroWallet'
+import type { OnchainPublicConfig } from '@shared/onchainConfig'
 
 interface Message {
   id: string
@@ -21,11 +31,13 @@ interface Message {
   content: string
   timestamp: Date
   launcher?: ChatLauncherPayload
+  walletAction?: BantahBroWalletAction
 }
 
 interface ChatPageProps {
   activeTool?: BantahTool
   onToolChange?: (tool: BantahTool) => void
+  pendingWalletAction?: BantahBroWalletAction | null
 }
 
 type ChatLauncherPayload = {
@@ -67,7 +79,19 @@ interface ToolConfig {
   icon: LucideIcon
 }
 
-const TOOL_ORDER: BantahTool[] = ['assistant', 'analyze', 'runner', 'alerts', 'markets', 'bxbt', 'launcher']
+const TOOL_ORDER: BantahTool[] = [
+  'assistant',
+  'wallet',
+  'discover',
+  'battle',
+  'analyze',
+  'rug',
+  'runner',
+  'alerts',
+  'markets',
+  'bxbt',
+  'launcher',
+]
 
 const TOOL_CONFIG: Record<BantahTool, ToolConfig> = {
   assistant: {
@@ -80,6 +104,36 @@ const TOOL_CONFIG: Record<BantahTool, ToolConfig> = {
     prompts: ['Summarize PEPEFUN right now', 'What is the best setup today?', 'Which agent looks strongest?'],
     icon: MessageSquare,
   },
+  wallet: {
+    label: 'Wallet Ops',
+    title: 'Wallet Ops',
+    subtitle: 'Check wallet state, then execute sends, approvals, swaps, buys, sells, and bridges from chat.',
+    placeholder: 'Ask about wallet balance, send, approve, swap, buy, sell, or bridge...',
+    helperText: 'Try: what is my wallet balance, send 5 USDC to @name, swap 0.1 ETH to USDC, or bridge 0.1 ETH from Arbitrum to Base.',
+    intro: 'Use this tab for wallet-aware requests. I can read linked wallet state and turn supported onchain prompts into executable actions you can sign with Privy.',
+    prompts: ['What is my wallet balance?', 'Send 5 USDC to @username', 'Swap 0.1 ETH to USDC'],
+    icon: Wallet,
+  },
+  discover: {
+    label: 'Discover',
+    title: 'Meme Discovery',
+    subtitle: 'Surface trending meme coins, hot tickers, and live DexScreener-style discovery from the same agent flow.',
+    placeholder: 'Ask for trending meme coins, hot Base runners, or live discovery...',
+    helperText: 'Try: show me trending meme coins on Base, what is hot on Solana, or find today’s loudest movers.',
+    intro: 'This tab is for discovery. Ask for trending meme coins, chain-specific heat, and live tokens getting real attention right now.',
+    prompts: ['Show me trending meme coins on Base', 'What is hot on Solana?', 'Find loud meme coins right now'],
+    icon: Compass,
+  },
+  battle: {
+    label: 'Battle Desk',
+    title: 'Battle Desk',
+    subtitle: 'Join live battles, inspect what is active, or create a new token-vs-token arena from chat.',
+    placeholder: 'Ask to join a battle, show live arenas, or create $TOKEN vs $TOKEN...',
+    helperText: 'Try: show live battles, join a battle, or create $PEPE vs $BONK.',
+    intro: 'Use this tab for BantahBro battle flows. I can show live arenas and spin up new token-vs-token battles from chat when the market data resolves cleanly.',
+    prompts: ['Show live battles', 'Join a battle', 'Create $PEPE vs $BONK'],
+    icon: Zap,
+  },
   analyze: {
     label: 'Analyze Token',
     title: 'Analyze Token',
@@ -89,6 +143,16 @@ const TOOL_CONFIG: Record<BantahTool, ToolConfig> = {
     intro: 'Send a ticker, contract, or token theme and I will break down the key market, holder, and narrative signals that matter first.',
     prompts: ['Analyze PEPEFUN', 'Review a Base meme coin', 'What changed in volume today?'],
     icon: Search,
+  },
+  rug: {
+    label: 'Rug Score',
+    title: 'Rug Score',
+    subtitle: 'Run the same live Rug Scorer engine from chat with contract, LP, holder, and market signals.',
+    placeholder: 'Drop a ticker or contract to score rug risk...',
+    helperText: 'Try PEPE, ALIEN BOY, or a full contract address on Solana, Base, Arbitrum, or BSC.',
+    intro: 'Send a ticker or contract and I will run the same live Rug Scorer path used by the dedicated scanner page.',
+    prompts: ['Rug score PEPEFUN', 'Check ALIEN BOY rug risk', 'Score Base WETH'],
+    icon: Shield,
   },
   runner: {
     label: 'Runner Score',
@@ -159,7 +223,11 @@ const createIntroMessage = (tool: BantahTool): Message => ({
 
 const createInitialMessages = (): MessageStore => ({
   assistant: [createIntroMessage('assistant')],
+  wallet: [createIntroMessage('wallet')],
+  discover: [createIntroMessage('discover')],
+  battle: [createIntroMessage('battle')],
   analyze: [createIntroMessage('analyze')],
+  rug: [createIntroMessage('rug')],
   runner: [createIntroMessage('runner')],
   alerts: [createIntroMessage('alerts')],
   markets: [createIntroMessage('markets')],
@@ -171,15 +239,24 @@ interface ChatResponse {
   reply?: string
   message?: string
   launcher?: ChatLauncherPayload
+  walletAction?: BantahBroWalletAction
 }
 
-export default function ChatPage({ activeTool = 'assistant', onToolChange }: ChatPageProps) {
+export default function ChatPage({ activeTool = 'assistant', onToolChange, pendingWalletAction = null }: ChatPageProps) {
+  const { wallets, ready: walletsReady } = useWallets()
+  const { connectOrCreateWallet } = usePrivy()
+  const { isAuthenticated, isLoading: authLoading, login } = useAuth()
+  const { toast } = useToast()
   const [messagesByTool, setMessagesByTool] = useState<MessageStore>(() => createInitialMessages())
   const [input, setInput] = useState('')
   const [loadingTool, setLoadingTool] = useState<BantahTool | null>(null)
   const [deployingMessageId, setDeployingMessageId] = useState<string | null>(null)
+  const [executingMessageId, setExecutingMessageId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const sessionIdRef = useRef(createMessageId())
+  const consumedPendingWalletActionRef = useRef<string | null>(null)
+  const promptedLoginRef = useRef<string | null>(null)
+  const promptedWalletSetupRef = useRef<string | null>(null)
 
   const activeConfig = TOOL_CONFIG[activeTool]
   const activeMessages = messagesByTool[activeTool]
@@ -192,6 +269,61 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
   useEffect(() => {
     setInput('')
   }, [activeTool])
+
+  useEffect(() => {
+    if (!pendingWalletAction) return
+
+    const signature = JSON.stringify(pendingWalletAction)
+    if (consumedPendingWalletActionRef.current === signature) {
+      return
+    }
+    consumedPendingWalletActionRef.current = signature
+
+    appendMessage('wallet', {
+      id: createMessageId(),
+      role: 'agent',
+      content:
+        'Telegram handed off a wallet action. Review the details below, then sign it with Privy when you are ready.',
+      timestamp: new Date(),
+      walletAction: pendingWalletAction,
+    })
+  }, [pendingWalletAction])
+
+  useEffect(() => {
+    if (!pendingWalletAction || authLoading || isAuthenticated) {
+      return
+    }
+
+    const signature = JSON.stringify(pendingWalletAction)
+    if (promptedLoginRef.current === signature) {
+      return
+    }
+    promptedLoginRef.current = signature
+
+    login()
+    toast({
+      title: 'Sign in to continue',
+      description: 'Finish sign in so BantahBro can load this action and set up your wallet.',
+    })
+  }, [pendingWalletAction, authLoading, isAuthenticated, login, toast])
+
+  useEffect(() => {
+    if (!pendingWalletAction || !isAuthenticated || !walletsReady || wallets.length > 0) {
+      return
+    }
+
+    const signature = JSON.stringify(pendingWalletAction)
+    if (promptedWalletSetupRef.current === signature) {
+      return
+    }
+    promptedWalletSetupRef.current = signature
+
+    connectOrCreateWallet()
+    toast({
+      title: 'Set up your wallet',
+      description: 'Finish the Privy wallet setup to sign this Telegram handoff action.',
+    })
+  }, [pendingWalletAction, isAuthenticated, walletsReady, wallets.length, connectOrCreateWallet, toast])
 
   const appendMessage = (tool: BantahTool, message: Message) => {
     setMessagesByTool((prev) => ({
@@ -217,22 +349,11 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
     setLoadingTool(toolAtSend)
 
     try {
-      const response = await fetch('/api/bantahbro/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: messageText,
-          tool: toolAtSend,
-          sessionId: `${sessionIdRef.current}-${toolAtSend}`,
-        }),
-      })
-      const data = (await response.json().catch(() => ({}))) as ChatResponse
-
-      if (!response.ok) {
-        throw new Error(data.message || `BantahBro chat failed (${response.status})`)
-      }
+      const data = (await apiRequest('POST', '/api/bantahbro/chat', {
+        message: messageText,
+        tool: toolAtSend,
+        sessionId: `${sessionIdRef.current}-${toolAtSend}`,
+      })) as ChatResponse
 
       const agentMessage: Message = {
         id: createMessageId(),
@@ -240,6 +361,7 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
         content: data.reply || 'BantahBro answered, but no reply text came back.',
         timestamp: new Date(),
         launcher: data.launcher,
+        walletAction: data.walletAction,
       }
 
       appendMessage(toolAtSend, agentMessage)
@@ -287,6 +409,78 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
       })
     } finally {
       setDeployingMessageId(null)
+    }
+  }
+
+  const handleExecuteWalletAction = async (message: Message) => {
+    if (!message.walletAction || executingMessageId) return
+
+    if (!isAuthenticated) {
+      login()
+      return
+    }
+
+    if (!wallets.length) {
+      connectOrCreateWallet()
+      toast({
+        title: 'Connect your wallet',
+        description: 'Finish the Privy wallet setup, then you can sign this action.',
+      })
+      return
+    }
+
+    const toolAtExecute = activeTool
+    setExecutingMessageId(message.id)
+
+    try {
+      const onchainConfig = (await apiRequest('GET', '/api/onchain/config')) as OnchainPublicConfig
+      const preparedResponse = (await apiRequest('POST', '/api/bantahbro/wallet-actions/prepare', {
+        action: message.walletAction,
+        walletAddress: wallets[0]?.address || null,
+      })) as { action: BantahBroPreparedWalletAction }
+
+      const result = await executeBantahBroPreparedWalletAction({
+        wallets: wallets as any,
+        preferredWalletAddress: wallets[0]?.address || null,
+        onchainConfig,
+        action: preparedResponse.action,
+      })
+
+      appendMessage(toolAtExecute, {
+        id: createMessageId(),
+        role: 'agent',
+        content:
+          `Execution submitted successfully.\n\nTransaction: ${result.txHash}` +
+          (result.explorerUrl ? `\nExplorer: ${result.explorerUrl}` : '') +
+          (result.approvalTxHash ? `\nApproval: ${result.approvalTxHash}` : '') +
+          (result.approvalExplorerUrl ? `\nApproval explorer: ${result.approvalExplorerUrl}` : ''),
+        timestamp: new Date(),
+      })
+
+      toast({
+        title: 'Transaction submitted',
+        description: 'Your wallet action was signed and sent successfully.',
+      })
+    } catch (error) {
+      const messageText =
+        error instanceof Error
+          ? `Wallet execution failed: ${error.message}`
+          : 'Wallet execution failed.'
+
+      appendMessage(toolAtExecute, {
+        id: createMessageId(),
+        role: 'agent',
+        content: messageText,
+        timestamp: new Date(),
+      })
+
+      toast({
+        title: 'Execution failed',
+        description: error instanceof Error ? error.message : 'The wallet action could not be completed.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExecutingMessageId(null)
     }
   }
 
@@ -348,11 +542,31 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
             <div
               className={`max-w-[86%] sm:max-w-md px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm sm:text-base ${
                 message.role === 'user'
-                  ? 'bg-accent text-background'
+                  ? 'bg-accent text-accent-foreground'
                   : 'bg-muted border border-border text-foreground'
               }`}
             >
               <p className="whitespace-pre-wrap">{message.content}</p>
+              {message.role === 'agent' && message.walletAction && (
+                <div className="mt-3 rounded border border-border bg-background/70 p-3 text-xs space-y-2">
+                  <div className="font-bold text-foreground">Ready to execute</div>
+                  <div className="text-muted-foreground whitespace-pre-wrap">{message.walletAction.summary}</div>
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteWalletAction(message)}
+                    disabled={executingMessageId === message.id}
+                    className="w-full rounded bg-primary px-3 py-2 font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  >
+                    {!isAuthenticated
+                      ? 'Sign in to execute'
+                      : !wallets.length
+                        ? 'Create/connect wallet'
+                      : executingMessageId === message.id
+                        ? 'Executing...'
+                        : 'Execute with Privy'}
+                  </button>
+                </div>
+              )}
               {message.role === 'agent' && message.launcher?.validation && (
                 <div className="mt-3 rounded border border-border bg-background/70 p-3 text-xs space-y-2">
                   <div className="flex items-center justify-between gap-3">
@@ -391,7 +605,7 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
               )}
               <span
                 className={`text-xs mt-1 block ${
-                  message.role === 'user' ? 'text-background/70' : 'text-muted-foreground'
+                  message.role === 'user' ? 'text-accent-foreground/70' : 'text-muted-foreground'
                 }`}
               >
                 {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -433,7 +647,7 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange }: Cha
           <button
             onClick={() => handleSend()}
             disabled={!input.trim() || loadingTool !== null}
-            className="bg-accent text-background px-3 sm:px-4 py-2 rounded hover:opacity-90 disabled:opacity-50 transition flex items-center gap-1.5 font-bold text-sm sm:text-base"
+            className="bg-accent text-accent-foreground px-3 sm:px-4 py-2 rounded hover:opacity-90 disabled:opacity-50 transition flex items-center gap-1.5 font-bold text-sm sm:text-base"
           >
             <Send size={16} />
             <span className="hidden sm:inline">Send</span>

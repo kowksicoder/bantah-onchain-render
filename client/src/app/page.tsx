@@ -18,6 +18,8 @@ import LauncherPage from '@/components/pages/launcher-page';
 import AgentsPage from '@/components/pages/agents-page';
 import AdsPage from '@/components/pages/ads-page';
 import PolymarketBattlePage from '@/components/pages/polymarket-battle-page';
+import type { BantahBroWalletAction } from '@shared/bantahBroWallet';
+import { decodeBantahBroWalletActionParam } from '@shared/bantahBroWalletDeepLink';
 
 export type AppSection =
   | 'dashboard'
@@ -36,7 +38,11 @@ export type AppSection =
 
 export type BantahTool =
   | 'assistant'
+  | 'wallet'
+  | 'discover'
+  | 'battle'
   | 'analyze'
+  | 'rug'
   | 'runner'
   | 'alerts'
   | 'markets'
@@ -57,9 +63,56 @@ export default function Home({
   const [activeSection, setActiveSection] = useState<AppSection>(initialSection);
   const [predictionBattleId] = useState(initialPredictionBattleId);
   const [activeTool, setActiveTool] = useState<BantahTool>('assistant');
+  const [pendingWalletAction, setPendingWalletAction] = useState<BantahBroWalletAction | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
+
+    const params = new URLSearchParams(window.location.search);
+    const sectionParam = params.get('section');
+    const toolParam = params.get('tool');
+    const walletActionParam = params.get('walletAction');
+
+    if (
+      sectionParam === 'chat' ||
+      sectionParam === 'dashboard' ||
+      sectionParam === 'feed' ||
+      sectionParam === 'battles' ||
+      sectionParam === 'leaderboard' ||
+      sectionParam === 'agents' ||
+      sectionParam === 'ads' ||
+      sectionParam === 'notifications' ||
+      sectionParam === 'rug-scorer' ||
+      sectionParam === 'launcher' ||
+      sectionParam === 'profile' ||
+      sectionParam === 'prediction' ||
+      sectionParam === 'prediction-battle'
+    ) {
+      setActiveSection(sectionParam);
+    }
+
+    if (
+      toolParam === 'assistant' ||
+      toolParam === 'wallet' ||
+      toolParam === 'discover' ||
+      toolParam === 'battle' ||
+      toolParam === 'analyze' ||
+      toolParam === 'rug' ||
+      toolParam === 'runner' ||
+      toolParam === 'alerts' ||
+      toolParam === 'markets' ||
+      toolParam === 'bxbt' ||
+      toolParam === 'launcher'
+    ) {
+      setActiveTool(toolParam);
+    }
+
+    const decodedWalletAction = decodeBantahBroWalletActionParam(walletActionParam);
+    if (decodedWalletAction) {
+      setActiveSection('chat');
+      setActiveTool('wallet');
+      setPendingWalletAction(decodedWalletAction);
+    }
   }, []);
 
   if (!isMounted) return null;
@@ -87,7 +140,13 @@ export default function Home({
       case 'feed':
         return renderWithRightPanel(<FeedPage />);
       case 'chat':
-        return renderWithRightPanel(<ChatPage activeTool={activeTool} onToolChange={setActiveTool} />);
+        return renderWithRightPanel(
+          <ChatPage
+            activeTool={activeTool}
+            onToolChange={setActiveTool}
+            pendingWalletAction={pendingWalletAction}
+          />,
+        );
       case 'battles':
         return (
           <div className="flex-1 flex overflow-hidden p-0">

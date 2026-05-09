@@ -1,12 +1,14 @@
-
 export const privyConfig = {
   appId: 'cm4winhli04jg1tvq07cb8942',
   config: {
     loginMethods: ['wallet', 'email', 'telegram'],
     appearance: {
-      theme: 'light',
-      accentColor: '#7440ff',
-      logo: '/assets/bantahblue.svg',
+      theme: '#f8fafc',
+      accentColor: '#7c3aed',
+      logo: '/bantahbrologo.png',
+      landingHeader: 'BantahBro Sign In',
+      loginMessage: 'Connect fast to place stakes and manage live battles.',
+      showWalletLoginFirst: true,
     },
     embeddedWallets: {
       createOnLogin: 'users-without-wallets',
@@ -15,4 +17,4 @@ export const privyConfig = {
       botUsername: import.meta.env?.VITE_TELEGRAM_BOT_USERNAME || '@bantah_bot',
     },
   },
-};
+} as const;

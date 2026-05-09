@@ -2,6 +2,7 @@
   --bb-background: #f8fafc;
   --bb-background-rgb: 248 250 252;
   --bb-foreground: #0f172a;
+  --bb-foreground-rgb: 15 23 42;
   --bb-card: #ffffff;
   --bb-muted: #e2e8f0;
   --bb-muted-rgb: 226 232 240;
@@ -57,6 +58,7 @@
   --bb-background: #090909;
   --bb-background-rgb: 9 9 9;
   --bb-foreground: #f2f2f2;
+  --bb-foreground-rgb: 242 242 242;
   --bb-card: #121212;
   --bb-muted: #262626;
   --bb-muted-rgb: 38 38 38;
@@ -265,6 +267,16 @@
 
 .bantahbro-next-ui [class~="text-background/70"] {
   color: rgb(var(--bb-background-rgb) / 0.7) !important;
+}
+
+.dark .bantahbro-next-ui .text-background,
+.bantahbro-next-ui.dark .text-background {
+  color: var(--bb-foreground) !important;
+}
+
+.dark .bantahbro-next-ui [class~="text-background/70"],
+.bantahbro-next-ui.dark [class~="text-background/70"] {
+  color: rgb(var(--bb-foreground-rgb) / 0.7) !important;
 }
 
 .bantahbro-next-ui .text-muted-foreground {

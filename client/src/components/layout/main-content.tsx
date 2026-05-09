@@ -17,7 +17,7 @@ interface MainContentProps {
 const TOP_TABS = [
   { id: 'markets', icon: 'B', label: 'BANTAH Onchain', sub: 'P2P Predictions.' },
   { id: 'battles', icon: '⚔', label: 'BATTLES', sub: 'Live battle listings', badge: 'LIVE', badgeColor: 'bg-destructive text-white' },
-  { id: 'signals', icon: 'PM', label: 'POLYMARKET', sub: 'YES/NO battle layer', badge: 'LIVE DATA', badgeColor: 'bg-secondary text-background' },
+  { id: 'signals', icon: 'PM', label: 'POLYMARKET', sub: 'YES/NO battle layer', badge: 'LIVE DATA', badgeColor: 'bg-secondary text-secondary-foreground' },
 ] as const;
 
 export type MainContentTopTab = (typeof TOP_TABS)[number]['id'];

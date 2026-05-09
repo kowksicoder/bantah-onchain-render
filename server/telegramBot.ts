@@ -13,6 +13,7 @@ import {
   buildAlertFromAnalysis,
   buildReceiptFromAlert,
 } from './bantahBro/contentEngine';
+import { runBantahBroSurfaceScan } from './bantahBro/rugScorerSurface';
 import {
   getBantahBroAlert,
   getBantahBroReceiptBySourceAlert,
@@ -22,10 +23,12 @@ import {
 } from './bantahBro/alertFeed';
 import { createBantahBroMarketFromSignal } from './bantahBro/marketService';
 import { getBantahBroBxbtStatus } from './bantahBro/bxbtUtility';
+import { maybeHandleBantahBroCommandSurface } from './bantahBro/commandSurface';
 import { getBantahBroSystemAgentStatus } from './bantahBro/systemAgent';
 import {
   buildBantahBroAgentUrl,
   buildBantahBroAgentsUrl,
+  buildBantahBroBattlesUrl,
   buildBantahBroTelegramAlertMessage,
   buildBantahBroTelegramAlertsDigest,
   buildBantahBroTelegramBxbtMessage,
@@ -52,6 +55,10 @@ import type {
   BantahBroReceipt,
   BantahBroTokenAnalysis,
 } from '@shared/bantahBro';
+import type {
+  BantahBroAgentBattle,
+  BantahBroAgentBattleSide,
+} from './bantahBro/agentBattleService';
 
 
 interface TelegramBotConfig {
@@ -239,6 +246,51 @@ export class TelegramBotService {
     const amountText = this.formatNumber(value);
     const tokenSymbol = this.normalizeTokenSymbol(tokenLike);
     return tokenSymbol ? `${amountText} ${tokenSymbol}` : amountText;
+  }
+
+  private escapeHtml(value: unknown): string {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  private formatCompactUsd(value: number | null | undefined): string {
+    const resolved = Number(value);
+    if (!Number.isFinite(resolved) || resolved <= 0) return "n/a";
+    if (resolved >= 1_000_000_000) return `$${(resolved / 1_000_000_000).toFixed(2)}B`;
+    if (resolved >= 1_000_000) return `$${(resolved / 1_000_000).toFixed(2)}M`;
+    if (resolved >= 1_000) return `$${(resolved / 1_000).toFixed(1)}K`;
+    return `$${resolved.toFixed(2)}`;
+  }
+
+  private formatCompactPrice(value: number | null | undefined): string {
+    const resolved = Number(value);
+    if (!Number.isFinite(resolved) || resolved <= 0) return "n/a";
+    if (resolved >= 1) return `$${resolved.toFixed(4).replace(/0+$/, "").replace(/\.$/, "")}`;
+    return `$${resolved.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")}`;
+  }
+
+  private formatSignedPercent(value: number | null | undefined): string {
+    const resolved = Number(value);
+    if (!Number.isFinite(resolved)) return "0.00%";
+    const absolute = Math.abs(resolved);
+    const precision = absolute >= 100 ? 0 : absolute >= 10 ? 1 : 2;
+    return `${resolved > 0 ? "+" : ""}${resolved.toFixed(precision)}%`;
+  }
+
+  private formatBattleDuration(seconds: number | null | undefined): string {
+    const safeSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainder = safeSeconds % 60;
+    return `${minutes}:${remainder.toString().padStart(2, "0")}`;
+  }
+
+  private battleSideSymbol(side: BantahBroAgentBattleSide): string {
+    const tokenSymbol = side.tokenSymbol || side.label || "LIVE";
+    const normalized = String(tokenSymbol).replace(/^\$/, "").trim() || "LIVE";
+    return `$${normalized}`;
   }
 
   private formatStakeDisplay(
@@ -890,6 +942,40 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
     }
   }
 
+  private async sendHtmlToChannel(
+    message: string,
+    replyMarkup?: Record<string, unknown>,
+  ): Promise<boolean> {
+    try {
+      console.log(`ðŸ” Attempting to send HTML message to channel: ${this.channelId}`);
+
+      const response = await axios.post(`${this.baseUrl}/sendMessage`, {
+        chat_id: this.channelId,
+        text: message,
+        parse_mode: 'HTML',
+        disable_web_page_preview: false,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      });
+
+      if (response.data.ok) {
+        console.log('ðŸ“¤ HTML message sent to Telegram channel successfully');
+        return true;
+      }
+
+      console.error('âŒ Failed to send HTML message to Telegram:');
+      console.error('Channel ID:', this.channelId);
+      console.error('Error:', response.data);
+      return false;
+    } catch (error) {
+      console.error('âŒ Error sending HTML message to Telegram channel:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+      }
+      return false;
+    }
+  }
+
   // Send photo with caption to Telegram channel
   private async sendPhotoToChannel(
     photoUrl: string,
@@ -1109,6 +1195,118 @@ ${bonus.category ? `📂 *Category:* ${bonus.category}` : ''}
       return sent;
     } catch (error) {
       console.error('❌ Error broadcasting BantahBro receipt:', error);
+      return false;
+    }
+  }
+
+  private buildBantahBroAgentBattleTelegramMessage(battle: BantahBroAgentBattle) {
+    const [left, right] = battle.sides;
+    const leftSymbol = this.battleSideSymbol(left);
+    const rightSymbol = this.battleSideSymbol(right);
+    const leader = battle.leadingSideId === left.id ? left : right;
+    const trailer = leader.id === left.id ? right : left;
+    const battleUrl = buildBantahBroBattlesUrl(battle.id);
+    const updatedAt = new Date(battle.updatedAt).toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    const sideLine = (side: BantahBroAgentBattleSide) => {
+      const symbol = this.battleSideSymbol(side);
+      const leadLabel = side.id === leader.id ? " | LEADING" : "";
+      return [
+        `<b>${this.escapeHtml(symbol)}</b>${leadLabel}`,
+        `Price ${this.escapeHtml(this.formatCompactPrice(side.priceUsd))}`,
+        `5M ${this.escapeHtml(this.formatSignedPercent(side.priceChangeM5))}`,
+        `24H ${this.escapeHtml(this.formatSignedPercent(side.priceChangeH24))}`,
+        `Vol ${this.escapeHtml(this.formatCompactUsd(side.volumeH24))}`,
+        `Liq ${this.escapeHtml(this.formatCompactUsd(side.liquidityUsd))}`,
+        `Confidence ${side.confidence}%`,
+      ].join(" · ");
+    };
+
+    const html = [
+      "⚔️ <b>LIVE AGENT BATTLE</b>",
+      `<b>${this.escapeHtml(leftSymbol)}</b> vs <b>${this.escapeHtml(rightSymbol)}</b>`,
+      `Round: 5 min · Ends in <b>${this.escapeHtml(this.formatBattleDuration(battle.timeRemainingSeconds))}</b> · Updated ${this.escapeHtml(updatedAt)}`,
+      "",
+      `🔥 ${sideLine(left)}`,
+      `😈 ${sideLine(right)}`,
+      "",
+      `<b>Live score:</b> ${left.confidence}% ${this.escapeHtml(leftSymbol)} / ${right.confidence}% ${this.escapeHtml(rightSymbol)}`,
+      `<b>Momentum:</b> ${this.escapeHtml(leader.label)} is ahead by ${battle.confidenceSpread}%. ${this.escapeHtml(trailer.label)} needs fresh volume to flip it.`,
+      "",
+      "Data: Dexscreener live market windows. P2P prediction arena, not a token buy signal.",
+    ].join("\n");
+
+    const plain = [
+      "LIVE AGENT BATTLE",
+      `${leftSymbol} vs ${rightSymbol}`,
+      `Round: 5 min | Ends in ${this.formatBattleDuration(battle.timeRemainingSeconds)} | Updated ${updatedAt}`,
+      "",
+      `${leftSymbol}: price ${this.formatCompactPrice(left.priceUsd)} | 5M ${this.formatSignedPercent(left.priceChangeM5)} | 24H ${this.formatSignedPercent(left.priceChangeH24)} | vol ${this.formatCompactUsd(left.volumeH24)} | confidence ${left.confidence}%`,
+      `${rightSymbol}: price ${this.formatCompactPrice(right.priceUsd)} | 5M ${this.formatSignedPercent(right.priceChangeM5)} | 24H ${this.formatSignedPercent(right.priceChangeH24)} | vol ${this.formatCompactUsd(right.volumeH24)} | confidence ${right.confidence}%`,
+      "",
+      `Live score: ${left.confidence}% ${leftSymbol} / ${right.confidence}% ${rightSymbol}`,
+      "Data: Dexscreener live market windows.",
+    ].join("\n");
+
+    const chartButtons = [left, right]
+      .filter((side) => Boolean(side.pairUrl))
+      .map((side) => ({
+        text: `Chart ${this.battleSideSymbol(side).slice(0, 20)}`,
+        url: side.pairUrl as string,
+      }));
+
+    return {
+      html,
+      plain,
+      battleUrl,
+      replyMarkup: {
+        inline_keyboard: [
+          [
+            {
+              text: "Open Battle Arena",
+              url: battleUrl,
+            },
+          ],
+          ...(chartButtons.length > 0 ? [chartButtons.slice(0, 2)] : []),
+        ],
+      },
+    };
+  }
+
+  async broadcastBantahBroAgentBattle(
+    battle: BantahBroAgentBattle,
+    options: { broadcastId?: string } = {},
+  ): Promise<boolean> {
+    try {
+      const { html, plain, battleUrl, replyMarkup } =
+        this.buildBantahBroAgentBattleTelegramMessage(battle);
+      const sent = await this.sendHtmlToChannel(html, replyMarkup);
+
+      if (sent) {
+        const [left, right] = battle.sides;
+        recordBantahBroTelegramPost({
+          id: options.broadcastId || `telegram-agent-battle-${battle.id}-${battle.startsAt}`,
+          content: plain,
+          market: battle.title,
+          marketEmoji: "⚔️",
+          tags: [
+            left.tokenSymbol || left.label,
+            right.tokenSymbol || right.label,
+            "AgentBattle",
+            "Dexscreener",
+            "BantahBro",
+          ],
+          url: battleUrl,
+        });
+      }
+
+      return sent;
+    } catch (error) {
+      console.error('âŒ Error broadcasting BantahBro agent battle:', error);
       return false;
     }
   }
@@ -1880,6 +2078,7 @@ Tap below to view and manage your challenges!`;
         const firstName = message.from?.first_name || 'User';
         const telegramId = message.from?.id.toString();
         const startButtonAction = parseBantahBroTelegramStartButton(text);
+        const isBantahBro = this.isBantahBroBot();
 
         console.log(`📨 Processing message: "${text}" from user ${telegramId}`);
 
@@ -1898,7 +2097,11 @@ Tap below to view and manage your challenges!`;
         // Handle /balance command
         else if (text.startsWith('/balance')) {
           console.log(`📊 Received /balance from Telegram user ${telegramId}`);
-          await this.handleBalanceCommand(chatId, telegramId!);
+          if (isBantahBro) {
+            await this.handleBantahBroSharedPowerCommand(chatId, 'what is my wallet balance', telegramId!);
+          } else {
+            await this.handleBalanceCommand(chatId, telegramId!);
+          }
         }
 
         // Handle /mychallenges command
@@ -1948,6 +2151,26 @@ Tap below to view and manage your challenges!`;
           await this.handleBantahBroBxbtCommand(chatId);
         }
 
+        else if (
+          isBantahBro &&
+          (
+            text.startsWith('/wallet') ||
+            text.startsWith('/discover') ||
+            text.startsWith('/trending') ||
+            text.startsWith('/battle') ||
+            text.startsWith('/battles') ||
+            text.startsWith('/buy') ||
+            text.startsWith('/sell') ||
+            text.startsWith('/swap') ||
+            text.startsWith('/send') ||
+            text.startsWith('/bridge') ||
+            text.startsWith('/approve') ||
+            text.startsWith('/revoke')
+          )
+        ) {
+          await this.handleBantahBroSharedPowerCommand(chatId, text, telegramId!);
+        }
+
         else if (startButtonAction === 'analyze' || startButtonAction === 'rug' || startButtonAction === 'runner') {
           await this.sendMessage(chatId, buildBantahBroTelegramStartButtonPrompt(startButtonAction));
         }
@@ -1962,6 +2185,10 @@ Tap below to view and manage your challenges!`;
 
         else if (startButtonAction === 'leaderboard') {
           await this.handleBantahBroLeaderboardCommand(chatId);
+        }
+
+        else if (isBantahBro && message.chat?.type === 'private') {
+          await this.handleBantahBroSharedPowerCommand(chatId, text, telegramId!);
         }
       }
 
@@ -2167,6 +2394,63 @@ Format: /challenge @opponent amount title
 🔗 Need more? Visit the web app for full features!`;
 
     await this.sendMessage(chatId, message);
+  }
+
+  private async handleBantahBroSharedPowerCommand(
+    chatId: number,
+    text: string,
+    telegramId: string,
+  ): Promise<boolean> {
+    const tool =
+      /^\/wallet\b/i.test(text)
+        ? 'wallet'
+        : /^\/discover\b|^\/trending\b/i.test(text)
+          ? 'discover'
+          : /^\/battle\b|^\/battles\b/i.test(text)
+            ? 'battle'
+            : /^\/analyze\b/i.test(text)
+              ? 'analyze'
+              : /^\/rug\b/i.test(text)
+                ? 'rug'
+                : /^\/runner\b/i.test(text)
+                  ? 'runner'
+                  : null;
+    const linkedUser = telegramId ? await storage.getUserByTelegramId(telegramId).catch(() => null) : null;
+    const surfaceReply = await maybeHandleBantahBroCommandSurface({
+      text,
+      tool,
+      source: 'telegram',
+      actor: linkedUser
+        ? {
+            userId: linkedUser.id,
+            username: linkedUser.username || null,
+            firstName: linkedUser.firstName || null,
+            walletAddress: (linkedUser as any).primaryWalletAddress || null,
+          }
+        : null,
+    });
+
+    if (!surfaceReply) {
+      return false;
+    }
+
+    const inlineButtons = surfaceReply.links
+      .slice(0, 2)
+      .map((link) => ({ text: link.label, url: link.url }));
+
+    await this.sendMessage(
+      chatId,
+      surfaceReply.reply,
+      inlineButtons.length > 0
+        ? {
+            reply_markup: {
+              inline_keyboard: [inlineButtons],
+            },
+          }
+        : undefined,
+    );
+
+    return true;
   }
 
   private async sendNotLinkedMessage(chatId: number): Promise<void> {
@@ -2423,7 +2707,14 @@ Ready to place some bets? 🎯`;
     }
 
     try {
-      const analysis = await analyzeToken(tokenRef);
+      const scan = await runBantahBroSurfaceScan({
+        query: tokenRef.tokenAddress,
+        chainId: tokenRef.chainId,
+      });
+      if (!scan) {
+        throw new Error('No live Rug Scorer result was returned for that token.');
+      }
+      const analysis = scan.analysis;
       const alert = publishBantahBroAlert(buildAlertFromAnalysis(analysis, mode));
       const { text: messageText, chartUrl, scanUrl } = buildBantahBroTelegramAlertMessage(alert, analysis);
       const systemAgent = await getBantahBroSystemAgentStatus().catch(() => null);

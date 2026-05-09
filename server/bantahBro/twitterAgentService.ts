@@ -7,7 +7,13 @@ import {
   type BantahBroBattleCandidate,
 } from "./battleDiscoveryEngine";
 import { publishBantahBroBattleCandidates } from "./battleListingsService";
-import { lookupMarketByQuery } from "./tokenIntelligence";
+import { maybeHandleBantahBroCommandSurface } from "./commandSurface";
+import {
+  buildBantahBroTwitterScanReply,
+  extractBantahBroSurfaceScanIntent,
+  runBantahBroSurfaceScan,
+} from "./rugScorerSurface";
+import { buildBantahBroBattlesUrl } from "./telegramSupport";
 import { getBantahBroSystemAgentStatus } from "./systemAgent";
 import { sendManagedBantahAgentRuntimeMessage } from "../bantahElizaRuntimeManager";
 import {
@@ -86,7 +92,13 @@ type TwitterAgentStore = {
 };
 
 type TwitterAgentDecision = {
-  intent: "battle_request" | "token_analysis" | "campaign_thread" | "live_battle" | "general";
+  intent:
+    | "battle_request"
+    | "token_analysis"
+    | "campaign_thread"
+    | "live_battle"
+    | "command_surface"
+    | "general";
   shouldReply: boolean;
   replyText: string;
   battleIntent?: TwitterBattleIntent | null;
@@ -144,15 +156,6 @@ function parseIntegerEnv(name: string, fallback: number) {
   return Number.isInteger(raw) && raw > 0 ? raw : fallback;
 }
 
-function getPublicBaseUrl() {
-  return (
-    String(process.env.BANT_A_BRO_WEB_URL || "").trim().replace(/\/+$/, "") ||
-    String(process.env.PUBLIC_APP_URL || "").trim().replace(/\/+$/, "") ||
-    String(process.env.RENDER_EXTERNAL_URL || "").trim().replace(/\/+$/, "") ||
-    "https://onchain.bantah.fun"
-  );
-}
-
 function formatPercent(value: number) {
   const rounded = Math.abs(value) >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
   return `${value >= 0 ? "+" : ""}${rounded}%`;
@@ -176,17 +179,36 @@ function getBattleRoundKey(battle: BantahBroAgentBattle) {
 }
 
 function getBattleUrl(_battle: BantahBroAgentBattle) {
-  const baseUrl = getPublicBaseUrl();
-  if (baseUrl.endsWith("/bantahbro")) {
-    return `${baseUrl}/battles`;
-  }
-  return `${baseUrl}/bantahbro/battles`;
+  return buildBantahBroBattlesUrl(_battle.id);
 }
 
 function truncateTweet(text: string, limit = 280) {
   const clean = text.replace(/\s+\n/g, "\n").trim();
   if (clean.length <= limit) return clean;
   return `${clean.slice(0, Math.max(1, limit - 3)).trimEnd()}...`;
+}
+
+function appendUrlToTweet(text: string, url?: string | null, limit = 280) {
+  const cleanText = String(text || "").trim();
+  const cleanUrl = String(url || "").trim();
+  if (!cleanUrl) {
+    return truncateTweet(cleanText, limit);
+  }
+  if (!cleanText) {
+    return truncateTweet(cleanUrl, limit);
+  }
+  if (cleanText.includes(cleanUrl)) {
+    return truncateTweet(cleanText, limit);
+  }
+  const combined = `${cleanText}\n${cleanUrl}`;
+  if (combined.length <= limit) {
+    return combined;
+  }
+  const reserved = cleanUrl.length + 1;
+  if (reserved >= limit) {
+    return truncateTweet(cleanUrl, limit);
+  }
+  return `${truncateTweet(cleanText, limit - reserved)}\n${cleanUrl}`;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -519,10 +541,17 @@ export async function postCurrentBattleMediaTweet(options: PostBattleTweetOption
 }
 
 function extractTickers(text: string) {
-  const tickers = [...text.matchAll(/\$([a-zA-Z][a-zA-Z0-9_!]{1,24})/g)]
-    .map((match) => match[1].toUpperCase())
-    .filter((ticker) => !["USD", "USDC", "USDT", "SOL", "ETH", "BTC"].includes(ticker));
-  return [...new Set(tickers)].slice(0, 4);
+  const tickers: string[] = [];
+  const pattern = /\$([a-zA-Z][a-zA-Z0-9_!]{1,24})/g;
+  let match = pattern.exec(text);
+  while (match) {
+    const ticker = match[1].toUpperCase();
+    if (!["USD", "USDC", "USDT", "SOL", "ETH", "BTC"].includes(ticker)) {
+      tickers.push(ticker);
+    }
+    match = pattern.exec(text);
+  }
+  return Array.from(new Set(tickers)).slice(0, 4);
 }
 
 function stripBotMentions(text: string) {
@@ -538,8 +567,13 @@ function isBattleRequest(text: string, tickers: string[]) {
 
 function isAnalysisRequest(text: string, tickers: string[]) {
   return (
-    tickers.length >= 1 &&
-    /(price|chart|rug|scan|score|runner|liquidity|volume|holders|safe|risky)/i.test(text)
+    Boolean(
+      tickers.length >= 1 ||
+        extractBantahBroSurfaceScanIntent(text, {
+          allowPhraseFallback: true,
+        }),
+    ) &&
+    /(analy[sz]e|price|chart|rug|scan|score|runner|liquidity|volume|holders|safe|risky|review|check)/i.test(text)
   );
 }
 
@@ -612,29 +646,43 @@ async function createBattleIntentFromTweet(
   }
 }
 
-async function buildTokenAnalysisReply(text: string, tickers: string[]) {
-  const lookup = await withTimeout(
-    lookupMarketByQuery({
-      query: tickers[0],
-      mode: "ticker-first",
-    }),
+async function buildTokenAnalysisReply(
+  text: string,
+  tickers: string[],
+): Promise<{ text: string; scanUrl: string | null }> {
+  const extractedIntent = extractBantahBroSurfaceScanIntent(text, {
+    allowPhraseFallback: true,
+  });
+  const scan = await withTimeout(
+    extractedIntent
+      ? runBantahBroSurfaceScan({
+          query: extractedIntent.query,
+          chainId: extractedIntent.chainId,
+        })
+      : tickers[0]
+        ? runBantahBroSurfaceScan({
+            query: tickers[0],
+          })
+        : Promise.resolve(null),
     TWITTER_TOKEN_LOOKUP_TIMEOUT_MS,
     "Token lookup timed out.",
   );
 
-  if (!lookup.pair) {
-    return `I couldn't resolve $${tickers[0]} to a live Dexscreener pair. Send a clearer ticker or pair link and I'll scan it.`;
+  if (!scan) {
+    return {
+      text: tickers[0]
+        ? `I couldn't resolve $${tickers[0]} to a live Rug Scorer token. Send a clearer ticker or contract and I'll scan it.`
+        : "I couldn't resolve that token to a live Rug Scorer result. Send a clearer ticker or contract and I'll scan it.",
+      scanUrl: null,
+    };
   }
 
-  const pair = lookup.pair;
-  return truncateTweet(
-    [
-      `$${pair.baseToken.symbol || tickers[0]} live read:`,
-      `Price ${formatPrice(pair.priceUsd)} | 1H ${formatPercent(pair.priceChange.h1)} | 24H ${formatPercent(pair.priceChange.h24)}`,
-      `Liquidity ${formatVolume(pair.liquidityUsd)} | 24H vol ${formatVolume(pair.volume.h24)}`,
-      "Source: Dexscreener live pair data.",
-    ].join("\n"),
-  );
+  const mode =
+    /\brunner\b/i.test(text) ? "runner" : /\brug|safe|risky|risk\b/i.test(text) ? "rug" : "analyze";
+  return {
+    text: truncateTweet(buildBantahBroTwitterScanReply(scan, mode), 220),
+    scanUrl: scan.scanUrl,
+  };
 }
 
 async function buildElizaTwitterReply(
@@ -684,32 +732,55 @@ async function buildDecisionForTweet(
 ): Promise<TwitterAgentDecision> {
   const cleanText = stripBotMentions(tweet.text);
   const tickers = extractTickers(cleanText);
+  const surfaceReply = await maybeHandleBantahBroCommandSurface({
+    text: cleanText,
+    source: "twitter",
+    actor: null,
+  });
+
+  if (surfaceReply) {
+    return {
+      intent: "command_surface",
+      shouldReply: true,
+      replyText: appendUrlToTweet(
+        truncateTweet(surfaceReply.reply, 220),
+        surfaceReply.links[0]?.url || null,
+      ),
+    };
+  }
 
   if (isBattleRequest(cleanText, tickers)) {
     const battleIntent = await createBattleIntentFromTweet(tweet, tickers, status);
     const [left, right] = tickers;
+    const listedBattleUrl =
+      battleIntent.status === "listed"
+        ? buildBantahBroBattlesUrl(battleIntent.listedBattleId || battleIntent.candidate?.id || null)
+        : null;
     const reply =
       battleIntent.status === "listed"
-        ? `Battle listed: $${left} vs $${right}. Real Dexscreener data will drive the arena. See BantahBro battles.`
+        ? `Battle listed: $${left} vs $${right} is live. Jump into the BantahBro arena below.`
         : battleIntent.status === "queued" && battleIntent.candidate
           ? `Battle intent built: $${left} vs $${right}. Score ${battleIntent.candidate.score}. Queued for BantahBro listing.`
           : `I saw the $${left} vs $${right} battle request, but could not create it yet: ${battleIntent.error || "battle creation is disabled"}.`;
     return {
       intent: "battle_request",
       shouldReply: true,
-      replyText: await buildElizaTwitterReply(
-        tweet,
-        [
-          `Detected battle request: $${left} vs $${right}.`,
-          `Battle intent status: ${battleIntent.status}.`,
-          battleIntent.candidate
-            ? `Battle score: ${battleIntent.candidate.score}. Winner rule: ${battleIntent.candidate.winnerRule}.`
-            : "",
-          battleIntent.error ? `Error: ${battleIntent.error}.` : "",
-        ]
-          .filter(Boolean)
-          .join(" "),
-        reply,
+      replyText: appendUrlToTweet(
+        await buildElizaTwitterReply(
+          tweet,
+          [
+            `Detected battle request: $${left} vs $${right}.`,
+            `Battle intent status: ${battleIntent.status}.`,
+            battleIntent.candidate
+              ? `Battle score: ${battleIntent.candidate.score}. Winner rule: ${battleIntent.candidate.winnerRule}.`
+              : "",
+            battleIntent.error ? `Error: ${battleIntent.error}.` : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          reply,
+        ),
+        listedBattleUrl,
       ),
       battleIntent,
     };
@@ -720,7 +791,10 @@ async function buildDecisionForTweet(
     return {
       intent: "token_analysis",
       shouldReply: true,
-      replyText: await buildElizaTwitterReply(tweet, factualReply, factualReply),
+      replyText: appendUrlToTweet(
+        await buildElizaTwitterReply(tweet, factualReply.text, factualReply.text),
+        factualReply.scanUrl,
+      ),
     };
   }
 
@@ -744,12 +818,15 @@ async function buildDecisionForTweet(
     return {
       intent: "live_battle",
       shouldReply: true,
-      replyText: await buildElizaTwitterReply(
-        tweet,
-        draft
-          ? `Current live battle draft: ${draft.text}`
-          : "No live BantahBro battle is available right now.",
-        fallback,
+      replyText: appendUrlToTweet(
+        await buildElizaTwitterReply(
+          tweet,
+          draft
+            ? `Current live battle draft: ${draft.text}`
+            : "No live BantahBro battle is available right now.",
+          fallback,
+        ),
+        draft?.battleUrl || null,
       ),
     };
   }

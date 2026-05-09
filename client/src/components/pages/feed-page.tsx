@@ -194,9 +194,9 @@ export default function FeedPage({ compact = false }: { compact?: boolean } = {}
                 className={`${compact ? 'px-2 py-1 text-[10px]' : 'px-3 py-1 text-xs'} rounded font-bold whitespace-nowrap transition shrink-0 ${
                   activeFilter === f.key
                     ? f.key === 'twitter'
-                      ? 'bg-sky-400 text-background'
+                      ? 'bg-sky-400 text-white'
                       : f.key === 'telegram'
-                      ? 'bg-blue-500 text-background'
+                      ? 'bg-blue-500 text-white'
                       : 'bg-primary text-primary-foreground'
                     : 'bg-muted text-muted-foreground hover:text-foreground'
                 }`}
@@ -296,7 +296,7 @@ export default function FeedPage({ compact = false }: { compact?: boolean } = {}
                           {item.betChoice && (
                             <div className="flex items-center gap-1.5 shrink-0">
                               <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                item.betChoice === 'yes' ? 'bg-secondary text-background' : 'bg-destructive text-background'
+                                item.betChoice === 'yes' ? 'bg-secondary text-secondary-foreground' : 'bg-destructive text-destructive-foreground'
                               }`}>
                                 {item.betChoice.toUpperCase()}
                               </span>

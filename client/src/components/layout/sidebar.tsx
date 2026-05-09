@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   Bot,
+  Compass,
   Megaphone,
   MessageSquare,
   Rocket,
@@ -12,6 +13,7 @@ import {
   Shield,
   TrendingUp,
   Trophy,
+  Wallet,
   Zap,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -38,7 +40,11 @@ const menuItems: { icon: typeof BarChart3; label: string; section: AppSection }[
 ]
 
 const toolItems: { icon: typeof Search; label: string; tool: BantahTool; helper: string }[] = [
+  { icon: Wallet, label: 'Wallet Ops', tool: 'wallet', helper: 'Balance + wallet state' },
+  { icon: Compass, label: 'Discover', tool: 'discover', helper: 'Trending meme coins' },
+  { icon: Zap, label: 'Battle Desk', tool: 'battle', helper: 'Join + create battles' },
   { icon: Search, label: 'Analyze Token', tool: 'analyze', helper: 'Quick contract read' },
+  { icon: Shield, label: 'Rug Score', tool: 'rug', helper: 'Full live risk scan' },
   { icon: TrendingUp, label: 'Runner Score', tool: 'runner', helper: 'Momentum check' },
   { icon: Bell, label: 'Live Alerts', tool: 'alerts', helper: 'Whale + smart money' },
   { icon: BarChart3, label: 'Live Markets', tool: 'markets', helper: 'Open setups' },

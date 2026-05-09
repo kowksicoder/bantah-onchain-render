@@ -4,6 +4,10 @@ import type {
   BantahBroReceipt,
   BantahBroTokenAnalysis,
 } from "@shared/bantahBro";
+import {
+  encodeBantahBroWalletActionParam,
+} from "@shared/bantahBroWalletDeepLink";
+import type { BantahBroWalletAction } from "@shared/bantahBroWallet";
 
 const DEFAULT_CHAIN = String(process.env.BANTAHBRO_TELEGRAM_DEFAULT_CHAIN || "solana").trim();
 
@@ -254,11 +258,14 @@ export function buildBantahBroTelegramHelp() {
     "📣 /alerts  - latest BantahBro calls",
     "🏟 /markets  - live Bantah conviction markets",
     "🎯 /create <token>  - open a market from a signal",
+    "👛 /balance or /wallet  - linked wallet snapshot",
+    "🧭 /discover  - trending meme coins",
+    "⚔️ /battle  - join or create battles",
     "🏆 /leaderboard  - live Bantah rankings",
     "👥 /friends  - your Bantah circle",
     "🪙 /bxbt  - BXBT costs, treasury, and balance",
     "",
-    "💬 You can also ask plain text like: price of bitcoin",
+    "💬 You can also ask plain text like: price of bitcoin, show me trending meme coins on Base, or create $PEPE vs $BONK",
     "",
     "⛓ Supported chain shortcuts: solana, base, arbitrum, bsc",
   ].join("\n");
@@ -270,12 +277,15 @@ export function buildBantahBroTelegramWelcomeMessage(firstName?: string | null) 
   return [
     `😎 Welcome to BantahBro, ${safeFirstName}.`,
     "",
-    "⚡ Your degen command center for token scans, live prices, rug scores, runner calls, BXBT, and Bantah conviction markets.",
+    "⚡ Your degen command center for token scans, wallet checks, meme-coin discovery, battles, BXBT, and Bantah conviction markets.",
     "",
     "👇 Tap a button below or try:",
     "🔎 /analyze <token>",
     "⚠️ /rug <token>",
     "🚀 /runner <token>",
+    "👛 /balance",
+    "🧭 /discover",
+    "⚔️ /battle",
     "📣 /alerts",
     "🏟 /markets",
     "🏆 /leaderboard",
@@ -283,18 +293,18 @@ export function buildBantahBroTelegramWelcomeMessage(firstName?: string | null) 
     "🪙 /bxbt",
     "",
     "💬 Or just ask:",
-    "price of bitcoin",
+    "show me trending meme coins on Base",
   ].join("\n");
 }
 
 export function buildBantahBroTelegramBotShortDescription() {
-  return "🔎 Scan tokens. ⚠️ Score rugs. 🚀 Call runners. 🏟 Open markets. 🪙 Powered by BXBT.";
+  return "🔎 Scan tokens. 👛 Check wallets. 🧭 Find memes. ⚔️ Join battles. ⚠️ Score rugs.";
 }
 
 export function buildBantahBroTelegramBotDescription() {
   return [
     "😎 BantahBro is your degen command center on Telegram.",
-    "🔎 Scan tokens, 💬 ask live price questions, ⚠️ score rug risk, 🚀 track runner momentum, 📣 watch alerts, 🏟 open markets, 🏆 read leaderboards, and 🪙 use BXBT-backed conviction.",
+    "🔎 Scan tokens, 👛 check wallet status, 🧭 find trending meme coins, ⚔️ join or create battles, ⚠️ score rug risk, 🚀 track runner momentum, 📣 watch alerts, 🏟 open markets, 🏆 read leaderboards, and 🪙 use BXBT-backed conviction.",
   ].join(" ");
 }
 
@@ -305,13 +315,16 @@ export function buildBantahBroTelegramCommandMenu() {
     { command: "analyze", description: "🔎 Scan any token on Solana, Base, Arbitrum, or BSC" },
     { command: "rug", description: "⚠️ Score the rug risk on a token" },
     { command: "runner", description: "🚀 Score the runner momentum on a token" },
+    { command: "balance", description: "👛 Show your linked wallet snapshot" },
+    { command: "wallet", description: "👛 Open wallet and account status" },
+    { command: "discover", description: "🧭 Show trending meme coins" },
+    { command: "battle", description: "⚔️ Join or create live battles" },
     { command: "alerts", description: "📣 See BantahBro's latest alerts" },
     { command: "markets", description: "🏟 View live Bantah conviction markets" },
     { command: "create", description: "🎯 Create a market from a token signal" },
     { command: "leaderboard", description: "🏆 View the live Bantah leaderboard" },
     { command: "friends", description: "👥 See your Bantah friends" },
     { command: "bxbt", description: "🪙 Check BXBT costs, treasury, and balance" },
-    { command: "wallet", description: "👛 Open your wallet and account links" },
   ] as const;
 }
 
@@ -453,9 +466,18 @@ export function buildBantahBroAgentUrl(agentId?: string | null) {
 }
 
 export function buildBantahBroTokenScanUrl(chainId: string, tokenAddress: string) {
-  const url = new URL(buildBantahBroHomeUrl());
-  url.searchParams.set("chain", normalizeBantahBroTelegramChainId(chainId));
+  const url = new URL("/bantahbro/rug-scorer", getBantahBroWebBaseUrl());
+  url.searchParams.set("chainId", normalizeBantahBroTelegramChainId(chainId));
   url.searchParams.set("token", tokenAddress);
+  return url.toString();
+}
+
+export function buildBantahBroWalletActionUrl(action: BantahBroWalletAction) {
+  const url = new URL("/bantahbro", getBantahBroWebBaseUrl());
+  url.searchParams.set("section", "chat");
+  url.searchParams.set("tool", "wallet");
+  url.searchParams.set("walletAction", encodeBantahBroWalletActionParam(action));
+  url.searchParams.set("source", "telegram");
   return url.toString();
 }
 
