@@ -56,7 +56,7 @@ function arenaAgentAvatar(seed: string) {
   return SERVER_ARENA_AGENT_AVATARS[stableIndex(seed, SERVER_ARENA_AGENT_AVATARS.length)];
 }
 
-function normalizeAgentId(value: string) {
+export function normalizeBotaFighterAgentId(value: string) {
   return String(value || "bota-agent")
     .trim()
     .toLowerCase()
@@ -131,7 +131,7 @@ function profileFromBattleSide(
   const title = titleForSide(side, battle);
 
   return {
-    agentId: normalizeAgentId(`${origin}:${side.id}`),
+    agentId: normalizeBotaFighterAgentId(`${origin}:${side.id}`),
     displayName: side.agentName || `${symbol} Agent`,
     origin,
     originId: side.id,
@@ -176,6 +176,10 @@ function profileFromBattleSide(
       },
     },
   };
+}
+
+export function getBotaFighterAgentIdForBattleSide(side: BantahBroAgentBattleSide) {
+  return normalizeBotaFighterAgentId(`${originForSide(side)}:${side.id}`);
 }
 
 function normalizeProfileRecord(row: BotaFighterProfileRecord): BotaFighterProfile {
@@ -357,7 +361,7 @@ export async function listBotaFighterProfiles(input: {
 
 export async function getBotaFighterProfile(agentId: string, refreshLive = true) {
   await ensureBotaFighterProfilesTable();
-  const normalizedAgentId = normalizeAgentId(agentId);
+  const normalizedAgentId = normalizeBotaFighterAgentId(agentId);
   let [row] = await db
     .select()
     .from(botaFighterProfiles)
@@ -380,7 +384,7 @@ export async function importBotaFighterProfile(input: BotaFighterProfileImportRe
   await ensureBotaFighterProfilesTable();
   const parsed = botaFighterProfileImportSchema.parse(input);
   const now = new Date();
-  const agentId = normalizeAgentId(
+  const agentId = normalizeBotaFighterAgentId(
     parsed.agentId ||
       `${parsed.origin}:${parsed.originId || parsed.ensName || parsed.walletAddress || parsed.displayName}`,
   );
@@ -422,4 +426,75 @@ export async function importBotaFighterProfile(input: BotaFighterProfileImportRe
     .returning();
 
   return normalizeProfileRecord(row);
+}
+
+export async function syncBotaFighterProfilesFromBattle(battle: BantahBroAgentBattle) {
+  await ensureBotaFighterProfilesTable();
+  const seeds = battle.sides.map((side) => profileFromBattleSide(battle, side));
+  for (const seed of seeds) {
+    await upsertProfileSeed(seed);
+  }
+  return seeds.map((seed) => seed.agentId);
+}
+
+export async function applyBotaArenaBattleResultToFighterProfiles(input: {
+  battle: BantahBroAgentBattle;
+  winnerSideId: string | null;
+  loserSideId: string | null;
+  recordId: string;
+}) {
+  await ensureBotaFighterProfilesTable();
+  await syncBotaFighterProfilesFromBattle(input.battle);
+
+  const now = new Date();
+  const winnerSide = input.winnerSideId
+    ? input.battle.sides.find((side) => side.id === input.winnerSideId) || null
+    : null;
+  const loserSide = input.loserSideId
+    ? input.battle.sides.find((side) => side.id === input.loserSideId) || null
+    : null;
+
+  if (winnerSide) {
+    const winnerAgentId = getBotaFighterAgentIdForBattleSide(winnerSide);
+    await db
+      .update(botaFighterProfiles)
+      .set({
+        wins: sql`${botaFighterProfiles.wins} + 1`,
+        currentStreak: sql`GREATEST(${botaFighterProfiles.currentStreak}, 0) + 1`,
+        fameScore: sql`LEAST(${botaFighterProfiles.fameScore} + 5, 100)`,
+        lastBattleId: input.battle.id,
+        metadata: sql`${botaFighterProfiles.metadata} || ${JSON.stringify({
+          latestArenaResult: {
+            result: "win",
+            recordId: input.recordId,
+            battleId: input.battle.id,
+            at: now.toISOString(),
+          },
+        })}::jsonb`,
+        updatedAt: now,
+      })
+      .where(eq(botaFighterProfiles.agentId, winnerAgentId));
+  }
+
+  if (loserSide) {
+    const loserAgentId = getBotaFighterAgentIdForBattleSide(loserSide);
+    await db
+      .update(botaFighterProfiles)
+      .set({
+        losses: sql`${botaFighterProfiles.losses} + 1`,
+        currentStreak: sql`LEAST(${botaFighterProfiles.currentStreak}, 0) - 1`,
+        fameScore: sql`GREATEST(${botaFighterProfiles.fameScore} + 1, 0)`,
+        lastBattleId: input.battle.id,
+        metadata: sql`${botaFighterProfiles.metadata} || ${JSON.stringify({
+          latestArenaResult: {
+            result: "loss",
+            recordId: input.recordId,
+            battleId: input.battle.id,
+            at: now.toISOString(),
+          },
+        })}::jsonb`,
+        updatedAt: now,
+      })
+      .where(eq(botaFighterProfiles.agentId, loserAgentId));
+  }
 }

@@ -439,6 +439,51 @@ export const botaFighterProfiles = pgTable(
   }),
 );
 
+export const botaArenaBattleRecords = pgTable(
+  "bota_arena_battle_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    recordKey: varchar("record_key", { length: 360 }).notNull().unique(),
+    battleId: varchar("battle_id", { length: 255 }).notNull(),
+    sourceBattleId: varchar("source_battle_id", { length: 255 }),
+    title: varchar("title", { length: 255 }).notNull(),
+    arenaId: varchar("arena_id", { length: 120 }),
+    status: varchar("status", { length: 24 }).notNull().default("resolved"),
+    winnerAgentId: varchar("winner_agent_id", { length: 180 }),
+    winnerSideId: varchar("winner_side_id", { length: 180 }),
+    loserAgentId: varchar("loser_agent_id", { length: 180 }),
+    loserSideId: varchar("loser_side_id", { length: 180 }),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    adapterVersion: varchar("adapter_version", { length: 40 }).notNull(),
+    engineVersion: varchar("engine_version", { length: 40 }).notNull(),
+    seed: varchar("seed", { length: 255 }).notNull(),
+    rounds: integer("rounds").notNull().default(0),
+    spectators: integer("spectators").notNull().default(0),
+    fighters: jsonb("fighters").$type<Record<string, unknown>[]>().notNull().default(sql`'[]'::jsonb`),
+    roundLog: jsonb("round_log").$type<Record<string, unknown>[]>().notNull().default(sql`'[]'::jsonb`),
+    simulation: jsonb("simulation").$type<Record<string, unknown>>().notNull(),
+    battleSnapshot: jsonb("battle_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    resolvedAt: timestamp("resolved_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    recordKeyIdx: index("idx_bota_arena_battle_records_record_key").on(table.recordKey),
+    battleIdx: index("idx_bota_arena_battle_records_battle_id").on(table.battleId),
+    winnerIdx: index("idx_bota_arena_battle_records_winner_agent_id").on(table.winnerAgentId),
+    createdIdx: index("idx_bota_arena_battle_records_created_at").on(table.createdAt),
+  }),
+);
+
 export const agentOrders = pgTable(
   "agent_orders",
   {
@@ -1410,6 +1455,7 @@ export type Agent = typeof agents.$inferSelect;
 export type AgentFollow = typeof agentFollows.$inferSelect;
 export type TokenLaunch = typeof tokenLaunches.$inferSelect;
 export type BotaFighterProfileRecord = typeof botaFighterProfiles.$inferSelect;
+export type BotaArenaBattleRecordRow = typeof botaArenaBattleRecords.$inferSelect;
 export type AgentOrderRecord = typeof agentOrders.$inferSelect;
 export type AgentPositionRecord = typeof agentPositions.$inferSelect;
 export type DecisionLogRecord = typeof decisionLogs.$inferSelect;

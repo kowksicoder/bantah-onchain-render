@@ -104,6 +104,11 @@ import {
   syncBotaFighterProfilesFromLiveBattles,
 } from "../bantahBro/botaFighterProfileService";
 import {
+  getBotaArenaBattleRecord,
+  listBotaArenaBattleRecords,
+  recordBotaArenaBattleFromLiveBattle,
+} from "../bantahBro/botaArenaBattleRecordService";
+import {
   getAgentBattleP2PPool,
   listAgentBattleP2PHistoryPositions,
   markAgentBattleP2PEscrowLocked,
@@ -195,6 +200,13 @@ const predictionVisualizationExecutionPreflightSchema = z.object({
 const botaArenaSimulationRequestSchema = z.object({
   seed: z.string().trim().min(1).max(255).optional(),
   maxRounds: z.coerce.number().int().min(1).max(5).optional(),
+});
+
+const botaArenaRecordRequestSchema = z.object({
+  seed: z.string().trim().min(1).max(255).optional(),
+  maxRounds: z.coerce.number().int().min(1).max(5).default(5),
+  arenaId: z.string().trim().min(1).max(120).optional().nullable(),
+  forceNewRecord: z.coerce.boolean().default(false),
 });
 
 const agentBattleP2PStakeSchema = z.object({
@@ -715,6 +727,27 @@ router.get("/agent-battles/live", async (req, res) => {
   }
 });
 
+router.get("/arena/battle-records", async (req, res) => {
+  try {
+    const feed = await listBotaArenaBattleRecords(parseLimit(req.query.limit, 20, 100));
+    res.json(feed);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/arena/battle-records/:recordId", async (req, res) => {
+  try {
+    const record = await getBotaArenaBattleRecord(String(req.params.recordId || ""));
+    if (!record) {
+      return res.status(404).json({ message: "Arena battle record not found" });
+    }
+    res.json({ record });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
 router.post("/agent-battles/:battleId/arena/simulate", async (req, res) => {
   try {
     const parsed = botaArenaSimulationRequestSchema.parse(req.body || {});
@@ -745,6 +778,49 @@ router.post("/agent-battles/:battleId/arena/simulate", async (req, res) => {
     handleError(res, error);
   }
 });
+
+router.post(
+  "/admin/agent-battles/:battleId/arena/record",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = botaArenaRecordRequestSchema.parse(req.body || {});
+      const result = await recordBotaArenaBattleFromLiveBattle({
+        battleId: String(req.params.battleId || ""),
+        seed: parsed.seed,
+        maxRounds: parsed.maxRounds,
+        arenaId: parsed.arenaId || null,
+        forceNewRecord: parsed.forceNewRecord,
+      });
+
+      if (result.inserted) {
+        const winnerName =
+          result.record.metadata.winnerName ||
+          result.record.winnerAgentId ||
+          "Arena winner";
+        const loserName =
+          result.record.metadata.loserName ||
+          result.record.loserAgentId ||
+          "opponent";
+        recordBantahBroTrollboxMessage({
+          roomId: "agent-battle",
+          source: "system",
+          user: "BOTA Arena",
+          handle: "battle record",
+          message:
+            result.record.status === "draw"
+              ? `${result.record.title} ended in a draw after ${result.record.rounds} rounds.`
+              : `${winnerName} defeated ${loserName} in ${result.record.rounds} rounds.`,
+        });
+      }
+
+      res.json(result);
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
 router.post("/agent-battles/:battleId/watch-reward", PrivyAuthMiddleware, async (req: any, res) => {
   try {
