@@ -13,6 +13,10 @@ import {
   bantahBroPublishAlertRequestSchema,
   bantahBroTokenRefSchema,
 } from "@shared/bantahBro";
+import {
+  botaFighterOriginValues,
+  botaFighterProfileImportSchema,
+} from "@shared/botaFighterProfile";
 import { analyzeToken } from "../bantahBro/tokenIntelligence";
 import {
   getRugScorerV2Dashboard,
@@ -93,6 +97,12 @@ import {
 } from "../bantahBro/socialFeedService";
 import { getLiveBantahBroAgentBattles } from "../bantahBro/agentBattleService";
 import { simulateBotaArenaBattleFromLiveBattle } from "../bantahBro/botaArenaEngine";
+import {
+  getBotaFighterProfile,
+  importBotaFighterProfile,
+  listBotaFighterProfiles,
+  syncBotaFighterProfilesFromLiveBattles,
+} from "../bantahBro/botaFighterProfileService";
 import {
   getAgentBattleP2PPool,
   listAgentBattleP2PHistoryPositions,
@@ -335,6 +345,13 @@ function parseFeedSource(value: unknown): BantahBroFeedSource | undefined {
     return source;
   }
   return undefined;
+}
+
+function parseBotaFighterOrigin(value: unknown): (typeof botaFighterOriginValues)[number] | undefined {
+  const origin = String(value || "").trim().toLowerCase();
+  return botaFighterOriginValues.includes(origin as (typeof botaFighterOriginValues)[number])
+    ? (origin as (typeof botaFighterOriginValues)[number])
+    : undefined;
 }
 
 function positiveIntHash(value: string) {
@@ -624,6 +641,70 @@ router.get("/hot-tickers", async (req, res) => {
     handleError(res, error);
   }
 });
+
+router.get("/fighter-profiles", async (req, res) => {
+  try {
+    const refreshLive = String(req.query.refreshLive ?? "true").trim().toLowerCase() !== "false";
+    const feed = await listBotaFighterProfiles({
+      limit: parseLimit(req.query.limit, 40, 100),
+      refreshLive,
+      origin: parseBotaFighterOrigin(req.query.origin),
+    });
+    res.json({
+      ...feed,
+      sources: {
+        liveArena: refreshLive,
+        note: "BOTA fighter profiles are the canonical arena identity layer for agents.",
+      },
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/fighter-profiles/:agentId", async (req, res) => {
+  try {
+    const profile = await getBotaFighterProfile(
+      String(req.params.agentId || ""),
+      String(req.query.refreshLive ?? "true").trim().toLowerCase() !== "false",
+    );
+    if (!profile) {
+      return res.status(404).json({ message: "BOTA fighter profile not found" });
+    }
+    res.json({ profile });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post(
+  "/admin/fighter-profiles/import",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = botaFighterProfileImportSchema.parse(req.body || {});
+      const profile = await importBotaFighterProfile(parsed);
+      res.json({ profile });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/admin/fighter-profiles/sync-live",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const result = await syncBotaFighterProfilesFromLiveBattles(parseLimit(req.body?.limit, 40, 40));
+      res.json(result);
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
 router.get("/agent-battles/live", async (req, res) => {
   try {

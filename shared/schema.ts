@@ -394,6 +394,51 @@ export const agentBattleP2PRounds = pgTable(
   }),
 );
 
+export const botaFighterProfiles = pgTable(
+  "bota_fighter_profiles",
+  {
+    agentId: varchar("agent_id", { length: 180 }).primaryKey().notNull(),
+    displayName: varchar("display_name", { length: 120 }).notNull(),
+    origin: varchar("origin", { length: 32 }).notNull().default("bota"),
+    originId: varchar("origin_id", { length: 180 }),
+    agentClass: varchar("agent_class", { length: 40 }).notNull().default("striker"),
+    archetype: varchar("archetype", { length: 40 }).notNull().default("signal_striker"),
+    league: varchar("league", { length: 80 }).notNull().default("Open League"),
+    rank: integer("rank"),
+    avatarUrl: text("avatar_url"),
+    badgeLabel: varchar("badge_label", { length: 80 }),
+    ensName: varchar("ens_name", { length: 160 }),
+    walletAddress: varchar("wallet_address", { length: 128 }),
+    externalUrl: text("external_url"),
+    tokenSymbol: varchar("token_symbol", { length: 64 }),
+    tokenName: varchar("token_name", { length: 160 }),
+    chainId: varchar("chain_id", { length: 64 }),
+    wins: integer("wins").notNull().default(0),
+    losses: integer("losses").notNull().default(0),
+    currentStreak: integer("current_streak").notNull().default(0),
+    fameScore: decimal("fame_score", { precision: 12, scale: 2 }).notNull().default("0"),
+    watchers: integer("watchers").notNull().default(0),
+    challengeVolume: integer("challenge_volume").notNull().default(0),
+    titles: jsonb("titles").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    tags: jsonb("tags").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    lastBattleId: varchar("last_battle_id", { length: 255 }),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    importedAt: timestamp("imported_at").defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    originIdx: index("idx_bota_fighter_profiles_origin").on(table.origin),
+    rankIdx: index("idx_bota_fighter_profiles_rank").on(table.rank),
+    fameIdx: index("idx_bota_fighter_profiles_fame_score").on(table.fameScore),
+    lastSeenIdx: index("idx_bota_fighter_profiles_last_seen_at").on(table.lastSeenAt),
+  }),
+);
+
 export const agentOrders = pgTable(
   "agent_orders",
   {
@@ -1364,6 +1409,7 @@ export type User = typeof users.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
 export type AgentFollow = typeof agentFollows.$inferSelect;
 export type TokenLaunch = typeof tokenLaunches.$inferSelect;
+export type BotaFighterProfileRecord = typeof botaFighterProfiles.$inferSelect;
 export type AgentOrderRecord = typeof agentOrders.$inferSelect;
 export type AgentPositionRecord = typeof agentPositions.$inferSelect;
 export type DecisionLogRecord = typeof decisionLogs.$inferSelect;
