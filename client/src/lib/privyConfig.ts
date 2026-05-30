@@ -5,7 +5,7 @@ export const privyConfig = {
     appearance: {
       theme: '#f8fafc',
       accentColor: '#7c3aed',
-      logo: '/bantahbrologo.png',
+      logo: '/assets/bota-bantah-icon.png',
       landingHeader: 'BOTA Sign In',
       loginMessage: 'Connect fast to place stakes and manage live battles.',
       showWalletLoginFirst: true,

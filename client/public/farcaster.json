@@ -2,10 +2,10 @@
   "miniapp": {
     "version": "1",
     "name": "BOTA",
-    "homeUrl": "https://onchain.bantah.fun/",
-    "iconUrl": "https://onchain.bantah.fun/assets/base-icon-1024.png",
-    "imageUrl": "https://onchain.bantah.fun/assets/base-image-1200x630.png",
-    "splashImageUrl": "https://onchain.bantah.fun/assets/base-splash-200.png",
+    "homeUrl": "https://onchain.bantah.fun/bota",
+    "iconUrl": "https://onchain.bantah.fun/assets/bota-bantah-icon.png",
+    "imageUrl": "https://onchain.bantah.fun/assets/bota-bantah-og.jpg",
+    "splashImageUrl": "https://onchain.bantah.fun/assets/bota-bantah-icon.png",
     "splashBackgroundColor": "#0f172a",
     "primaryCategory": "finance",
     "tags": ["prediction", "social", "finance", "p2p", "challenges"],
@@ -24,10 +24,10 @@
   "frame": {
     "version": "1",
     "name": "BOTA",
-    "homeUrl": "https://onchain.bantah.fun/",
-    "iconUrl": "https://onchain.bantah.fun/assets/base-icon-1024.png",
-    "imageUrl": "https://onchain.bantah.fun/assets/base-image-1200x630.png",
-    "splashImageUrl": "https://onchain.bantah.fun/assets/base-splash-200.png",
+    "homeUrl": "https://onchain.bantah.fun/bota",
+    "iconUrl": "https://onchain.bantah.fun/assets/bota-bantah-icon.png",
+    "imageUrl": "https://onchain.bantah.fun/assets/bota-bantah-og.jpg",
+    "splashImageUrl": "https://onchain.bantah.fun/assets/bota-bantah-icon.png",
     "splashBackgroundColor": "#0f172a"
   }
 }

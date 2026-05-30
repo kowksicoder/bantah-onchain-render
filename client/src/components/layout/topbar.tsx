@@ -457,13 +457,13 @@ export default function TopBar({ onNavigate, onOpenBattle, activeSection, active
               title="Open profile"
               aria-label="Open profile"
             >
-              <img src="/bantahbrologo.png" alt="Profile" width={22} height={22} className="rounded-full object-cover" />
+              <img src="/assets/bota-bantah-icon.png" alt="Profile" width={22} height={22} className="rounded bg-[#0f101c] object-contain" />
             </button>
             <button
               onClick={() => onNavigate?.('profile')}
               className="hidden sm:flex items-center gap-1.5 text-sm px-2 py-1.5 hover:bg-sidebar-accent rounded transition"
             >
-              <img src="/bantahbrologo.png" alt="BOTA" width={20} height={20} className="rounded-full object-cover" />
+              <img src="/assets/bota-bantah-icon.png" alt="BOTA" width={20} height={20} className="rounded bg-[#0f101c] object-contain" />
               <span>BOTA</span>
               <span className="text-muted-foreground">▼</span>
             </button>

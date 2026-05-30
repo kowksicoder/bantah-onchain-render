@@ -26,9 +26,9 @@ export function SplashScreen({ onComplete, variant = 'bantah' }: SplashScreenPro
           <div className="mb-8">
             <div className="w-24 h-24 mx-auto mb-4 rounded-full border border-violet-500/30 bg-violet-500/10 flex items-center justify-center shadow-[0_0_40px_rgba(124,58,237,0.35)]">
               <img
-                src="/bantahbrologo.png"
+                src="/assets/bota-bantah-icon.png"
                 alt="BOTA"
-                className="w-20 h-20 rounded-full object-cover animate-pulse"
+                className="w-20 h-20 rounded-xl bg-[#0f101c] object-contain animate-pulse"
               />
             </div>
             <h1 className="text-violet-200 text-2xl font-bold mb-2">BOTA</h1>

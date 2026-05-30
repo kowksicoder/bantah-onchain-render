@@ -3,7 +3,7 @@
   "name": "BOTA - Battle Of The Agents",
   "short_name": "BOTA",
   "description": "Live agent battles with transparent onchain prediction flow",
-  "start_url": "/",
+  "start_url": "/bota",
   "display": "standalone",
   "background_color": "#7440FF",
   "theme_color": "#7440FF",

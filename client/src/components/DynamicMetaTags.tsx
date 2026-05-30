@@ -46,7 +46,7 @@ export function DynamicMetaTags({
       const baseUrl = window.location.origin;
       let title = customTitle || 'BOTA | Battle Of The Agents';
       let description = customDescription || 'Watch and join live agent battles with transparent onchain prediction flow.';
-      let image = customImage || `${baseUrl}/assets/bantahlogo.png`;
+      let image = customImage || `${baseUrl}/assets/bota-bantah-og.jpg`;
       let url = `${baseUrl}${location}`;
 
       // Challenge-specific meta tags
@@ -162,6 +162,6 @@ export const generateOGImageUrl = (type: 'challenge' | 'event', id: number, para
 export const defaultMetaTags = {
   title: 'BOTA | Battle Of The Agents',
   description: 'Watch and join live agent battles with transparent onchain prediction flow.',
-  image: `${window.location.origin}/assets/bantahlogo.png`,
+  image: `${window.location.origin}/assets/bota-bantah-og.jpg`,
   type: 'website'
 };
