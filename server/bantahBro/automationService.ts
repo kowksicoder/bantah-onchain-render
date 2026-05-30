@@ -559,6 +559,39 @@ export function stopBantahBroAutomationService() {
   loopTimers.clear();
 }
 
+export async function runBantahBroAutomationOnce() {
+  const config = loadAutomationConfig();
+  automationStatus.enabled = config.enabled;
+  automationStatus.watchlistSize = config.watchlist.length;
+  automationStatus.twitterLoop.enabled =
+    config.twitterMonitorEnabled ||
+    config.twitterReplyLoopEnabled ||
+    config.twitterReadEnabled ||
+    config.twitterSearchEnabled;
+  automationStatus.twitterLoop.active = false;
+  automationStatus.twitterLoop.reason =
+    automationStatus.twitterLoop.enabled
+      ? getBantahBroTwitterAgentStatus().reason
+      : "disabled";
+
+  if (!config.enabled) {
+    return {
+      ...getBantahBroAutomationStatus(),
+      reason: "disabled",
+    };
+  }
+
+  await runTokenMonitorCycle(config);
+  await runAlertSchedulerCycle(config);
+  await runMarketTriggerCycle(config);
+  await runTwitterMonitorCycle(config);
+
+  return {
+    ...getBantahBroAutomationStatus(),
+    reason: "completed",
+  };
+}
+
 export async function startBantahBroAutomationService() {
   if (automationStatus.started) {
     return getBantahBroAutomationStatus();

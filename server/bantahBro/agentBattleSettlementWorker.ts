@@ -14,7 +14,7 @@ const DEFAULT_LIMIT = 5;
 const DEFAULT_MAX_PAIRS_PER_ROUND = 20;
 
 let timer: NodeJS.Timeout | null = null;
-let runPromise: Promise<void> | null = null;
+let runPromise: Promise<any> | null = null;
 
 function parseBooleanEnv(name: string, fallback: boolean) {
   const raw = String(process.env[name] || "").trim().toLowerCase();
@@ -54,10 +54,20 @@ function loadSettlementWorkerConfig() {
   };
 }
 
-async function runSettlementLoop() {
+export async function runBantahBroAgentBattleSettlementOnce() {
   if (runPromise) return runPromise;
 
   const config = loadSettlementWorkerConfig();
+  if (!config.enabled) {
+    return {
+      enabled: false,
+      reason: "disabled",
+      intervalMs: config.intervalMs,
+      limit: config.limit,
+      maxPairsPerRound: config.maxPairsPerRound,
+    };
+  }
+
   runPromise = settleDueAgentBattleP2PRounds({
     limit: config.limit,
     maxPairsPerRound: config.maxPairsPerRound,
@@ -69,15 +79,33 @@ async function runSettlementLoop() {
             `${result.settled} settled, ${result.partiallySettled} partial, ${result.failed} failed`,
         );
       }
+      return {
+        enabled: true,
+        intervalMs: config.intervalMs,
+        limit: config.limit,
+        maxPairsPerRound: config.maxPairsPerRound,
+        ...result,
+      };
     })
     .catch((error) => {
       console.error("[WARN] BantahBro battle settlement worker failed:", error);
+      return {
+        enabled: true,
+        intervalMs: config.intervalMs,
+        limit: config.limit,
+        maxPairsPerRound: config.maxPairsPerRound,
+        error: error instanceof Error ? error.message : String(error),
+      };
     })
     .finally(() => {
       runPromise = null;
     });
 
   return runPromise;
+}
+
+async function runSettlementLoop() {
+  await runBantahBroAgentBattleSettlementOnce();
 }
 
 export function startBantahBroAgentBattleSettlementWorker(): SettlementWorkerStatus {

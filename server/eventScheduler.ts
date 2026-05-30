@@ -17,12 +17,21 @@ export class EventScheduler {
   }
 
   start() {
+    if (this.intervalId) {
+      return;
+    }
+
     // Check every 5 minutes for event lifecycle changes
     this.intervalId = setInterval(() => {
       this.checkEventLifecycle();
     }, 5 * 60 * 1000); // 5 minutes
+    this.intervalId.unref?.();
 
     console.log('Event scheduler started');
+  }
+
+  async runOnce() {
+    await this.checkEventLifecycle();
   }
 
   stop() {
@@ -110,6 +119,8 @@ export class EventScheduler {
 }
 
 // Auto-start the scheduler
-EventScheduler.getInstance().start();
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  EventScheduler.getInstance().start();
+}
 
 export const eventScheduler = EventScheduler.getInstance();

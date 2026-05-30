@@ -44,8 +44,8 @@ export function DynamicMetaTags({
   useEffect(() => {
     const updateMetaTags = () => {
       const baseUrl = window.location.origin;
-      let title = customTitle || 'Bantah - Social Betting Platform';
-      let description = customDescription || 'Join the ultimate social betting platform. Predict events, challenge friends, and win big.';
+      let title = customTitle || 'BOTA | Battle Of The Agents';
+      let description = customDescription || 'Watch and join live agent battles with transparent onchain prediction flow.';
       let image = customImage || `${baseUrl}/assets/bantahlogo.png`;
       let url = `${baseUrl}${location}`;
 
@@ -54,8 +54,8 @@ export function DynamicMetaTags({
         const challengerName = challenge.challengerUser.username || challenge.challengerUser.firstName || 'User';
         const challengedName = challenge.challengedUser.username || challenge.challengedUser.firstName || 'User';
         
-        title = `${challenge.title} - ${challengerName} vs ${challengedName} | Bantah`;
-        description = `🎯 CHALLENGE: "${challenge.title}" - ${challengerName} challenges ${challengedName} for ${challenge.amount} in ${challenge.category}. Join Bantah to see the action!`;
+        title = `${challenge.title} - ${challengerName} vs ${challengedName} | BOTA`;
+        description = `CHALLENGE: "${challenge.title}" - ${challengerName} challenges ${challengedName} for ${challenge.amount} in ${challenge.category}. Join BOTA to see the action!`;
         
         // Generate a dynamic challenge image URL (this would be handled by a backend service)
         image = `${window.location.origin}/api/og/challenge/${challenge.id}`;
@@ -63,8 +63,8 @@ export function DynamicMetaTags({
       
       // Event-specific meta tags
       if (pageType === 'event' && event) {
-        title = `${event.title} - Predict & Win | Bantah`;
-        description = `🎲 EVENT: "${event.title}" - Join ${event.participantCount || 0} participants predicting this ${event.category} event. Entry: ${event.entryFee}`;
+        title = `${event.title} - Predict & Win | BOTA`;
+        description = `EVENT: "${event.title}" - Join ${event.participantCount || 0} participants predicting this ${event.category} event. Entry: ${event.entryFee}`;
         image = `${window.location.origin}/api/og/event/${event.id}`;
       }
 
@@ -78,7 +78,7 @@ export function DynamicMetaTags({
         { property: 'og:image', content: image },
         { property: 'og:url', content: url },
         { property: 'og:type', content: pageType === 'challenge' ? 'article' : 'website' },
-        { property: 'og:site_name', content: 'BetChat' },
+        { property: 'og:site_name', content: 'BOTA' },
         { name: 'description', content: description },
         { name: 'twitter:card', content: 'summary_large_image' },
         { name: 'twitter:title', content: title },
@@ -86,8 +86,8 @@ export function DynamicMetaTags({
         { name: 'twitter:image', content: image },
         // Additional tags for better sharing
         { property: 'og:locale', content: 'en_US' },
-        { property: 'article:author', content: 'BetChat' },
-        { property: 'article:publisher', content: 'BetChat' },
+        { property: 'article:author', content: 'BOTA' },
+        { property: 'article:publisher', content: 'BOTA' },
       ];
 
       metaTags.forEach(({ property, name, content }) => {
@@ -115,7 +115,7 @@ export function DynamicMetaTags({
           endDate: challenge.dueDate,
           location: {
             '@type': 'VirtualLocation',
-            name: 'BetChat Platform'
+            name: 'BOTA'
           },
           competitor: [
             {
@@ -160,8 +160,8 @@ export const generateOGImageUrl = (type: 'challenge' | 'event', id: number, para
 
 // Default meta tags for the app
 export const defaultMetaTags = {
-  title: 'BetChat - Social Betting Platform',
-  description: 'Join the ultimate social betting platform. Predict events, challenge friends, and win big with real-time chat and gamification features.',
+  title: 'BOTA | Battle Of The Agents',
+  description: 'Watch and join live agent battles with transparent onchain prediction flow.',
   image: `${window.location.origin}/assets/bantahlogo.png`,
   type: 'website'
 };

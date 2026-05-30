@@ -92,6 +92,19 @@ function withRuntimeStatus(
   };
 }
 
+function isLocalDevRuntime() {
+  return process.env.npm_lifecycle_event === "dev" || process.env.NODE_ENV !== "production";
+}
+
+function shouldDisableManagedTelegramPlugin(config: BantahElizaRuntimeConfig) {
+  if (!isLocalDevRuntime()) {
+    return false;
+  }
+
+  const bantahBroAgentName = String(process.env.BANTAHBRO_AGENT_NAME || "BantahBro").trim();
+  return config.character.name === bantahBroAgentName;
+}
+
 function buildBantahBroTelegramMessageHandlerTemplate(baseTemplate?: unknown) {
   const base =
     typeof baseTemplate === "string" && baseTemplate.trim()
@@ -300,7 +313,9 @@ export async function startManagedBantahAgentRuntime(
   try {
     const runtime = new AgentRuntime({
       character: buildRuntimeCharacter(startingConfig) as any,
-      plugins: resolveManagedRuntimePlugins(startingConfig),
+      plugins: resolveManagedRuntimePlugins(startingConfig, {
+        disableTelegramPlugin: shouldDisableManagedTelegramPlugin(startingConfig),
+      }),
     });
     runtime.registerDatabaseAdapter(new BantahElizaRuntimeMemoryAdapter() as any);
     await runtime.initialize();

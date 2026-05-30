@@ -647,7 +647,7 @@ function selectBattles(candidates: BantahBroBattleCandidate[], limit: number) {
     if (selected.length >= limit) break;
     const [left, right] = candidate.sides;
     const hasTokenOverlap = usedTokens.has(left.id) || usedTokens.has(right.id);
-    if (hasTokenOverlap && selected.length >= Math.ceil(limit / 2)) continue;
+    if (hasTokenOverlap) continue;
     selected.push(candidate);
     usedTokens.add(left.id);
     usedTokens.add(right.id);

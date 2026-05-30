@@ -32,7 +32,7 @@ interface FeedApiItem extends Omit<FeedItem, 'time' | 'liked'> {
 }
 
 const SOURCE_META: Record<FeedSource, { label: string; color: string; bg: string; dot: string }> = {
-  bantah: { label: 'BantahBro', color: 'text-primary', bg: 'bg-primary/10', dot: 'bg-primary' },
+  bantah: { label: 'BOTA', color: 'text-primary', bg: 'bg-primary/10', dot: 'bg-primary' },
   twitter: { label: '𝕏 Twitter', color: 'text-sky-400', bg: 'bg-sky-400/10', dot: 'bg-sky-400' },
   telegram: { label: '✈ Telegram', color: 'text-blue-400', bg: 'bg-blue-400/10', dot: 'bg-blue-400' },
 }
@@ -97,9 +97,9 @@ function emptyMessage(filter: FilterKey) {
     return 'Twitter sync is not active yet. Once connected, 𝕏 posts will appear here.'
   }
   if (filter === 'telegram') {
-    return 'No synced Telegram posts yet. New BantahBro Telegram broadcasts will appear here.'
+    return 'No synced Telegram posts yet. New BOTA Telegram broadcasts will appear here.'
   }
-  return 'Posts from synced sources will appear here once BantahBro receives them.'
+  return 'Posts from synced sources will appear here once BOTA receives them.'
 }
 
 export default function FeedPage({ compact = false }: { compact?: boolean } = {}) {
@@ -183,7 +183,7 @@ export default function FeedPage({ compact = false }: { compact?: boolean } = {}
             <TrendingUp size={compact ? 15 : 18} className="text-primary" />
             <span className={`${compact ? 'text-xs' : ''} font-bold text-foreground`}>Activity Feed</span>
             <span className={`text-xs text-muted-foreground ml-auto ${compact ? 'hidden' : ''}`}>
-              Synced from BantahBro · 𝕏 Twitter · ✈ Telegram
+              Synced from BOTA · 𝕏 Twitter · ✈ Telegram
             </span>
           </div>
           <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

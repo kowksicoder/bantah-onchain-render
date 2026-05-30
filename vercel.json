@@ -1,11 +1,60 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "buildCommand": "vite build",
+  "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist/public",
+  "functions": {
+    "api/[...slug].ts": {
+      "maxDuration": 60,
+      "includeFiles": "{migrations/**,server/assets/**,docs/bantahbro/knowledge/**,client/public/fonts/**,client/public/assets/bantahblue.svg,public/bantahbro/**,client/public/bantahbro/**,client/public/assets/bantahbro-*}"
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/onchain-indexer",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/challenge-lifecycle",
+      "schedule": "10 0 * * *"
+    },
+    {
+      "path": "/api/cron/event-lifecycle",
+      "schedule": "20 0 * * *"
+    },
+    {
+      "path": "/api/cron/payouts",
+      "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/bantahbro-settlement",
+      "schedule": "40 0 * * *"
+    },
+    {
+      "path": "/api/cron/bantahbro-automation",
+      "schedule": "50 0 * * *"
+    },
+    {
+      "path": "/api/cron/bantahbro-battle-broadcast",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/notifications",
+      "schedule": "10 1 * * *"
+    },
+    {
+      "path": "/api/cron/telegram-link-cleanup",
+      "schedule": "20 1 * * *"
+    }
+  ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "https://bantahonchain.up.railway.app/api/$1"
+      "dest": "/api/[...slug].ts"
+    },
+    {
+      "src": "/2dgame/?",
+      "dest": "/2dgame/index.html"
     },
     {
       "handle": "filesystem"

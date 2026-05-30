@@ -1,0 +1,152 @@
+{
+  "id": "p2",
+  "name": "Player 2",
+  "healthSelector": "div.player2 .health",
+  "position": {
+    "x": 835,
+    "y": 390
+  },
+  "velocity": {
+    "x": 0,
+    "y": 0
+  },
+  "offset": {
+    "x": 150,
+    "y": 107
+  },
+  "imageSrc": "image/player2/Idle.png",
+  "totalFrames": 10,
+  "scale": 2.55,
+  "bodySize": {
+    "width": 62,
+    "height": 180
+  },
+  "movement": {
+    "speed": 5,
+    "jumpVelocity": -20
+  },
+  "hurtboxes": [
+    {
+      "offset": {
+        "x": 0,
+        "y": 0
+      },
+      "width": 62,
+      "height": 180
+    }
+  ],
+  "collisionBox": {
+    "offset": {
+      "x": 0,
+      "y": 0
+    },
+    "width": 62,
+    "height": 180
+  },
+  "attack": {
+    "damage": 20,
+    "hitFrame": 4,
+    "hitbox": {
+      "offset": {
+        "x": -170,
+        "y": 40
+      },
+      "width": 160,
+      "height": 95
+    }
+  },
+  "moves": [
+    {
+      "id": "standing_punch",
+      "name": "Standing Punch",
+      "command": ["attack"],
+      "inputWindowMs": 220,
+      "priority": 10,
+      "sprite": "attack",
+      "damage": 20,
+      "hitFrame": 4,
+      "hitbox": {
+        "offset": {
+          "x": -170,
+          "y": 40
+        },
+        "width": 160,
+        "height": 95
+      },
+      "hitboxes": [
+        {
+          "offset": {
+            "x": -170,
+            "y": 40
+          },
+          "width": 160,
+          "height": 95
+        }
+      ]
+    },
+    {
+      "id": "forward_strike",
+      "name": "Forward Strike",
+      "command": ["left", "attack"],
+      "inputWindowMs": 500,
+      "priority": 20,
+      "sprite": "attack",
+      "damage": 28,
+      "hitFrame": 4,
+      "hitbox": {
+        "offset": {
+          "x": -195,
+          "y": 40
+        },
+        "width": 185,
+        "height": 95
+      },
+      "hitboxes": [
+        {
+          "offset": {
+            "x": -195,
+            "y": 40
+          },
+          "width": 185,
+          "height": 95
+        }
+      ]
+    }
+  ],
+  "controls": {
+    "left": ["ArrowLeft"],
+    "right": ["ArrowRight"],
+    "jump": ["ArrowUp"],
+    "attack": ["ArrowDown"]
+  },
+  "sprites": {
+    "idle": {
+      "imageSrc": "image/player2/Idle.png",
+      "totalFrames": 10
+    },
+    "run": {
+      "imageSrc": "image/player2/Run.png",
+      "totalFrames": 8
+    },
+    "jump": {
+      "imageSrc": "image/player2/Jump.png",
+      "totalFrames": 3
+    },
+    "fall": {
+      "imageSrc": "image/player2/Fall.png",
+      "totalFrames": 3
+    },
+    "attack": {
+      "imageSrc": "image/player2/Attack3.png",
+      "totalFrames": 8
+    },
+    "takeHit": {
+      "imageSrc": "image/player2/Take hit.png",
+      "totalFrames": 3
+    },
+    "death": {
+      "imageSrc": "image/player2/Death.png",
+      "totalFrames": 7
+    }
+  }
+}

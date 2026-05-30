@@ -144,7 +144,7 @@ export default function ProfilePage() {
             <div className="rounded-md border border-border bg-background/60 p-3">
               <div className="text-xs font-black uppercase tracking-wide text-foreground">No activity yet</div>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Real escrow-backed battle joins, prediction wins, and payouts will appear here once you start using BantahBro.
+                Real escrow-backed battle joins, prediction wins, and payouts will appear here once you start using BOTA.
               </p>
             </div>
           ) : (

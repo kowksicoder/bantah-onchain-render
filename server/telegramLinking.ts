@@ -99,9 +99,10 @@ export class TelegramLinkingService {
       linkTokens.set(token, linkData);
       
       // Clean up after 1 hour
-      setTimeout(() => {
+      const deleteTimer = setTimeout(() => {
         linkTokens.delete(token);
       }, 60 * 60 * 1000);
+      deleteTimer.unref?.();
     }
   }
 
@@ -148,6 +149,9 @@ export class TelegramLinkingService {
 }
 
 // Clean up expired tokens every 5 minutes
-setInterval(() => {
-  TelegramLinkingService.cleanupExpiredTokens();
-}, 5 * 60 * 1000);
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  const cleanupTimer = setInterval(() => {
+    TelegramLinkingService.cleanupExpiredTokens();
+  }, 5 * 60 * 1000);
+  cleanupTimer.unref?.();
+}

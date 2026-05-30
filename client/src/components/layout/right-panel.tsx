@@ -8,6 +8,7 @@ interface RightPanelProps {
   selectedToken: string;
   defaultTab?: string;
   onNavigate?: (section: AppSection) => void;
+  onOpenBattle?: (battleId: string) => void;
 }
 
 function AdsPlacementCard({ onNavigate }: { onNavigate?: (section: AppSection) => void }) {
@@ -55,7 +56,7 @@ function AdsPlacementCard({ onNavigate }: { onNavigate?: (section: AppSection) =
   );
 }
 
-export default function RightPanel({ onNavigate }: RightPanelProps) {
+export default function RightPanel({ onNavigate, onOpenBattle }: RightPanelProps) {
   return (
     <div className="w-full lg:w-72 flex flex-col gap-0.5 overflow-hidden shrink-0">
       {/* ADS PLACEMENT */}
@@ -65,7 +66,7 @@ export default function RightPanel({ onNavigate }: RightPanelProps) {
 
       {/* AGENT BATTLE - compact */}
       <div className="h-auto lg:flex-[4] bg-card border border-border rounded overflow-hidden flex flex-col min-h-0">
-        <AgentBattle onViewBattle={() => onNavigate?.('battles')} />
+        <AgentBattle onViewBattle={(battleId) => onOpenBattle?.(battleId) ?? onNavigate?.('battles')} />
       </div>
 
     </div>

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getBantahBroAutomationStatus } from "./automationService";
 import { listBantahBroAlerts } from "./alertFeed";
-import { getBantahBroLeaderboard } from "./communityService";
+import { getLiveAgentBattleLeaderboard } from "./agentBattleP2PService";
 import { isBantahBroElizaTelegramEnabled } from "./systemAgent";
 import { storage } from "../storage";
 
@@ -133,22 +133,6 @@ const remoteChallengesSchema = z.array(
       })
       .nullable()
       .optional(),
-  }),
-);
-
-const remoteLeaderboardSchema = z.array(
-  z.object({
-    id: z.string().min(1),
-    username: z.string().nullable().optional(),
-    firstName: z.string().nullable().optional(),
-    lastName: z.string().nullable().optional(),
-    profileImageUrl: z.string().nullable().optional(),
-    points: z.coerce.number().nullable().optional(),
-    balance: z.union([z.coerce.number(), z.string()]).nullable().optional(),
-    coins: z.coerce.number().nullable().optional(),
-    rank: z.union([z.coerce.number().int(), z.string()]).nullable().optional(),
-    eventsWon: z.coerce.number().nullable().optional(),
-    challengesWon: z.coerce.number().nullable().optional(),
   }),
 );
 
@@ -612,65 +596,6 @@ async function getSocialMarkets(limit: number) {
   });
 }
 
-async function getRemoteLeaderboard(limit: number) {
-  const remoteEntries = await fetchRemoteJson("/api/leaderboard", remoteLeaderboardSchema);
-
-  return remoteEntries.slice(0, limit).map((entry, index) => {
-    const wins = Number(entry.challengesWon || 0) + Number(entry.eventsWon || 0);
-    const score = Number(entry.coins || 0) > 0 ? Number(entry.coins || 0) : Number(entry.points || 0);
-    const name =
-      entry.username ||
-      [entry.firstName, entry.lastName].filter(Boolean).join(" ").trim() ||
-      "Onchain User";
-
-    return {
-      id: `onchain-${entry.id}`,
-      source: "onchain",
-      sourceLabel: "Onchain",
-      rank: index + 1,
-      name,
-      handle: entry.username ? `@${entry.username}` : null,
-      profileImageUrl: entry.profileImageUrl || null,
-      score,
-      wins,
-      balance: parseNumber(entry.balance),
-      balanceDisplay: `$${parseNumber(entry.balance).toFixed(2)}`,
-      points: Number(entry.points || 0),
-      coins: Number(entry.coins || 0),
-      challengesWon: Number(entry.challengesWon || 0),
-      eventsWon: Number(entry.eventsWon || 0),
-    } satisfies BantahBroLeaderboardEntry;
-  });
-}
-
-async function getLocalBantahBroLeaderboard(limit: number) {
-  const leaderboard = await getBantahBroLeaderboard(limit);
-
-  return leaderboard.entries.map((entry) => {
-    const wins = Number(entry.challengesWon || 0) + Number(entry.eventsWon || 0);
-    const score = Number(entry.coins || 0) > 0 ? Number(entry.coins || 0) : Number(entry.points || 0);
-    const name = entry.displayName || entry.username || "BantahBro User";
-
-    return {
-      id: `bantahbro-${entry.userId}`,
-      source: "bantahbro",
-      sourceLabel: "BantahBro",
-      rank: entry.rank,
-      name,
-      handle: entry.username ? `@${entry.username}` : null,
-      profileImageUrl: null,
-      score,
-      wins,
-      balance: 0,
-      balanceDisplay: "$0.00",
-      points: Number(entry.points || 0),
-      coins: Number(entry.coins || 0),
-      challengesWon: Number(entry.challengesWon || 0),
-      eventsWon: Number(entry.eventsWon || 0),
-    } satisfies BantahBroLeaderboardEntry;
-  });
-}
-
 export async function getLiveBantahBroMarkets(limit = 24): Promise<BantahBroMarketsFeed> {
   const automationStatus = getBantahBroAutomationStatus();
   const [remoteResult, socialResult] = await Promise.allSettled([
@@ -727,16 +652,48 @@ export async function getLiveBantahBroMarkets(limit = 24): Promise<BantahBroMark
 }
 
 export async function getLiveBantahBroLeaderboard(limit = 25): Promise<BantahBroLeaderboardFeed> {
-  const [remoteResult, bantahBroResult] = await Promise.allSettled([
-    getRemoteLeaderboard(limit),
-    getLocalBantahBroLeaderboard(limit),
-  ]);
-
-  const entries = [
-    ...(remoteResult.status === "fulfilled" ? remoteResult.value : []),
-    ...(bantahBroResult.status === "fulfilled" ? bantahBroResult.value : []),
-  ]
+  const arenaResult = await getLiveAgentBattleLeaderboard(limit).catch((error) => ({
+    entries: [],
+    updatedAt: new Date().toISOString(),
+    activeBattleCount: 0,
+    errorMessage:
+      error instanceof Error ? error.message : "Arena leaderboard is temporarily unavailable.",
+  }));
+  const entries = arenaResult.entries
+    .map((entry, index) => ({
+      id: `arena-${entry.userId}`,
+      source: "bantahbro",
+      sourceLabel: "Arena",
+      rank: index + 1,
+      name: entry.name,
+      handle: entry.handle,
+      profileImageUrl: entry.profileImageUrl,
+      score: entry.score,
+      wins: entry.wins,
+      balance: entry.balance,
+      balanceDisplay: entry.balanceDisplay,
+      points: entry.points,
+      coins: entry.coins,
+      challengesWon: entry.challengesWon,
+      eventsWon: entry.eventsWon,
+      battleJoins: entry.battleJoins,
+      liveBattles: entry.liveBattles,
+      totalStake: entry.totalStake,
+      stakeDisplay: entry.stakeDisplay,
+      currentBattleTitle: entry.currentBattleTitle,
+      activeSideLabel: entry.activeSideLabel,
+    } satisfies BantahBroLeaderboardEntry & {
+      battleJoins: number;
+      liveBattles: number;
+      totalStake: number;
+      stakeDisplay: string;
+      currentBattleTitle: string | null;
+      activeSideLabel: string | null;
+    }))
     .sort((left, right) => {
+      if ((right.liveBattles || 0) !== (left.liveBattles || 0)) {
+        return (right.liveBattles || 0) - (left.liveBattles || 0);
+      }
       if (right.score !== left.score) return right.score - left.score;
       if (right.wins !== left.wins) return right.wins - left.wins;
       return right.balance - left.balance;
@@ -749,20 +706,24 @@ export async function getLiveBantahBroLeaderboard(limit = 25): Promise<BantahBro
 
   return {
     entries,
-    updatedAt: new Date().toISOString(),
+    updatedAt: arenaResult.updatedAt,
     sources: {
       onchain: {
-        available: remoteResult.status === "fulfilled",
-        active: remoteResult.status === "fulfilled",
-        count: remoteResult.status === "fulfilled" ? remoteResult.value.length : 0,
-        message: remoteResult.status === "rejected" ? remoteResult.reason instanceof Error ? remoteResult.reason.message : "Remote onchain leaderboard unavailable" : undefined,
+        available: false,
+        active: false,
+        count: 0,
+        message: "Disabled for BOTA Arena. Rankings now come from current Agent Battle activity.",
         url: ONCHAIN_SOURCE_URL,
       },
       bantahbro: {
-        available: bantahBroResult.status === "fulfilled",
-        active: bantahBroResult.status === "fulfilled",
-        count: bantahBroResult.status === "fulfilled" ? bantahBroResult.value.length : 0,
-        message: bantahBroResult.status === "rejected" ? bantahBroResult.reason instanceof Error ? bantahBroResult.reason.message : "BantahBro leaderboard unavailable" : undefined,
+        available: !("errorMessage" in arenaResult),
+        active: !("errorMessage" in arenaResult),
+        count: entries.length,
+        message: "errorMessage" in arenaResult
+          ? arenaResult.errorMessage
+          : arenaResult.activeBattleCount > 0
+            ? `Tracking ${arenaResult.activeBattleCount} current Agent Battle${arenaResult.activeBattleCount === 1 ? "" : "s"}.`
+            : "No current Agent Battles are open yet.",
       },
     },
   };

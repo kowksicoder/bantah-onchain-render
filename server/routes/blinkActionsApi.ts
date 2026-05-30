@@ -7,6 +7,12 @@ import {
 import {
   getLivePredictionVisualizationBattles,
 } from "../bantahBro/predictionVisualizationService";
+import { searchRugScorerV2Token, type RugScorerV2Token } from "../bantahBro/rugScorerV2Service";
+import {
+  recordRugScorerV2Scan,
+  saveRugScorerV2Report,
+  saveRugScorerV2Watch,
+} from "../bantahBro/rugScorerV2Persistence";
 import type {
   PredictionVisualizationBattle,
   PredictionVisualizationSide,
@@ -99,6 +105,15 @@ function sitePredictionBattleUrl(req: Request, battleId: string) {
   return new URL("/bantahbro/polymarket", `${getPublicBaseUrl(req)}/`).toString();
 }
 
+function siteRugScorerUrl(req: Request, token?: RugScorerV2Token | null) {
+  const url = new URL("/bantahbro/rug-scorer", `${getPublicBaseUrl(req)}/`);
+  if (token) {
+    url.searchParams.set("chainId", token.chainId);
+    url.searchParams.set("token", token.tokenAddress);
+  }
+  return url.toString();
+}
+
 function formatToken(side: BantahBroAgentBattleSide) {
   const symbol = side.tokenSymbol || side.label.replace(/^\$/, "") || "TOKEN";
   return symbol.replace(/^\$/, "");
@@ -135,7 +150,20 @@ function formatUsd(value: number | null | undefined) {
   if (resolved >= 1_000_000_000) return `$${(resolved / 1_000_000_000).toFixed(2)}B`;
   if (resolved >= 1_000_000) return `$${(resolved / 1_000_000).toFixed(2)}M`;
   if (resolved >= 1_000) return `$${(resolved / 1_000).toFixed(1)}K`;
+  if (resolved < 0.0001) return `$${resolved.toPrecision(4)}`;
+  if (resolved < 1) return `$${resolved.toFixed(6)}`;
   return `$${resolved.toFixed(2)}`;
+}
+
+function formatRugSymbol(token: RugScorerV2Token) {
+  return (token.tokenSymbol || token.tokenName || "TOKEN").replace(/^\$/, "").trim() || "TOKEN";
+}
+
+function formatRugRisk(token: RugScorerV2Token) {
+  const risk = String(token.rug.riskLevel || "low").toLowerCase();
+  if (risk.includes("high")) return "High Risk";
+  if (risk.includes("medium")) return "Medium Risk";
+  return "Low Risk";
 }
 
 async function resolveBattle(battleId: string) {
@@ -180,6 +208,17 @@ async function resolvePredictionBattle(battleId: string) {
     throw error;
   }
   return battle;
+}
+
+async function resolveRugToken(chainId: string, tokenAddress: string) {
+  const payload = await searchRugScorerV2Token({
+    query: tokenAddress,
+    chainId,
+  });
+  await recordRugScorerV2Scan(payload.token).catch((error) => {
+    console.warn("[BantahBro Rug Blink] Failed to persist scan:", error);
+  });
+  return payload.token;
 }
 
 function buildBattleBlink(req: Request, battle: BantahBroAgentBattle): BlinkGetResponse {
@@ -298,6 +337,57 @@ function buildPredictionBlink(req: Request, battle: PredictionVisualizationBattl
           label: "Open Polymarket",
           href: battle.sourceMarketUrl,
         },
+      ],
+    },
+  };
+}
+
+function buildRugBlink(req: Request, token: RugScorerV2Token): BlinkGetResponse {
+  const symbol = formatRugSymbol(token);
+  const reason = (token.rug.reasons?.[0]?.label || token.rug.verdict || "Live DexScreener-backed risk scan.")
+    .replace(/\.+$/, "");
+  const missing = token.rug.missingSignals?.length
+    ? ` Missing: ${token.rug.missingSignals.slice(0, 2).join(", ")}.`
+    : "";
+
+  return {
+    type: "action",
+    icon: token.logoUrl || actionUrl(req, "/bantahbrologo.png"),
+    title: `${symbol} Rug Score: ${token.rug.score}/100`,
+    description:
+      `${formatRugRisk(token)} on ${token.chainLabel}. Price ${formatUsd(token.priceUsd)}. ` +
+      `Liquidity ${formatUsd(token.liquidityUsd)}. 24H volume ${formatUsd(token.volumeH24)}. ${reason}.${missing}`,
+    label: "Open Rug Scorer",
+    links: {
+      actions: [
+        {
+          type: "message",
+          label: "Watch Token",
+          href: `/api/actions/bantahbro/rug/${encodeURIComponent(token.chainId)}/${encodeURIComponent(
+            token.tokenAddress,
+          )}/watch`,
+        },
+        {
+          type: "message",
+          label: "Report Risk",
+          href: `/api/actions/bantahbro/rug/${encodeURIComponent(token.chainId)}/${encodeURIComponent(
+            token.tokenAddress,
+          )}/report?severity=high&reason=community-risk`,
+        },
+        {
+          type: "external-link",
+          label: "Open Rug Scorer",
+          href: siteRugScorerUrl(req, token),
+        },
+        ...(token.pairUrl
+          ? [
+              {
+                type: "external-link" as const,
+                label: "Open DexScreener",
+                href: token.pairUrl,
+              },
+            ]
+          : []),
       ],
     },
   };
@@ -476,6 +566,125 @@ router.post("/polymarket/:battleId/complete", async (req, res) => {
   }
 });
 
+router.get("/rug/:chainId/:tokenAddress", async (req, res) => {
+  try {
+    const token = await resolveRugToken(
+      String(req.params.chainId || ""),
+      String(req.params.tokenAddress || ""),
+    );
+    return withBlinkHeaders(res).json(buildRugBlink(req, token));
+  } catch (error) {
+    return sendBlinkError(res, error);
+  }
+});
+
+router.post("/rug/:chainId/:tokenAddress/watch", async (req, res) => {
+  try {
+    const request = (req.body || {}) as BlinkPostRequest;
+    const account = typeof request.account === "string" ? request.account.trim() : "";
+    if (!account) {
+      return withBlinkHeaders(res).status(400).json({ error: "Wallet account is required." });
+    }
+    const token = await resolveRugToken(
+      String(req.params.chainId || ""),
+      String(req.params.tokenAddress || ""),
+    );
+    const watch = await saveRugScorerV2Watch({
+      userKey: `blink:${account}`,
+      token,
+    });
+    const payload: BlinkMessageResponse = {
+      type: "message",
+      message:
+        `${formatRugSymbol(token)} watch saved for ${shortenAccount(account)}. ` +
+        `Current score: ${token.rug.score}/100 (${formatRugRisk(token)}).`,
+      links: {
+        next: {
+          type: "post",
+          href: `/api/actions/bantahbro/rug/${encodeURIComponent(watch.chainId)}/${encodeURIComponent(
+            watch.tokenAddress,
+          )}/complete?mode=watch`,
+        },
+      },
+    };
+    return withBlinkHeaders(res).json(payload);
+  } catch (error) {
+    return sendBlinkError(res, error);
+  }
+});
+
+router.post("/rug/:chainId/:tokenAddress/report", async (req, res) => {
+  try {
+    const request = (req.body || {}) as BlinkPostRequest;
+    const account = typeof request.account === "string" ? request.account.trim() : "";
+    if (!account) {
+      return withBlinkHeaders(res).status(400).json({ error: "Wallet account is required." });
+    }
+    const severityInput = String(req.query.severity || "medium").toLowerCase();
+    const severity = severityInput === "high" || severityInput === "low" ? severityInput : "medium";
+    const reason = String(req.query.reason || "community-risk").slice(0, 180);
+    const token = await resolveRugToken(
+      String(req.params.chainId || ""),
+      String(req.params.tokenAddress || ""),
+    );
+    const report = await saveRugScorerV2Report({
+      reporterKey: `blink:${account}`,
+      token,
+      severity,
+      reason,
+      notes: "Submitted from Blink Action.",
+    });
+    const payload: BlinkMessageResponse = {
+      type: "message",
+      message:
+        `Risk report received for ${formatRugSymbol(token)} from ${shortenAccount(account)}. ` +
+        `Report ${report.id.slice(0, 8)} is queued for community review.`,
+      links: {
+        next: {
+          type: "post",
+          href: `/api/actions/bantahbro/rug/${encodeURIComponent(token.chainId)}/${encodeURIComponent(
+            token.tokenAddress,
+          )}/complete?mode=report`,
+        },
+      },
+    };
+    return withBlinkHeaders(res).json(payload);
+  } catch (error) {
+    return sendBlinkError(res, error);
+  }
+});
+
+router.post("/rug/:chainId/:tokenAddress/complete", async (req, res) => {
+  try {
+    const token = await resolveRugToken(
+      String(req.params.chainId || ""),
+      String(req.params.tokenAddress || ""),
+    );
+    const mode = String(req.query.mode || "done");
+    const payload: BlinkGetResponse = {
+      type: "action",
+      icon: token.logoUrl || actionUrl(req, "/bantahbrologo.png"),
+      title: mode === "report" ? "Risk Report Saved" : "Token Watch Saved",
+      description:
+        `${formatRugSymbol(token)} is currently ${token.rug.score}/100 (${formatRugRisk(token)}). ` +
+        "Open BantahBro to keep tracking live risk signals.",
+      label: "Done",
+      links: {
+        actions: [
+          {
+            type: "external-link",
+            label: "Open Rug Scorer",
+            href: siteRugScorerUrl(req, token),
+          },
+        ],
+      },
+    };
+    return withBlinkHeaders(res).json(payload);
+  } catch (error) {
+    return sendBlinkError(res, error);
+  }
+});
+
 export function registerBlinkActionRoutes(app: Express) {
   app.options("/actions.json", (_req, res) => {
     withBlinkHeaders(res).status(204).send();
@@ -491,6 +700,10 @@ export function registerBlinkActionRoutes(app: Express) {
         {
           pathPattern: "/api/actions/bantahbro/polymarket/**",
           apiPath: "/api/actions/bantahbro/polymarket/**",
+        },
+        {
+          pathPattern: "/api/actions/bantahbro/rug/**",
+          apiPath: "/api/actions/bantahbro/rug/**",
         },
         {
           pathPattern: "/bantahbro/polymarket/**",

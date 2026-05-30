@@ -54,7 +54,7 @@ export type AgentBattle = {
   id: string;
   title: string;
   battleType: 'agent-battle';
-  status: 'live';
+  status: 'live' | 'expired';
   winnerLogic: string;
   startsAt: string;
   endsAt: string;

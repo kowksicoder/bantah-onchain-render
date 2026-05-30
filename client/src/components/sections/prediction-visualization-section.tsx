@@ -115,7 +115,7 @@ export default function PredictionVisualizationSection({
       queryClient.invalidateQueries({ queryKey: ['/api/bantahbro/prediction-battles/positions/my'] });
       toast({
         title: 'Tracked ticket saved',
-        description: `${response.position.factionName} is now in your BantahBro position tracker.`,
+        description: `${response.position.factionName} is now in your BOTA position tracker.`,
       });
     },
     onError: (error) => {
@@ -419,7 +419,7 @@ export default function PredictionVisualizationSection({
               Join {selectedSideData?.factionName || 'Faction'}
             </DialogTitle>
             <DialogDescription className="mt-1 text-xs leading-snug text-muted-foreground">
-              Save a BantahBro ticket and execute on Polymarket until direct CLOB routing is enabled.
+              Save a BOTA ticket and execute on Polymarket until direct CLOB routing is enabled.
             </DialogDescription>
           </DialogHeader>
           {selectedBattle && selectedSideData && (

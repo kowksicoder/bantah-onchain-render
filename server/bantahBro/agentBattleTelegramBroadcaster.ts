@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { pool } from "../db";
 import { getBantahBroTelegramBot } from "../telegramBot";
 import {
   getLiveBantahBroAgentBattles,
@@ -30,6 +31,7 @@ const DEFAULT_LIMIT = 1;
 const DEFAULT_MIN_SECONDS_LEFT = 45;
 const MAX_STATE_ENTRIES = 500;
 const STATE_PATH = path.resolve(process.cwd(), "cache", "bantahbro-telegram-battle-broadcasts.json");
+const DB_STATE_KEY = "bantahbro-telegram-battle-broadcasts";
 
 let timer: NodeJS.Timeout | null = null;
 let runPromise: Promise<void> | null = null;
@@ -81,13 +83,52 @@ function broadcastKeyForBattle(battle: BantahBroAgentBattle) {
   return `telegram-agent-battle-${battle.id}-${battle.startsAt}`;
 }
 
+function shouldUseDatabaseState() {
+  const raw = String(process.env.BANTAHBRO_TELEGRAM_BATTLE_BROADCAST_STATE || "").trim().toLowerCase();
+  return raw === "database" || raw === "db" || process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+}
+
+async function ensureRuntimeStateTable() {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS bantah_runtime_state (
+       state_key text PRIMARY KEY,
+       state_value jsonb NOT NULL DEFAULT '{}'::jsonb,
+       updated_at timestamp DEFAULT now()
+     )`,
+  );
+}
+
+function normalizeBroadcastState(input: unknown): BroadcastState {
+  if (!input || typeof input !== "object") {
+    return { sent: {} };
+  }
+
+  const parsed = input as Partial<BroadcastState>;
+  if (parsed.sent && typeof parsed.sent === "object") {
+    return { sent: parsed.sent };
+  }
+
+  return { sent: {} };
+}
+
 async function loadState(): Promise<BroadcastState> {
+  if (shouldUseDatabaseState()) {
+    try {
+      await ensureRuntimeStateTable();
+      const result = await pool.query(
+        `SELECT state_value FROM bantah_runtime_state WHERE state_key = $1 LIMIT 1`,
+        [DB_STATE_KEY],
+      );
+      const value = result.rows[0]?.state_value;
+      return normalizeBroadcastState(typeof value === "string" ? JSON.parse(value) : value);
+    } catch {
+      return { sent: {} };
+    }
+  }
+
   try {
     const raw = await fs.readFile(STATE_PATH, "utf8");
-    const parsed = JSON.parse(raw) as Partial<BroadcastState>;
-    if (parsed && typeof parsed.sent === "object" && parsed.sent) {
-      return { sent: parsed.sent };
-    }
+    return normalizeBroadcastState(JSON.parse(raw));
   } catch {
     // First run or damaged cache: start clean instead of blocking broadcasts.
   }
@@ -98,11 +139,24 @@ async function saveState(state: BroadcastState) {
   const sortedEntries = Object.entries(state.sent)
     .sort((a, b) => new Date(b[1]).getTime() - new Date(a[1]).getTime())
     .slice(0, MAX_STATE_ENTRIES);
+  const normalizedState = { sent: Object.fromEntries(sortedEntries) };
+
+  if (shouldUseDatabaseState()) {
+    await ensureRuntimeStateTable();
+    await pool.query(
+      `INSERT INTO bantah_runtime_state (state_key, state_value, updated_at)
+       VALUES ($1, $2::jsonb, now())
+       ON CONFLICT (state_key)
+       DO UPDATE SET state_value = excluded.state_value, updated_at = excluded.updated_at`,
+      [DB_STATE_KEY, JSON.stringify(normalizedState)],
+    );
+    return;
+  }
 
   await fs.mkdir(path.dirname(STATE_PATH), { recursive: true });
   await fs.writeFile(
     STATE_PATH,
-    JSON.stringify({ sent: Object.fromEntries(sortedEntries) }, null, 2),
+    JSON.stringify(normalizedState, null, 2),
     "utf8",
   );
 }

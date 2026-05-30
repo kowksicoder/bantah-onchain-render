@@ -277,7 +277,7 @@ export function RewardRedemptionModal({ isOpen, onClose, userPoints, userCoins }
             <li>• Win challenges and events</li>
             <li>• Daily login streaks</li>
             <li>• Complete achievements</li>
-            <li>• Refer friends to BetChat</li>
+            <li>• Refer friends to BOTA</li>
           </ul>
         </div>
       </DialogContent>

@@ -198,12 +198,29 @@ const ONCHAIN_CONFIG = getOnchainServerConfig();
 
 
 
-// Initialize Telegram sync service
-let telegramSync = createTelegramSync(pusher);
+// Initialize Telegram sync service. Local dev disables it by default so Vite
+// refreshes are not tied to Telegram session/polling failures.
+const isLocalDevRuntime =
+  process.env.npm_lifecycle_event === "dev" || process.env.NODE_ENV !== "production";
+const isVercelRuntime = process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+const telegramSyncEnabledInDev =
+  String(process.env.TELEGRAM_SYNC_ENABLED || "").trim().toLowerCase() === "true";
+const telegramSyncEnabledInVercel =
+  String(process.env.TELEGRAM_SYNC_ENABLED || "").trim().toLowerCase() === "true";
+
+let telegramSync =
+  (isLocalDevRuntime && !telegramSyncEnabledInDev) ||
+  (isVercelRuntime && !telegramSyncEnabledInVercel)
+    ? null
+    : createTelegramSync(pusher);
 if (telegramSync) {
   telegramSync.initialize().catch((error) => {
     // Telegram sync initialization failed silently
   });
+} else if (isLocalDevRuntime && !telegramSyncEnabledInDev) {
+  console.log("[INIT] Telegram sync disabled in local dev. Set TELEGRAM_SYNC_ENABLED=true to enable it.");
+} else if (isVercelRuntime && !telegramSyncEnabledInVercel) {
+  console.log("[INIT] Telegram sync disabled on Vercel. Set TELEGRAM_SYNC_ENABLED=true to enable it.");
 }
 
 interface AuthenticatedRequest extends Request {

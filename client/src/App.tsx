@@ -52,6 +52,7 @@ import AdminWallet from "./pages/AdminWallet";
 import AdminTreasury from "./pages/AdminTreasury";
 import AdminPartners from "./pages/AdminPartners";
 import AdminBantahBroEngine from "./pages/AdminBantahBroEngine";
+import AdminRugScorerReports from "./pages/AdminRugScorerReports";
 
 import { DailyLoginModal } from '@/components/DailyLoginModal';
 import { useDailyLoginPopup } from '@/hooks/useDailyLoginPopup';
@@ -71,6 +72,7 @@ import EventDetails from "./pages/EventDetails";
 import ChallengeChatPage from "./pages/ChallengeChatPage";
 import { PrivyProvider } from '@privy-io/react-auth';
 import { privyConfig } from './lib/privyConfig';
+import type { AppSection } from '@/app/page';
 
 const Challenges = lazy(() => import("./pages/Challenges"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
@@ -87,6 +89,38 @@ const BantahBroRugScorer = lazy(() => import("./pages/BantahBroRugScorer"));
 const PartnerPrograms = lazy(() => import("./pages/PartnerPrograms"));
 const PartnerSignup = lazy(() => import("./pages/PartnerSignup"));
 const Skills = lazy(() => import("./pages/Skills"));
+
+const BATTLE_BANTAH_HOST = 'battle.bantah.fun';
+
+function isBattleBantahHost() {
+  return typeof window !== 'undefined' && window.location.hostname.toLowerCase() === BATTLE_BANTAH_HOST;
+}
+
+function normalizeRoutePath(pathname: string) {
+  const normalized = pathname.toLowerCase().replace(/\/+$/, '');
+  return normalized || '/';
+}
+
+function isBattleBantahClonePath(pathname: string) {
+  const normalized = normalizeRoutePath(pathname);
+
+  return (
+    normalized === '/' ||
+    normalized === '/battle-engine/live' ||
+    normalized === '/battles' ||
+    normalized === '/agents' ||
+    normalized === '/ads' ||
+    normalized === '/launcher' ||
+    normalized === '/polymarket' ||
+    normalized === '/rug-scorer' ||
+    normalized.startsWith('/polymarket/')
+  );
+}
+
+function isBattleAliasPath(pathname: string) {
+  const normalized = normalizeRoutePath(pathname);
+  return normalized === '/battle' || normalized.startsWith('/battle/');
+}
 
 function isBantahBroPath(pathname: string) {
   const normalized = pathname.toLowerCase();
@@ -116,6 +150,40 @@ function AdminEngineRedirect() {
   }, []);
 
   return <DefaultRouteFallback />;
+}
+
+function getInitialBantahBroSectionFromQuery(): AppSection | undefined {
+  if (typeof window === 'undefined') return undefined;
+
+  const section = new URLSearchParams(window.location.search).get('section');
+  if (section === 'dashboard') return 'challenge';
+  if (
+    section === 'chat' ||
+    section === 'challenge' ||
+    section === 'feed' ||
+    section === 'battles' ||
+    section === 'leaderboard' ||
+    section === 'agents' ||
+    section === 'ads' ||
+    section === 'notifications' ||
+    section === 'rug-scorer' ||
+    section === 'launcher' ||
+    section === 'profile' ||
+    section === 'prediction' ||
+    section === 'prediction-battle'
+  ) {
+    return section;
+  }
+
+  return undefined;
+}
+
+function BantahBroHome() {
+  return <BantahBro initialSection={getInitialBantahBroSectionFromQuery()} />;
+}
+
+function BantahBroChallenge() {
+  return <BantahBro initialSection="challenge" />;
 }
 
 function AppRouter() {
@@ -240,7 +308,11 @@ function AppRouter() {
 
   // Check if current location is an admin route
   const isAdminRoute = location.startsWith('/admin');
-  const isBantahBroRoute = isBantahBroPath(location);
+  const isBattleBantahClone = isBattleBantahHost();
+  const isBantahBroRoute =
+    isBantahBroPath(location) ||
+    isBattleAliasPath(location) ||
+    (isBattleBantahClone && isBattleBantahClonePath(location));
 
   return (
     <div className="min-h-screen transition-all duration-300 ease-in-out">
@@ -271,7 +343,36 @@ function AppRouter() {
       <Route path="/skills" component={Skills} />
       <Route path="/partners" component={PartnerPrograms} />
       <Route path="/partner-signup" component={PartnerSignup} />
+
+      <Route path="/battle/battle-engine/live" component={AdminEngineRedirect} />
+      <Route path="/battle/challenge" component={BantahBroChallenge} />
+      <Route path="/battle/battles" component={BantahBroBattles} />
+      <Route path="/battle/agents" component={BantahBroAgents} />
+      <Route path="/battle/ads" component={BantahBroAds} />
+      <Route path="/battle/launcher" component={BantahBroLauncher} />
+      <Route path="/battle/polymarket/:battleId" component={BantahBroPolymarketBattle} />
+      <Route path="/battle/polymarket" component={BantahBroPolymarket} />
+      <Route path="/battle/rug-scorer" component={BantahBroRugScorer} />
+      <Route path="/battle" component={BantahBroHome} />
+      <Route path="/battle/" component={BantahBroHome} />
+
+      {isBattleBantahClone && (
+        <>
+          <Route path="/battle-engine/live" component={AdminEngineRedirect} />
+          <Route path="/challenge" component={BantahBroChallenge} />
+          <Route path="/battles" component={BantahBroBattles} />
+          <Route path="/agents" component={BantahBroAgents} />
+          <Route path="/ads" component={BantahBroAds} />
+          <Route path="/launcher" component={BantahBroLauncher} />
+          <Route path="/polymarket/:battleId" component={BantahBroPolymarketBattle} />
+          <Route path="/polymarket" component={BantahBroPolymarket} />
+          <Route path="/rug-scorer" component={BantahBroRugScorer} />
+          <Route path="/" component={BantahBroHome} />
+        </>
+      )}
+
       <Route path="/bantahbro/battle-engine/live" component={AdminEngineRedirect} />
+      <Route path="/bantahbro/challenge" component={BantahBroChallenge} />
       <Route path="/bantahbro/battles" component={BantahBroBattles} />
       <Route path="/bantahbro/agents" component={BantahBroAgents} />
       <Route path="/bantahbro/ads" component={BantahBroAds} />
@@ -279,8 +380,8 @@ function AppRouter() {
       <Route path="/bantahbro/polymarket/:battleId" component={BantahBroPolymarketBattle} />
       <Route path="/bantahbro/polymarket" component={BantahBroPolymarket} />
       <Route path="/bantahbro/rug-scorer" component={BantahBroRugScorer} />
-      <Route path="/bantahbro" component={BantahBro} />
-      <Route path="/bantahbro/" component={BantahBro} />
+      <Route path="/bantahbro" component={BantahBroHome} />
+      <Route path="/bantahbro/" component={BantahBroHome} />
       <Route path="/Agents" component={BantahBroAgents} />
       <Route path="/ads" component={BantahBroAds} />
       <Route path="/Ads" component={BantahBroAds} />
@@ -300,6 +401,7 @@ function AppRouter() {
 
       {/* Admin routes - accessible regardless of main authentication state */}
       <Route path="/admin/bantahbro-engine" component={AdminBantahBroEngine} />
+      <Route path="/admin/rug-reports" component={AdminRugScorerReports} />
       <Route path="/admin" component={AdminDashboardOverview} />
       <Route path="/admin/payouts" component={AdminPayoutDashboard} />
       <Route path="/admin/events" component={AdminEventPayouts} />

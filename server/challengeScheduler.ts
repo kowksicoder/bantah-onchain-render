@@ -24,12 +24,21 @@ export class ChallengeScheduler {
   }
 
   start() {
+    if (this.intervalId) {
+      return;
+    }
+
     // Check every 5 minutes for challenge lifecycle changes
     this.intervalId = setInterval(() => {
       this.checkChallengeLifecycle();
     }, 5 * 60 * 1000); // 5 minutes
+    this.intervalId.unref?.();
 
     console.log('Challenge scheduler started');
+  }
+
+  async runOnce() {
+    await this.checkChallengeLifecycle();
   }
 
   stop() {
@@ -366,6 +375,8 @@ export class ChallengeScheduler {
 }
 
 // Auto-start the scheduler
-ChallengeScheduler.getInstance().start();
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  ChallengeScheduler.getInstance().start();
+}
 
 export const challengeScheduler = ChallengeScheduler.getInstance();

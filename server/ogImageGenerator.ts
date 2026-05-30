@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import { Resvg } from "@resvg/resvg-js";
 import { CHALLENGE_PLATFORM_FEE_RATE } from "@shared/feeConfig";
 import type { IStorage } from "./storage";
 
@@ -213,6 +212,7 @@ async function getResvgFontFiles(): Promise<string[]> {
 }
 
 async function renderSvgToPng(svg: string): Promise<Buffer> {
+  const { Resvg } = await import("@resvg/resvg-js");
   const fontFiles = await getResvgFontFiles();
   const resvg = new Resvg(svg, {
     font: {

@@ -21,9 +21,14 @@ export class PayoutWorker {
   }
 
   start() {
+    if (this.intervalId) {
+      return;
+    }
+
     this.intervalId = setInterval(() => {
       this.processPayoutBatches();
     }, 5 * 60 * 1000); // 5 minutes
+    this.intervalId.unref?.();
 
     console.log('Payout worker started');
   }
@@ -40,6 +45,10 @@ export class PayoutWorker {
    * Main processing loop
    * Gets all pending jobs and processes one batch each
    */
+  async processPendingBatchesOnce() {
+    await this.processPayoutBatches();
+  }
+
   private async processPayoutBatches() {
     try {
       const pendingJobs = await payoutQueue.getPendingJobs();
@@ -185,4 +194,6 @@ export class PayoutWorker {
 export const payoutWorker = PayoutWorker.getInstance();
 
 // Auto-start the worker
-payoutWorker.start();
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  payoutWorker.start();
+}

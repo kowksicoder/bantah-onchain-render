@@ -18,7 +18,7 @@ if (typeof window === "undefined") {
   };
 }
 
-import express, { type Request, Response, NextFunction } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import multer from "multer";
 import fs from "fs";
@@ -27,6 +27,7 @@ import { fileURLToPath } from "url";
 
 import { registerRoutes } from "./routes";
 import { addAuthTestRoutes } from "./authTest";
+import { registerCronRoutes } from "./cronRoutes";
 import { createBantahBroTelegramBot, createTelegramBot } from "./telegramBot";
 import { NotificationAlgorithmService } from "./notificationAlgorithm";
 import { seedAdmin } from "./seedAdmin";
@@ -52,7 +53,13 @@ function resolveConfiguredTelegramWebhookUrl(explicitEnvName: string, routePath:
   const explicit = String(process.env[explicitEnvName] || "").trim();
   if (explicit) return explicit;
 
-  const externalBase = String(process.env.RENDER_EXTERNAL_URL || "").trim();
+  const externalBase = normalizePublicBaseUrl(
+    process.env.RENDER_EXTERNAL_URL ||
+      process.env.FRONTEND_URL ||
+      process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+      process.env.VERCEL_URL ||
+      "",
+  );
   if (!externalBase) return null;
 
   try {
@@ -60,6 +67,12 @@ function resolveConfiguredTelegramWebhookUrl(explicitEnvName: string, routePath:
   } catch {
     return null;
   }
+}
+
+function normalizePublicBaseUrl(value: unknown) {
+  const raw = String(value || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 }
 
 function resolveTelegramWebhookUrl() {
@@ -78,6 +91,25 @@ function resolveBantahBroTelegramWebhookUrl() {
 
 function isPlatformTelegramBotEnabled() {
   return String(process.env.TELEGRAM_BOT_ENABLED || "true").trim().toLowerCase() !== "false";
+}
+
+function parseBooleanEnv(name: string, fallback = false) {
+  const raw = String(process.env[name] || "").trim().toLowerCase();
+  if (!raw) return fallback;
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function isLocalDevRuntime() {
+  return process.env.npm_lifecycle_event === "dev" || process.env.NODE_ENV !== "production";
+}
+
+function shouldUseBantahBroElizaTelegramRuntime() {
+  return isBantahBroElizaTelegramEnabled() && !isLocalDevRuntime();
+}
+
+function shouldRunBackgroundWorkers() {
+  if (!isLocalDevRuntime()) return true;
+  return parseBooleanEnv("LOCAL_DEV_BACKGROUND_WORKERS", false);
 }
 
 async function initializeTelegramBotRuntime(options: {
@@ -120,6 +152,27 @@ async function initializeTelegramBotRuntime(options: {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const clientPublicPath = path.resolve(__dirname, "../client/public");
+const twoDGamePath = path.join(clientPublicPath, "2dgame");
+
+function isMainModule() {
+  const entrypoint = process.argv[1];
+  if (!entrypoint) return false;
+  return path.resolve(entrypoint) === __filename;
+}
+
+function isVercelRuntime() {
+  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+}
+
+function register2DGameStatic(app: Express) {
+  if (!fs.existsSync(twoDGamePath)) return;
+
+  app.get(["/2dgame", "/2dgame/"], (_req, res) => {
+    res.sendFile(path.join(twoDGamePath, "index.html"));
+  });
+  app.use("/2dgame", express.static(twoDGamePath));
+}
 
 // -------------------------------------------------------------------
 // App setup
@@ -197,7 +250,9 @@ app.use((req, res, next) => {
 // Main bootstrap
 // -------------------------------------------------------------------
 
-(async () => {
+async function startHttpServer() {
+  registerCronRoutes(app);
+
   // Routes
   const server = await registerRoutes(app, upload);
   addAuthTestRoutes(app);
@@ -213,6 +268,7 @@ app.use((req, res, next) => {
   // -----------------------------------------------------------------
 
   const distPublicPath = path.resolve(__dirname, "../dist/public");
+  register2DGameStatic(app);
 
   // `npm run dev` must always use Vite, even when local .env mirrors production.
   const isDevCommand = process.env.npm_lifecycle_event === "dev";
@@ -223,7 +279,6 @@ app.use((req, res, next) => {
   } else {
     // Production: serve static files
     if (fs.existsSync(distPublicPath)) {
-      const clientPublicPath = path.resolve(__dirname, "../client/public");
       const rootPublicPath = path.resolve(__dirname, "../public");
       const mapPublicPath = path.resolve(__dirname, "../map");
 
@@ -262,19 +317,28 @@ app.use((req, res, next) => {
   );
   // Run slow/non-critical startup tasks in the background so deploy healthchecks pass quickly.
   void (async () => {
-    // Telegram bot (safe in production)
-    if (isPlatformTelegramBotEnabled()) {
-      await initializeTelegramBotRuntime({
-        bot: createTelegramBot(),
-        label: "Platform",
-        webhookUrl: resolveTelegramWebhookUrl(),
-        enableWebhook:
-          String(process.env.TELEGRAM_BOT_ENABLE_WEBHOOK || "true").trim().toLowerCase() !==
-          "false",
-        allowPollingFallback: true,
-      });
-    } else {
-      console.log("[INIT] Platform Telegram bot disabled by TELEGRAM_BOT_ENABLED=false");
+    const runBackgroundWorkers = shouldRunBackgroundWorkers();
+    if (!runBackgroundWorkers) {
+      console.log(
+        "[INIT] Local dev background workers disabled. Set LOCAL_DEV_BACKGROUND_WORKERS=true to enable Telegram, automation, indexer, and schedulers.",
+      );
+    }
+
+    if (runBackgroundWorkers) {
+      // Telegram bot (safe in production)
+      if (isPlatformTelegramBotEnabled()) {
+        await initializeTelegramBotRuntime({
+          bot: createTelegramBot(),
+          label: "Platform",
+          webhookUrl: resolveTelegramWebhookUrl(),
+          enableWebhook:
+            String(process.env.TELEGRAM_BOT_ENABLE_WEBHOOK || "true").trim().toLowerCase() !==
+            "false",
+          allowPollingFallback: !isLocalDevRuntime(),
+        });
+      } else {
+        console.log("[INIT] Platform Telegram bot disabled by TELEGRAM_BOT_ENABLED=false");
+      }
     }
 
     // Initialize database
@@ -284,87 +348,94 @@ app.use((req, res, next) => {
       console.error("[ERROR] Failed to initialize database:", err);
     }
 
-    try {
-      const { restoreManagedBantahAgentRuntimes } = await import("./bantahElizaRuntimeManager");
-      const restored = await restoreManagedBantahAgentRuntimes();
-      console.log(`[OK] Bantah Eliza runtimes restored: ${restored.started}/${restored.attempted}`);
-    } catch (err) {
-      console.error("[WARN] Failed to restore Bantah Eliza runtimes:", err);
-    }
-
-    const bantahBroTelegramBot = createBantahBroTelegramBot();
-    if (bantahBroTelegramBot) {
+    if (runBackgroundWorkers) {
       try {
-        await bantahBroTelegramBot.syncBantahBroProfile();
+        const { restoreManagedBantahAgentRuntimes } = await import("./bantahElizaRuntimeManager");
+        const restored = await restoreManagedBantahAgentRuntimes();
+        console.log(`[OK] Bantah Eliza runtimes restored: ${restored.started}/${restored.attempted}`);
       } catch (err) {
-        console.error("[WARN] Failed to sync BantahBro Telegram profile:", err);
+        console.error("[WARN] Failed to restore Bantah Eliza runtimes:", err);
       }
-    }
 
-    if (isBantahBroElizaTelegramEnabled()) {
+      const bantahBroTelegramBot = createBantahBroTelegramBot();
+      if (bantahBroTelegramBot) {
+        try {
+          await bantahBroTelegramBot.syncBantahBroProfile();
+        } catch (err) {
+          console.error("[WARN] Failed to sync BantahBro Telegram profile:", err);
+        }
+      }
+
+      if (shouldUseBantahBroElizaTelegramRuntime()) {
+        try {
+          const result = await ensureBantahBroTelegramRuntimeStarted();
+          console.log(
+            `[OK] BantahBro Eliza Telegram runtime ready: ${result.systemAgent.agentId} (${result.runtime?.status || "no-runtime"})`,
+          );
+        } catch (err) {
+          console.error("[WARN] Failed to start BantahBro Eliza Telegram runtime:", err);
+        }
+      } else {
+        if (isBantahBroElizaTelegramEnabled() && isLocalDevRuntime()) {
+          console.log(
+            "[INIT] Local dev detected. Using classic BantahBro Telegram polling instead of the Eliza Telegram plugin.",
+          );
+        }
+        await initializeTelegramBotRuntime({
+          bot: bantahBroTelegramBot,
+          label: "BantahBro",
+          webhookUrl: resolveBantahBroTelegramWebhookUrl(),
+          enableWebhook:
+            String(process.env.BANTAHBRO_TELEGRAM_BOT_ENABLE_WEBHOOK || "true")
+              .trim()
+              .toLowerCase() !== "false",
+          allowPollingFallback: true,
+        });
+      }
+
       try {
-        const result = await ensureBantahBroTelegramRuntimeStarted();
+        const battleBroadcastStatus = startBantahBroAgentBattleTelegramBroadcaster();
         console.log(
-          `[OK] BantahBro Eliza Telegram runtime ready: ${result.systemAgent.agentId} (${result.runtime?.status || "no-runtime"})`,
+          `[OK] BantahBro Telegram battle broadcaster: enabled=${battleBroadcastStatus.enabled} started=${battleBroadcastStatus.started} intervalMs=${battleBroadcastStatus.intervalMs} limit=${battleBroadcastStatus.limit}${battleBroadcastStatus.reason ? ` reason=${battleBroadcastStatus.reason}` : ""}`,
         );
       } catch (err) {
-        console.error("[WARN] Failed to start BantahBro Eliza Telegram runtime:", err);
+        console.error("[WARN] Failed to start BantahBro Telegram battle broadcaster:", err);
       }
-    } else {
-      await initializeTelegramBotRuntime({
-        bot: bantahBroTelegramBot,
-        label: "BantahBro",
-        webhookUrl: resolveBantahBroTelegramWebhookUrl(),
-        enableWebhook:
-          String(process.env.BANTAHBRO_TELEGRAM_BOT_ENABLE_WEBHOOK || "true")
-            .trim()
-            .toLowerCase() !== "false",
-        allowPollingFallback: true,
-      });
-    }
 
-    try {
-      const battleBroadcastStatus = startBantahBroAgentBattleTelegramBroadcaster();
-      console.log(
-        `[OK] BantahBro Telegram battle broadcaster: enabled=${battleBroadcastStatus.enabled} started=${battleBroadcastStatus.started} intervalMs=${battleBroadcastStatus.intervalMs} limit=${battleBroadcastStatus.limit}${battleBroadcastStatus.reason ? ` reason=${battleBroadcastStatus.reason}` : ""}`,
-      );
-    } catch (err) {
-      console.error("[WARN] Failed to start BantahBro Telegram battle broadcaster:", err);
-    }
+      try {
+        const settlementStatus = startBantahBroAgentBattleSettlementWorker();
+        console.log(
+          `[OK] BantahBro battle settlement worker: enabled=${settlementStatus.enabled} started=${settlementStatus.started} intervalMs=${settlementStatus.intervalMs} limit=${settlementStatus.limit} maxPairs=${settlementStatus.maxPairsPerRound}${settlementStatus.reason ? ` reason=${settlementStatus.reason}` : ""}`,
+        );
+      } catch (err) {
+        console.error("[WARN] Failed to start BantahBro battle settlement worker:", err);
+      }
 
-    try {
-      const settlementStatus = startBantahBroAgentBattleSettlementWorker();
-      console.log(
-        `[OK] BantahBro battle settlement worker: enabled=${settlementStatus.enabled} started=${settlementStatus.started} intervalMs=${settlementStatus.intervalMs} limit=${settlementStatus.limit} maxPairs=${settlementStatus.maxPairsPerRound}${settlementStatus.reason ? ` reason=${settlementStatus.reason}` : ""}`,
-      );
-    } catch (err) {
-      console.error("[WARN] Failed to start BantahBro battle settlement worker:", err);
-    }
+      try {
+        const automationStatus = await startBantahBroAutomationService();
+        console.log(
+          `[OK] BantahBro automation ready: enabled=${automationStatus.enabled} watchlist=${automationStatus.watchlistSize}`,
+        );
+      } catch (err) {
+        console.error("[WARN] Failed to start BantahBro automation:", err);
+      }
 
-    try {
-      const automationStatus = await startBantahBroAutomationService();
-      console.log(
-        `[OK] BantahBro automation ready: enabled=${automationStatus.enabled} watchlist=${automationStatus.watchlistSize}`,
-      );
-    } catch (err) {
-      console.error("[WARN] Failed to start BantahBro automation:", err);
-    }
+      // Onchain indexer (optional)
+      try {
+        const { startOnchainIndexer } = await import("./onchainIndexer");
+        startOnchainIndexer();
+      } catch (err) {
+        console.error("[WARN] Failed to start onchain indexer:", err);
+      }
 
-    // Onchain indexer (optional)
-    try {
-      const { startOnchainIndexer } = await import("./onchainIndexer");
-      startOnchainIndexer();
-    } catch (err) {
-      console.error("[WARN] Failed to start onchain indexer:", err);
-    }
-
-    // Notification service
-    try {
-      const { storage } = await import("./storage");
-      const notificationAlgorithm = new NotificationAlgorithmService(storage);
-      notificationAlgorithm.startNotificationScheduler();
-    } catch (err) {
-      console.error("[WARN] Failed to start notification scheduler:", err);
+      // Notification service
+      try {
+        const { storage } = await import("./storage");
+        const notificationAlgorithm = new NotificationAlgorithmService(storage);
+        notificationAlgorithm.startNotificationScheduler();
+      } catch (err) {
+        console.error("[WARN] Failed to start notification scheduler:", err);
+      }
     }
 
     // Seed admin users
@@ -374,7 +445,14 @@ app.use((req, res, next) => {
       console.error("[ERROR] Failed to seed admin users:", err);
     }
   })();
-})();
+}
+
+if (isMainModule() && !isVercelRuntime()) {
+  startHttpServer().catch((err) => {
+    console.error("[ERROR] Failed to start server:", err);
+    process.exit(1);
+  });
+}
 
 // -------------------------------------------------------------------
 // Serverless export
@@ -383,100 +461,114 @@ app.use((req, res, next) => {
 export async function initAppForServerless() {
   try {
     console.log("[INIT] Initializing serverless app...");
-
-    // Telegram bot (safe in production)
-    const telegramBot = isPlatformTelegramBotEnabled() ? createTelegramBot() : null;
-    if (isPlatformTelegramBotEnabled()) {
-      await initializeTelegramBotRuntime({
-        bot: telegramBot,
-        label: "Platform",
-        webhookUrl: resolveTelegramWebhookUrl(),
-        enableWebhook:
-          String(process.env.TELEGRAM_BOT_ENABLE_WEBHOOK || "true").trim().toLowerCase() !==
-          "false",
-        allowPollingFallback: false,
-      });
-    } else {
-      console.log("[INIT] Platform Telegram bot disabled by TELEGRAM_BOT_ENABLED=false");
-    }
-    if (telegramBot) {
-      console.log("[OK] Telegram bot connected");
-    }
-
-    const bantahBroTelegramBot = createBantahBroTelegramBot();
-    if (bantahBroTelegramBot) {
-      try {
-        await bantahBroTelegramBot.syncBantahBroProfile();
-      } catch (err) {
-        console.error("[WARN] Failed to sync BantahBro Telegram profile:", err);
-      }
-    }
-    if (isBantahBroElizaTelegramEnabled()) {
-      try {
-        const result = await ensureBantahBroTelegramRuntimeStarted();
-        console.log(
-          `[OK] BantahBro Eliza Telegram runtime ready: ${result.systemAgent.agentId} (${result.runtime?.status || "no-runtime"})`,
-        );
-      } catch (err) {
-        console.error("[WARN] BantahBro Eliza Telegram runtime failed (non-critical)", err);
-      }
-    } else {
-      await initializeTelegramBotRuntime({
-        bot: bantahBroTelegramBot,
-        label: "BantahBro",
-        webhookUrl: resolveBantahBroTelegramWebhookUrl(),
-        enableWebhook:
-          String(process.env.BANTAHBRO_TELEGRAM_BOT_ENABLE_WEBHOOK || "true")
-            .trim()
-            .toLowerCase() !== "false",
-        allowPollingFallback: false,
-      });
-      if (bantahBroTelegramBot) {
-        console.log("[OK] BantahBro Telegram bot connected");
-      }
-    }
-
-    try {
-      const automationStatus = await startBantahBroAutomationService();
-      console.log(
-        `[OK] BantahBro automation ready: enabled=${automationStatus.enabled} watchlist=${automationStatus.watchlistSize}`,
-      );
-    } catch (err) {
-      console.error("[WARN] BantahBro automation failed (non-critical)", err);
-    }
-
-    try {
-      const settlementStatus = startBantahBroAgentBattleSettlementWorker();
-      console.log(
-        `[OK] BantahBro battle settlement worker: enabled=${settlementStatus.enabled} started=${settlementStatus.started} intervalMs=${settlementStatus.intervalMs} limit=${settlementStatus.limit} maxPairs=${settlementStatus.maxPairsPerRound}${settlementStatus.reason ? ` reason=${settlementStatus.reason}` : ""}`,
-      );
-    } catch (err) {
-      console.error("[WARN] BantahBro battle settlement worker failed (non-critical)", err);
-    }
+    const runServerlessBackgroundWorkers =
+      parseBooleanEnv("VERCEL_ENABLE_BACKGROUND_WORKERS", false) ||
+      parseBooleanEnv("SERVERLESS_BACKGROUND_WORKERS", false);
 
     // Initialize database
-    try {
-      await initializeDatabase();
-      console.log("[OK] Database initialized");
-    } catch (err) {
-      console.error("[ERROR] Failed to initialize database:", err);
+    if (parseBooleanEnv("SERVERLESS_INIT_DB", !isVercelRuntime())) {
+      try {
+        await initializeDatabase();
+        console.log("[OK] Database initialized");
+      } catch (err) {
+        console.error("[ERROR] Failed to initialize database:", err);
+      }
+    } else {
+      console.log("[INIT] Serverless database initialization disabled.");
     }
 
     // Register routes
     console.log("[INIT] Registering routes...");
-    const server = await registerRoutes(app, upload);
+    registerCronRoutes(app);
+    await registerRoutes(app, upload);
     console.log("[OK] Routes registered");
 
     addAuthTestRoutes(app);
 
-    // Notification service
-    try {
-      const { storage } = await import("./storage");
-      const notificationAlgorithm = new NotificationAlgorithmService(storage);
-      notificationAlgorithm.startNotificationScheduler();
-      console.log("[OK] Notification service started");
-    } catch (err) {
-      console.error("[WARN] Notification service failed:", err);
+    if (runServerlessBackgroundWorkers) {
+      // Serverless background workers are opt-in because Vercel Functions are
+      // request-scoped. Prefer webhooks or Vercel Cron for recurring work.
+      const telegramBot = isPlatformTelegramBotEnabled() ? createTelegramBot() : null;
+      if (isPlatformTelegramBotEnabled()) {
+        await initializeTelegramBotRuntime({
+          bot: telegramBot,
+          label: "Platform",
+          webhookUrl: resolveTelegramWebhookUrl(),
+          enableWebhook:
+            String(process.env.TELEGRAM_BOT_ENABLE_WEBHOOK || "true").trim().toLowerCase() !==
+            "false",
+          allowPollingFallback: false,
+        });
+      } else {
+        console.log("[INIT] Platform Telegram bot disabled by TELEGRAM_BOT_ENABLED=false");
+      }
+      if (telegramBot) {
+        console.log("[OK] Telegram bot connected");
+      }
+
+      const bantahBroTelegramBot = createBantahBroTelegramBot();
+      if (bantahBroTelegramBot) {
+        try {
+          await bantahBroTelegramBot.syncBantahBroProfile();
+        } catch (err) {
+          console.error("[WARN] Failed to sync BantahBro Telegram profile:", err);
+        }
+      }
+      if (shouldUseBantahBroElizaTelegramRuntime()) {
+        try {
+          const result = await ensureBantahBroTelegramRuntimeStarted();
+          console.log(
+            `[OK] BantahBro Eliza Telegram runtime ready: ${result.systemAgent.agentId} (${result.runtime?.status || "no-runtime"})`,
+          );
+        } catch (err) {
+          console.error("[WARN] BantahBro Eliza Telegram runtime failed (non-critical)", err);
+        }
+      } else {
+        await initializeTelegramBotRuntime({
+          bot: bantahBroTelegramBot,
+          label: "BantahBro",
+          webhookUrl: resolveBantahBroTelegramWebhookUrl(),
+          enableWebhook:
+            String(process.env.BANTAHBRO_TELEGRAM_BOT_ENABLE_WEBHOOK || "true")
+              .trim()
+              .toLowerCase() !== "false",
+          allowPollingFallback: false,
+        });
+        if (bantahBroTelegramBot) {
+          console.log("[OK] BantahBro Telegram bot connected");
+        }
+      }
+
+      try {
+        const automationStatus = await startBantahBroAutomationService();
+        console.log(
+          `[OK] BantahBro automation ready: enabled=${automationStatus.enabled} watchlist=${automationStatus.watchlistSize}`,
+        );
+      } catch (err) {
+        console.error("[WARN] BantahBro automation failed (non-critical)", err);
+      }
+
+      try {
+        const settlementStatus = startBantahBroAgentBattleSettlementWorker();
+        console.log(
+          `[OK] BantahBro battle settlement worker: enabled=${settlementStatus.enabled} started=${settlementStatus.started} intervalMs=${settlementStatus.intervalMs} limit=${settlementStatus.limit} maxPairs=${settlementStatus.maxPairsPerRound}${settlementStatus.reason ? ` reason=${settlementStatus.reason}` : ""}`,
+        );
+      } catch (err) {
+        console.error("[WARN] BantahBro battle settlement worker failed (non-critical)", err);
+      }
+
+      try {
+        const { storage } = await import("./storage");
+        const notificationAlgorithm = new NotificationAlgorithmService(storage);
+        notificationAlgorithm.startNotificationScheduler();
+        console.log("[OK] Notification service started");
+      } catch (err) {
+        console.error("[WARN] Notification service failed:", err);
+      }
+    } else {
+      console.log(
+        "[INIT] Serverless background workers disabled. Use webhooks or Vercel Cron for recurring work.",
+      );
     }
 
     // Seed admin users

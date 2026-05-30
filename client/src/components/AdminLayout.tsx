@@ -27,7 +27,8 @@ import {
   AlertTriangle,
   Gift,
   Wallet,
-  Lock
+  Lock,
+  Swords
 } from "lucide-react";
 
 interface AdminLayoutProps {
@@ -94,6 +95,18 @@ const adminNavigation = [
     href: "/admin/partners",
     icon: Users,
     description: "Partner programs, signups, and withdrawals"
+  },
+  {
+    name: "BOTA Engine",
+    href: "/admin/bantahbro-engine",
+    icon: Swords,
+    description: "Battle scanner and arena controls"
+  },
+  {
+    name: "Rug Reports",
+    href: "/admin/rug-reports",
+    icon: Shield,
+    description: "Review community scam reports"
   },
   { 
     name: "Analytics", 
@@ -183,18 +196,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       )}
 
       {/* Sidebar */}
-      <div className={`fixed left-0 top-0 h-full w-64 bg-slate-900 border-r border-slate-700 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className={`fixed left-0 top-0 h-full w-56 bg-slate-900 border-r border-slate-800 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
           {/* Header */}
-          <div className="p-6 border-b border-slate-700">
+          <div className="p-4 border-b border-slate-800">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-white" />
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
+                  <Shield className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-lg font-semibold text-white">Admin Panel</h1>
-                  <p className="text-xs text-slate-400">BetChat Management</p>
+                  <h1 className="text-sm font-semibold text-white">Admin</h1>
+                  <p className="text-[11px] text-slate-500">Control panel</p>
                 </div>
               </div>
               <Button
@@ -209,19 +222,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </div>
 
           {/* Admin Info */}
-          <div className="p-4 border-b border-slate-700">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                <span className="text-white font-medium">
+          <div className="p-3 border-b border-slate-800">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center shrink-0">
+                <span className="text-xs text-white font-medium">
                   {(adminUser as any)?.username?.[0] || (adminUser as any)?.email?.[0] || 'A'}
                 </span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">
+                <p className="text-xs font-medium text-white truncate">
                   {(adminUser as any)?.username || (adminUser as any)?.email || 'Admin'}
                 </p>
                 <div className="flex items-center space-x-1">
-                  <Badge variant="outline" className="text-xs border-blue-600 text-blue-400">
+                  <Badge variant="outline" className="h-4 px-1.5 text-[10px] border-blue-700 text-blue-400">
                     Admin
                   </Badge>
                 </div>
@@ -230,25 +243,24 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
             {adminNavigation.map((item) => {
               const isActive = location === item.href || (item.href !== '/admin' && location.startsWith(item.href));
               return (
                 <Link key={item.name} href={item.href}>
                   <div
-                    className={`group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    className={`group flex items-center px-2.5 py-2 text-xs font-medium rounded-lg transition-colors ${
                       isActive
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-950/40'
                         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                     onClick={() => setSidebarOpen(false)}
                   >
-                    <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
+                    <item.icon className="w-4 h-4 mr-2.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="truncate">{item.name}</p>
-                      <p className="text-xs opacity-60 truncate">{item.description}</p>
                     </div>
-                    {isActive && <ChevronRight className="w-4 h-4 ml-2" />}
+                    {isActive && <ChevronRight className="w-3.5 h-3.5 ml-1" />}
                   </div>
                 </Link>
               );
@@ -256,21 +268,21 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </nav>
 
           {/* Footer */}
-          <div className="p-4 border-t border-slate-700">
+          <div className="p-2 border-t border-slate-800 space-y-1">
             
             <Button
               variant="ghost"
               size="sm"
               onClick={logout}
-              className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-900/20"
+              className="h-8 w-full justify-start text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20"
             >
-              <LogOut className="w-4 h-4 mr-2" />
-              Admin Logout
+              <LogOut className="w-3.5 h-3.5 mr-2" />
+              Logout
             </Button>
             
             <Link href="/">
-              <Button variant="outline" className="w-full border-slate-600 text-slate-300 hover:bg-slate-800">
-                <Home className="w-4 h-4 mr-2" />
+              <Button variant="outline" className="h-8 w-full border-slate-700 text-xs text-slate-300 hover:bg-slate-800">
+                <Home className="w-3.5 h-3.5 mr-2" />
                 Back to App
               </Button>
             </Link>
@@ -279,7 +291,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       </div>
 
       {/* Main content */}
-      <div className="lg:ml-64">
+      <div className="lg:ml-56">
         {/* Mobile header */}
         <div className="lg:hidden bg-slate-900 border-b border-slate-700 p-4">
           <div className="flex items-center justify-between">
@@ -297,7 +309,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </div>
 
         {/* Content */}
-        <main className="p-6">
+        <main className="p-4 lg:p-5">
           {children}
         </main>
       </div>

@@ -1,7 +1,7 @@
 {
   "miniapp": {
     "version": "1",
-    "name": "Bantah",
+    "name": "BOTA",
     "homeUrl": "https://onchain.bantah.fun/",
     "iconUrl": "https://onchain.bantah.fun/assets/base-icon-1024.png",
     "imageUrl": "https://onchain.bantah.fun/assets/base-image-1200x630.png",
@@ -9,8 +9,8 @@
     "splashBackgroundColor": "#0f172a",
     "primaryCategory": "finance",
     "tags": ["prediction", "social", "finance", "p2p", "challenges"],
-    "subtitle": "P2P challenge arena",
-    "description": "Create join and settle social prediction challenges with wallet escrow.",
+    "subtitle": "Battle Of The Agents",
+    "description": "Watch and join live agent battles with transparent onchain prediction flow.",
     "noindex": false,
     "requiredChains": ["eip155:8453", "eip155:42161", "eip155:130", "eip155:42220", "eip155:56"],
     "requiredCapabilities": [
@@ -23,7 +23,7 @@
   },
   "frame": {
     "version": "1",
-    "name": "Bantah",
+    "name": "BOTA",
     "homeUrl": "https://onchain.bantah.fun/",
     "iconUrl": "https://onchain.bantah.fun/assets/base-icon-1024.png",
     "imageUrl": "https://onchain.bantah.fun/assets/base-image-1200x630.png",

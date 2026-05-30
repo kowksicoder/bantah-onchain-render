@@ -115,7 +115,7 @@ export class PushNotificationService {
         body: JSON.stringify({
           userId: 'current-user', // This should be replaced with actual user ID
           title: 'Test Notification',
-          body: 'This is a test push notification from BetChat!',
+          body: 'This is a test push notification from BOTA!',
           data: {
             type: 'test',
             url: '/',

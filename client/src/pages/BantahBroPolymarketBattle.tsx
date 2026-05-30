@@ -7,7 +7,6 @@ export default function BantahBroPolymarketBattle() {
   return (
     <BantahBro
       initialSection="prediction-battle"
-      initialDashboardTab="signals"
       initialPredictionBattleId={battleId}
     />
   );

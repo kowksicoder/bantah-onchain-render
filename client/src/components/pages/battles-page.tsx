@@ -1,7 +1,7 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, Eye, Send, Settings, Share2, Smile, Star, Trophy, Users } from 'lucide-react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, ChevronDown, Eye, Send, Settings, Share2, Smile, Star, Users } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useWallets } from '@privy-io/react-auth';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,17 +14,29 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { getBattleTimeRemainingSeconds, useBattleClock } from '@/lib/bantahbro/battleTiming';
+import { arenaAgentAvatar } from '@/lib/arenaAgentAvatars';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useBattleSpectatorRewards } from '@/hooks/useBattleSpectatorRewards';
+import type { BattleSpectatorRewardHudState } from '@/hooks/useBattleSpectatorRewards';
 import {
   executeOnchainEscrowStakeTx,
   type OnchainRuntimeConfig,
   type OnchainTokenSymbol,
 } from '@/lib/onchainEscrow';
 import type { AppSection } from '@/app/page';
-import type { AgentBattleFeed, AgentBattleSide } from '@/types/agentBattle';
-import type { AgentBattleP2PPool, AgentBattleP2PStakeResponse } from '@shared/agentBattleP2P';
-import FeedPage from '@/components/pages/feed-page';
-import { RetroBattleArena } from '@/components/bantahbro/RetroBattleArena';
+import type { AgentBattle, AgentBattleFeed, AgentBattleSide } from '@/types/agentBattle';
+import type {
+  AgentBattleP2PHistoryPosition,
+  AgentBattleP2PHistoryResponse,
+  AgentBattleP2PPool,
+  AgentBattleP2PStakeResponse,
+} from '@shared/agentBattleP2P';
+import {
+  FightingGameArenaEmbed,
+  type BattleArenaStatus,
+  type BattleExperienceMode,
+} from '@/components/bantahbro/FightingGameArenaEmbed';
 
 interface BattlesPageProps {
   onNavigate?: (section: AppSection) => void;
@@ -55,12 +67,49 @@ type TrollboxFeed = {
   };
 };
 
+type SidebarFeedSource = 'bantah' | 'twitter' | 'telegram';
+
+type SidebarFeedItem = {
+  id: string;
+  user: string;
+  handle?: string | null;
+  timestamp: string;
+  content: string;
+  source: SidebarFeedSource;
+  market?: string | null;
+};
+
+type SidebarFeedResponse = {
+  items?: SidebarFeedItem[];
+};
+
+type DesktopTrollboxItem = {
+  id: string;
+  createdAt: string;
+  sourceLabel: string;
+  sourceClassName: string;
+  avatarUrl?: string | null;
+  statusIcon?: '🟢' | '🔴' | null;
+  statusLabel?: string | null;
+  user: string;
+  message: string;
+  meta?: string | null;
+};
+
+type BattleOutcomeTone = 'live' | 'result' | 'win' | 'loss' | 'reward' | 'settling';
+
 type MobileBattlePanel = 'trade' | 'stats' | 'side' | 'feed';
 type MobileDetailTab = 'overview' | 'charts' | 'trades' | 'holders';
-type MobileSocialTab = 'trollbox' | 'events' | 'side' | 'quick' | 'charts' | 'stats' | 'top';
-type DesktopSideTab = 'trollbox' | 'feed';
-type DesktopBattleTab = 'charts' | 'stats' | 'feed' | 'trade' | 'side';
+type MobileSocialTab = 'side' | 'trollbox' | 'events' | 'charts' | 'stats' | 'slips' | 'top';
+type DesktopSideTab = 'trollbox' | 'slips';
+type DesktopBattleTab = 'charts' | 'stats' | 'feed' | 'side';
 const BATTLE_MODE_STORAGE_KEY = 'bantahbro:battle-mode';
+const DESKTOP_BATTLE_MEDIA_QUERY = '(min-width: 1024px)';
+
+function readIsDesktopBattleLayout() {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia(DESKTOP_BATTLE_MEDIA_QUERY).matches;
+}
 
 function formatUsd(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 'n/a';
@@ -112,6 +161,90 @@ function formatCompactNumber(value?: number | null) {
   }).format(value);
 }
 
+function formatTokenAmount(value?: number | null, symbol?: string | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return symbol ? `0 ${symbol}` : '0';
+  const formatted = value.toLocaleString(undefined, {
+    minimumFractionDigits: value > 0 && value < 1 ? 2 : 0,
+    maximumFractionDigits: value > 0 && value < 1 ? 6 : 2,
+  });
+  return symbol ? `${formatted} ${symbol}` : formatted;
+}
+
+function formatRelativeTime(value?: string | null) {
+  if (!value) return 'Unknown time';
+  const target = new Date(value).getTime();
+  if (!Number.isFinite(target)) return 'Unknown time';
+  const diffSeconds = Math.round((Date.now() - target) / 1000);
+  const absoluteSeconds = Math.abs(diffSeconds);
+  if (absoluteSeconds < 60) return diffSeconds >= 0 ? 'just now' : 'in a moment';
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['day', 86_400],
+    ['hour', 3_600],
+    ['minute', 60],
+  ];
+  for (const [unit, unitSeconds] of units) {
+    if (absoluteSeconds >= unitSeconds) {
+      return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(
+        -Math.round(diffSeconds / unitSeconds),
+        unit,
+      );
+    }
+  }
+  return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(-diffSeconds, 'second');
+}
+
+function battleSlipStatusLabel(status: AgentBattleP2PHistoryPosition['resultStatus']) {
+  switch (status) {
+    case 'won':
+      return 'Won';
+    case 'lost':
+      return 'Lost';
+    case 'awaiting_settlement':
+      return 'Settling';
+    case 'unmatched':
+      return 'Unmatched';
+    case 'needs_escrow':
+      return 'Not Locked';
+    case 'failed':
+      return 'Issue';
+    case 'cancelled':
+      return 'Cancelled';
+    default:
+      return 'Live';
+  }
+}
+
+function battleSlipStatusClassName(status: AgentBattleP2PHistoryPosition['resultStatus']) {
+  switch (status) {
+    case 'won':
+      return 'border-green-500/30 bg-green-500/15 text-green-400';
+    case 'lost':
+      return 'border-red-500/30 bg-red-500/15 text-red-400';
+    case 'awaiting_settlement':
+      return 'border-amber-500/30 bg-amber-500/15 text-amber-300';
+    case 'unmatched':
+      return 'border-orange-500/30 bg-orange-500/15 text-orange-300';
+    case 'needs_escrow':
+      return 'border-slate-500/30 bg-slate-500/15 text-slate-300';
+    case 'failed':
+      return 'border-rose-500/30 bg-rose-500/15 text-rose-300';
+    case 'cancelled':
+      return 'border-slate-500/30 bg-slate-500/15 text-slate-300';
+    default:
+      return 'border-primary/30 bg-primary/10 text-primary';
+  }
+}
+
+function buildExplorerTxUrl(
+  position: AgentBattleP2PHistoryPosition,
+  onchainConfig?: OnchainRuntimeConfig | null,
+) {
+  const txHash = position.payoutTxHash || position.escrowTxHash;
+  const explorerBase = onchainConfig?.chains?.[String(position.escrowChainId || 0)]?.blockExplorerUrl;
+  if (!txHash || !explorerBase) return null;
+  return `${explorerBase.replace(/\/$/, '')}/tx/${txHash}`;
+}
+
 function formatPriceAxis(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 'n/a';
   if (value >= 1) return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
@@ -122,6 +255,49 @@ function readBattleIdFromUrl() {
   if (typeof window === 'undefined') return null;
   const battleId = new URLSearchParams(window.location.search).get('battle');
   return battleId?.trim() || null;
+}
+
+const ARENA_PREVIEW_EVENT = 'bantahbro:arena-preview-change';
+
+type ArenaPreviewState = {
+  mode: BattleExperienceMode;
+  status: BattleArenaStatus;
+  startsAtMs: number | null;
+  matchupLabel: string;
+  arenaLabel: string;
+};
+
+function normalizeBattleLayer(value: string | null): BattleExperienceMode {
+  if (value === 'challenge') return 'challenge';
+  return 'arena';
+}
+
+function normalizeArenaStatus(value: string | null): BattleArenaStatus {
+  if (value === 'queued' || value === 'cancelled' || value === 'rematch') return value;
+  return 'live';
+}
+
+function readArenaPreviewFromUrl(): ArenaPreviewState {
+  if (typeof window === 'undefined') {
+    return {
+      mode: 'arena',
+      status: 'live',
+      startsAtMs: null,
+      matchupLabel: 'BOTA Agent Alpha VS BOTA Agent Beta',
+      arenaLabel: 'Main Arena',
+    };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const startsAtMs = Number(params.get('arenaStartsAt'));
+
+  return {
+    mode: normalizeBattleLayer(params.get('battleLayer')),
+    status: normalizeArenaStatus(params.get('arenaState')),
+    startsAtMs: Number.isFinite(startsAtMs) && startsAtMs > 0 ? startsAtMs : null,
+    matchupLabel: params.get('arenaMatchup') || 'BOTA Agent Alpha VS BOTA Agent Beta',
+    arenaLabel: params.get('arenaLabel') || 'Main Arena',
+  };
 }
 
 function formatSignedPercent(value?: number | null) {
@@ -322,12 +498,13 @@ function BattleTokenMark({
   emojiClassName?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const avatarUrl = arenaAgentAvatar(`${side.agentName}:${side.id}`);
 
-  if (side.logoUrl && !failed) {
+  if (!failed) {
     return (
       <img
-        src={side.logoUrl}
-        alt={`${side.label} logo`}
+        src={avatarUrl}
+        alt={`${side.agentName || side.label} avatar`}
         className={className}
         loading="lazy"
         onError={() => setFailed(true)}
@@ -335,7 +512,7 @@ function BattleTokenMark({
     );
   }
 
-  return <span className={emojiClassName}>{side.emoji}</span>;
+  return <span className={emojiClassName}>{side.label.slice(0, 1)}</span>;
 }
 
 function roleColor(role: string) {
@@ -354,6 +531,258 @@ function sourceLabel(source: TrollboxMessage['source']) {
   if (source === 'telegram') return 'TG';
   if (source === 'system') return 'SYS';
   return 'WEB';
+}
+
+function feedSourceColor(source: SidebarFeedSource) {
+  if (source === 'telegram') return 'bg-sky-400/15 text-sky-300';
+  if (source === 'twitter') return 'bg-blue-400/15 text-blue-300';
+  return 'bg-primary/15 text-primary';
+}
+
+function feedSourceLabel(source: SidebarFeedSource) {
+  if (source === 'telegram') return 'TG';
+  if (source === 'twitter') return 'X';
+  return 'BOTA';
+}
+
+function eventSourceColor(severity?: string) {
+  if (severity === 'danger') return 'bg-destructive/15 text-destructive';
+  if (severity === 'hot') return 'bg-secondary/15 text-secondary';
+  return 'bg-primary/15 text-primary';
+}
+
+function actionSourceColor(tone: BattleOutcomeTone) {
+  if (tone === 'win' || tone === 'result') return 'bg-green-500/15 text-green-400';
+  if (tone === 'loss') return 'bg-red-500/15 text-red-400';
+  if (tone === 'reward') return 'bg-yellow-400/15 text-yellow-300';
+  if (tone === 'settling') return 'bg-amber-500/15 text-amber-300';
+  return 'bg-primary/15 text-primary';
+}
+
+function compactWhitespace(value?: string | null) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function truncateTrollboxText(value: string, maxLength = 112) {
+  const text = compactWhitespace(value);
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+
+function extractAlertMetric(text: string, label: string) {
+  const match = text.match(new RegExp(`${label}:\\s*([^\\s]+(?:\\/100)?)`, 'i'));
+  return match?.[1]?.trim() || null;
+}
+
+function compactAlertMessage(message: string) {
+  if (!/BANTAH ALERT|This token is on watch|Rug Score/i.test(message)) return null;
+
+  const chain = message.match(/token\s+on\s+([A-Za-z0-9 ]+)/i)?.[1]?.trim() || 'Token';
+  const price = extractAlertMetric(message, 'Price');
+  const liquidity = extractAlertMetric(message, 'Liquidity');
+  const rug = extractAlertMetric(message, 'Rug Score') || extractAlertMetric(message, 'Rug score');
+  const momentum = extractAlertMetric(message, 'Momentum');
+  const parts = [`${chain} watch`];
+
+  if (price && price.toLowerCase() !== 'n/a') parts.push(`Price ${price}`);
+  if (liquidity && liquidity !== '$0') parts.push(`Liq ${liquidity}`);
+  if (rug) parts.push(`Rug ${rug}`);
+  if (momentum) parts.push(`Mom ${momentum}`);
+
+  return parts.join(' | ');
+}
+
+function compactTrollboxMessage(message?: string | null, maxLength = 112) {
+  const text = compactWhitespace(message);
+  if (!text) return '';
+  return truncateTrollboxText(compactAlertMessage(text) || text, maxLength);
+}
+
+function compactTrollboxUser(user?: string | null, fallback = 'BOTA') {
+  const text = compactWhitespace(user);
+  if (!text) return fallback;
+  if (/BantahBro Official/i.test(text)) return 'BOTA Alerts';
+  return text.replace(/BantahBro/gi, 'BOTA');
+}
+
+function compactTrollboxMeta(meta?: string | null) {
+  const text = compactWhitespace(meta);
+  if (!text) return undefined;
+  return truncateTrollboxText(text.replace(/BantahBro/gi, 'BOTA'), 34);
+}
+
+function buildBattleEventMessage(event: AgentBattleFeed['battles'][number]['events'][number]) {
+  const label = compactWhitespace(event.metricLabel).toLowerCase();
+  const metric = compactWhitespace(event.metricValue);
+  const message = compactWhitespace(event.message);
+
+  if (metric) {
+    if (label.includes('liquidity')) return `${metric} liquidity`;
+    if (label.includes('volume')) return `${metric} 24H volume`;
+    if (label.includes('move')) return `${metric} 24H move`;
+    if (label.includes('confidence')) return `${metric} gap; can flip`;
+    if (label.includes('buy')) {
+      const sells = message.match(/vs\s+([$\w.,]+)\s+sells/i)?.[1];
+      return sells ? `${metric} buys vs ${sells} sells` : `${metric} buys`;
+    }
+
+    if (message.startsWith(metric) || message.includes(metric)) {
+      return compactTrollboxMessage(message, 96);
+    }
+    return compactTrollboxMessage(`${metric} ${message}`, 96);
+  }
+
+  return compactTrollboxMessage(message, 96);
+}
+
+function battleEventStatusIcon(event: AgentBattleFeed['battles'][number]['events'][number]): DesktopTrollboxItem['statusIcon'] {
+  const label = compactWhitespace(event.metricLabel).toLowerCase();
+  const message = compactWhitespace(event.message).toLowerCase();
+  if (event.severity === 'danger' || label.includes('confidence') || message.includes('trailing') || message.includes('lost')) {
+    return '🔴';
+  }
+  return '🟢';
+}
+
+function battleEventAvatarUrl(
+  event: AgentBattleFeed['battles'][number]['events'][number],
+  battleSides: readonly AgentBattleSide[] = [],
+) {
+  const side = battleSides.find((candidate) => candidate.id === event.sideId) ||
+    battleSides.find((candidate) => candidate.agentName === event.agentName);
+  return arenaAgentAvatar(side ? `${side.agentName}:${side.id}` : `${event.agentName}:${event.sideId || event.id}`);
+}
+
+function battleActionLabel(mode: BattleExperienceMode) {
+  return mode === 'challenge' ? 'BATTLE' : 'ARENA';
+}
+
+function leadingBattleSides(battle?: AgentBattle | null) {
+  if (!battle?.sides?.length) return null;
+  const winner =
+    battle.sides.find((side) => side.id === battle.leadingSideId) ||
+    [...battle.sides].sort((left, right) => right.confidence - left.confidence)[0];
+  const loser = battle.sides.find((side) => side.id !== winner.id) || null;
+  if (!winner || !loser) return null;
+  return { winner, loser };
+}
+
+function buildBattleOutcomeItem(
+  battle: AgentBattle | null | undefined,
+  mode: BattleExperienceMode,
+  finalResult: boolean,
+  createdAt?: string,
+): DesktopTrollboxItem | null {
+  const sides = leadingBattleSides(battle);
+  if (!battle || !sides) return null;
+
+  const { winner, loser } = sides;
+  const layerLabel = battleActionLabel(mode);
+  return {
+    id: `${finalResult ? 'result' : 'live-state'}-${battle.id}`,
+    createdAt: createdAt || (finalResult ? battle.endsAt : battle.updatedAt),
+    sourceLabel: finalResult ? 'RESULT' : layerLabel,
+    sourceClassName: actionSourceColor(finalResult ? 'result' : 'live'),
+    avatarUrl: arenaAgentAvatar(`${winner.agentName}:${winner.id}`),
+    statusIcon: '🟢',
+    statusLabel: finalResult ? 'win' : 'leading',
+    user: finalResult ? `${winner.agentName} result` : `${winner.agentName} live`,
+    message: finalResult
+      ? `${winner.agentName} won; 🔴 ${loser.agentName} lost.`
+      : `${winner.agentName} leads ${winner.confidence}-${loser.confidence}; 🔴 ${loser.agentName} trails.`,
+    meta: finalResult ? truncateTrollboxText(battle.title, 34) : 'live state',
+  };
+}
+
+function buildBattleSlipActionItems(positions: AgentBattleP2PHistoryPosition[]): DesktopTrollboxItem[] {
+  return positions
+    .filter((position) =>
+      position.resultStatus === 'won' ||
+      position.resultStatus === 'lost' ||
+      position.resultStatus === 'awaiting_settlement' ||
+      position.resultStatus === 'unmatched',
+    )
+    .slice(0, 4)
+    .map((position) => {
+      const isWin = position.resultStatus === 'won';
+      const isLoss = position.resultStatus === 'lost';
+      const statusLabel = battleSlipStatusLabel(position.resultStatus);
+      const amountLabel =
+        position.earnedAmount != null && position.earnedAmount > 0
+          ? `${formatTokenAmount(position.earnedAmount, position.escrowTokenSymbol || position.stakeCurrency)} earned`
+          : position.stakeAmount > 0
+            ? `${formatTokenAmount(position.stakeAmount, position.escrowTokenSymbol || position.stakeCurrency)} stake`
+            : null;
+
+      return {
+        id: `slip-${position.id}-${position.resultStatus}`,
+        createdAt: position.settledAt || position.updatedAt,
+        sourceLabel: isWin ? 'WIN' : isLoss ? 'LOSS' : 'SLIP',
+        sourceClassName: actionSourceColor(isWin ? 'win' : isLoss ? 'loss' : 'settling'),
+        statusIcon: isWin ? '🟢' : isLoss ? '🔴' : null,
+        statusLabel: isWin ? 'win' : isLoss ? 'loss' : null,
+        user: 'Your battle slip',
+        message: `${position.sideLabel} ${statusLabel.toLowerCase()}.`,
+        meta: amountLabel || truncateTrollboxText(position.battleTitle, 34),
+      };
+    });
+}
+
+function dedupeTrollboxItems(items: DesktopTrollboxItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function buildDesktopTrollboxItems(
+  messages: TrollboxMessage[],
+  events: AgentBattleFeed['battles'][number]['events'],
+  feedItems: SidebarFeedItem[],
+  battleSides: readonly AgentBattleSide[] = [],
+  actionItems: DesktopTrollboxItem[] = [],
+): DesktopTrollboxItem[] {
+  const chatItems = messages.map((message) => ({
+    id: `chat-${message.id}`,
+    createdAt: message.createdAt,
+    sourceLabel: sourceLabel(message.source),
+    sourceClassName: sourceColor(message.source),
+    user: compactTrollboxUser(message.user),
+    message: compactTrollboxMessage(message.message, 112),
+    meta: compactTrollboxMeta(message.handle),
+  }));
+
+  const battleItems = events.slice(-8).map((event) => ({
+    id: `event-${event.id}`,
+    createdAt: event.time,
+    sourceLabel: 'ARENA',
+    sourceClassName: eventSourceColor(event.severity),
+    avatarUrl: battleEventAvatarUrl(event, battleSides),
+    statusIcon: battleEventStatusIcon(event),
+    statusLabel: event.severity === 'danger' ? 'loss or pressure' : 'hit or win',
+    user: event.agentName || 'Arena',
+    message: buildBattleEventMessage(event),
+    meta: compactTrollboxMeta(event.metricLabel),
+  }));
+
+  const syncedFeedItems = feedItems.slice(-14).map((item) => ({
+    id: `feed-${item.id}`,
+    createdAt: item.timestamp,
+    sourceLabel: feedSourceLabel(item.source),
+    sourceClassName: feedSourceColor(item.source),
+    user: compactTrollboxUser(item.user),
+    message: compactTrollboxMessage(item.content, 112),
+    meta: compactTrollboxMeta(item.handle || item.market),
+  }));
+
+  const importantActionItems = dedupeTrollboxItems(actionItems).slice(-10);
+
+  return [...importantActionItems, ...battleItems, ...syncedFeedItems, ...chatItems]
+    .filter((item) => item.message)
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+    .slice(-80);
 }
 
 function BattleSideCard({ side, index, isLeading }: { side: AgentBattleSide; index: number; isLeading: boolean }) {
@@ -521,10 +950,9 @@ function BattleModeToggle({
           : 'border-border bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground'
       }`}
       aria-pressed={enabled}
-      title="Toggle the visual battle simulation. Betting and market data stay live."
+      title="Toggle battle view."
     >
       <span className={enabled ? 'text-primary' : 'text-muted-foreground'}>⚔</span>
-      Battle Mode
       <span className="font-mono">{enabled ? 'ON' : 'OFF'}</span>
     </button>
   );
@@ -533,6 +961,11 @@ function BattleModeToggle({
 function AgentBattleArenaHero({ battle, left, right }: { battle: AgentBattleFeed['battles'][number]; left: AgentBattleSide; right: AgentBattleSide }) {
   const leftBuyPressure = buyPressureUsd(left, 'm5');
   const rightBuyPressure = buyPressureUsd(right, 'm5');
+  const { timeRemainingSeconds, isExpired, durationLabel } = useBattleClock({
+    startsAt: battle.startsAt,
+    endsAt: battle.endsAt,
+    fallbackSeconds: battle.timeRemainingSeconds,
+  });
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
@@ -550,8 +983,8 @@ function AgentBattleArenaHero({ battle, left, right }: { battle: AgentBattleFeed
             </div>
           </div>
           <div className="rounded-2xl border border-primary/40 bg-background/90 px-2 py-1 text-center shadow-[0_0_24px_rgba(124,58,237,.25)]">
-            <div className="font-mono text-2xl font-black leading-none text-foreground md:text-4xl">{formatDuration(battle.timeRemainingSeconds)}</div>
-            <div className="mt-1 text-[9px] font-black uppercase text-muted-foreground">5 min war</div>
+            <div className="font-mono text-2xl font-black leading-none text-foreground md:text-4xl">{formatDuration(timeRemainingSeconds)}</div>
+            <div className="mt-1 text-[9px] font-black uppercase text-muted-foreground">{isExpired ? 'expired' : `${durationLabel} war`}</div>
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -570,7 +1003,7 @@ function AgentBattleArenaHero({ battle, left, right }: { battle: AgentBattleFeed
       <div className="relative h-[22rem] overflow-hidden bg-[radial-gradient(circle_at_50%_35%,#68c4ff_0%,#2883d4_35%,#0d3158_62%,#050b16_100%)]">
         <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-4">
           <div className="rounded-xl border border-white/15 bg-black/55 px-3 py-2 text-xs font-black uppercase text-white shadow backdrop-blur-md">
-            <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,.85)]" /> Live Arena
+            <span className={`mr-1.5 inline-block h-2.5 w-2.5 rounded-full ${isExpired ? 'bg-slate-400 shadow-[0_0_10px_rgba(148,163,184,.65)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,.85)]'}`} /> {isExpired ? 'Expired Arena' : 'Live Arena'}
           </div>
           <div className="rounded-xl border border-white/15 bg-black/45 px-4 py-2 text-xs font-black text-white shadow backdrop-blur-md">
             <Eye size={14} className="mr-1.5 inline" /> {formatCompactNumber(battle.spectators)} watching
@@ -747,88 +1180,78 @@ function ChooseSidePanel({
   const selectedTone = selectedIsLeft ? 'text-green-300' : 'text-red-300';
 
   return (
-    <div className="flex h-full min-h-[13.75rem] flex-col rounded-md border border-border bg-card/95 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="rounded-md border border-primary/20 bg-primary/10 px-3 py-2 text-center text-sm font-black uppercase leading-tight text-foreground whitespace-normal">
+    <div className="flex h-full min-h-[11rem] flex-col rounded-md border border-border bg-card/95 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="rounded-md border border-primary/20 bg-primary/10 px-2 py-1.5 text-center text-[11px] font-black uppercase leading-tight text-foreground whitespace-normal">
         {battleMarketTitle(left)}
       </div>
-      <div className="mt-2 flex flex-col items-center gap-1 text-center">
-        <div className="text-[11px] font-black uppercase tracking-[0.16em] text-foreground">Choose Your Side</div>
-        <div className="rounded bg-muted px-2 py-0.5 text-[10px] font-black uppercase text-muted-foreground">Stake ref: 100 BXBT</div>
+      <div className="mt-1.5 flex flex-col items-center gap-0.5 text-center">
+        <div className="text-[10px] font-black uppercase tracking-[0.14em] text-foreground">Choose Your Side</div>
+        <div className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-black uppercase text-muted-foreground">Stake ref: 100 BXBT</div>
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
+      <div className="mx-auto mt-1.5 grid w-full max-w-[16rem] grid-cols-2 gap-2">
         <button
           onClick={() => onJoin(left)}
-          className={`rounded-md border px-2 py-1.5 text-left transition active:scale-[0.99] ${
+          className={`rounded-md border px-1 py-0.5 text-left transition active:scale-[0.99] ${
             selectedIsLeft
               ? 'border-green-300/90 bg-green-600/40 shadow-[inset_0_0_22px_rgba(34,197,94,.22)]'
               : 'border-green-400/55 bg-green-600/25 hover:bg-green-600/35'
           }`}
         >
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-green-500/20 text-2xl">
+          <div className="flex items-center gap-1">
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-green-500/20 text-lg">
               <BattleTokenMark side={left} className="h-full w-full rounded-full object-cover" />
             </div>
             <div className="min-w-0">
-              <div className="text-xs font-black uppercase leading-none text-green-200">YES</div>
-              <div className="mt-0.5 truncate text-[10px] font-black uppercase text-foreground">{battleSymbol(left)}</div>
+              <div className="flex items-center gap-1 truncate text-[9px] font-black uppercase leading-none">
+                <span className="text-green-200">YES</span>
+                <span className="truncate text-foreground">{battleSymbol(left)}</span>
+                <span className="font-mono text-[8px] text-green-100">{left.confidence}%</span>
+              </div>
             </div>
-          </div>
-          <div className="mt-1.5 flex items-end justify-between gap-2">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Confidence</span>
-            <span className="font-mono text-[13px] font-black text-green-200">{left.confidence}%</span>
-          </div>
-          <div className="mt-0.5 flex items-end justify-between gap-2">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Potential win</span>
-            <span className="font-mono text-[11px] font-black text-foreground">{formatBxbt(estimatedPayout(left))}</span>
           </div>
         </button>
         <button
           onClick={() => onJoin(right)}
-          className={`rounded-md border px-2 py-1.5 text-left transition active:scale-[0.99] ${
+          className={`rounded-md border px-1 py-0.5 text-left transition active:scale-[0.99] ${
             selectedSide.id === right.id
               ? 'border-red-300/90 bg-red-600/40 shadow-[inset_0_0_22px_rgba(239,68,68,.22)]'
               : 'border-red-400/55 bg-red-600/25 hover:bg-red-600/35'
           }`}
         >
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-500/20 text-2xl">
+          <div className="flex items-center gap-1">
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-500/20 text-lg">
               <BattleTokenMark side={right} className="h-full w-full rounded-full object-cover" />
             </div>
             <div className="min-w-0">
-              <div className="text-xs font-black uppercase leading-none text-red-200">NO</div>
-              <div className="mt-0.5 truncate text-[10px] font-black uppercase text-foreground">{battleSymbol(right)}</div>
+              <div className="flex items-center gap-1 truncate text-[9px] font-black uppercase leading-none">
+                <span className="text-red-200">NO</span>
+                <span className="truncate text-foreground">{battleSymbol(right)}</span>
+                <span className="font-mono text-[8px] text-red-100">{right.confidence}%</span>
+              </div>
             </div>
-          </div>
-          <div className="mt-1.5 flex items-end justify-between gap-2">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Confidence</span>
-            <span className="font-mono text-[13px] font-black text-red-200">{right.confidence}%</span>
-          </div>
-          <div className="mt-0.5 flex items-end justify-between gap-2">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Potential win</span>
-            <span className="font-mono text-[11px] font-black text-foreground">{formatBxbt(estimatedPayout(right))}</span>
           </div>
         </button>
       </div>
-      <div className="mt-2 rounded-md bg-muted/40 px-2 py-1.5">
+      <div className="mt-1.5 rounded-md bg-muted/40 px-2 py-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] font-black uppercase text-muted-foreground">Your pick</span>
-          <span className={`truncate text-xs font-black uppercase ${selectedTone}`}>
+          <span className="text-[9px] font-black uppercase text-muted-foreground">Your pick</span>
+          <span className={`truncate text-[10px] font-black uppercase ${selectedTone}`}>
             {selectedIsLeft ? 'YES' : 'NO'} · {battleSymbol(selectedSide)}
           </span>
         </div>
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-black uppercase text-muted-foreground">Est. payout</span>
-          <span className="font-mono text-sm font-black text-primary">{formatBxbt(estimatedPayout(selectedSide))}</span>
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <span className="text-[9px] font-black uppercase text-muted-foreground">Est. payout</span>
+          <span className="font-mono text-[11px] font-black text-primary">{formatBxbt(estimatedPayout(selectedSide))}</span>
         </div>
       </div>
-      <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2">
-        <div className="min-w-0 text-xs text-muted-foreground">
+      <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-1.5">
+        <div className="min-w-0 text-[10px] text-muted-foreground">
           Prediction ticket
         </div>
         <button
           onClick={() => onJoin(selectedSide)}
-          className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-black text-primary-foreground hover:opacity-90 active:scale-[0.98]"
+          className="shrink-0 rounded-md bg-primary px-2 py-1 text-[10px] font-black text-primary-foreground hover:opacity-90 active:scale-[0.98]"
         >
           Continue
         </button>
@@ -844,12 +1267,7 @@ function DesktopBattleTabs({
   right,
   selectedSide,
   events,
-  quickTradeSideIndex,
-  quickTradeAmount,
   onJoinSide,
-  onStakeSide,
-  onQuickTradeSideChange,
-  onQuickTradeAmountChange,
 }: {
   activeTab: DesktopBattleTab;
   onTabChange: (tab: DesktopBattleTab) => void;
@@ -857,19 +1275,13 @@ function DesktopBattleTabs({
   right: AgentBattleSide;
   selectedSide: AgentBattleSide;
   events: AgentBattleFeed['battles'][number]['events'];
-  quickTradeSideIndex: 0 | 1;
-  quickTradeAmount: string;
   onJoinSide: (side: AgentBattleSide) => void;
-  onStakeSide: (side: AgentBattleSide, amount: string) => void;
-  onQuickTradeSideChange: (index: 0 | 1) => void;
-  onQuickTradeAmountChange: (value: string) => void;
 }) {
   const tabs: Array<{ id: DesktopBattleTab; label: string }> = [
     { id: 'side', label: 'Predict' },
     { id: 'charts', label: 'Charts' },
     { id: 'stats', label: 'Stats' },
     { id: 'feed', label: 'Battle Feed' },
-    { id: 'trade', label: 'Quick Trade' },
   ];
 
   return (
@@ -899,17 +1311,6 @@ function DesktopBattleTabs({
         )}
         {activeTab === 'stats' && <BattleStatsPanel left={left} right={right} />}
         {activeTab === 'feed' && <BattleFeedPanel events={events} left={left} right={right} />}
-        {activeTab === 'trade' && (
-          <QuickTradePanel
-            left={left}
-            right={right}
-            selectedIndex={quickTradeSideIndex}
-            amount={quickTradeAmount}
-            onSelect={onQuickTradeSideChange}
-            onAmountChange={onQuickTradeAmountChange}
-            onStakeSide={onStakeSide}
-          />
-        )}
         {activeTab === 'side' && (
           <ChooseSidePanel
             left={left}
@@ -940,8 +1341,16 @@ function BattleFeedPanel({ events, left, right }: { events: AgentBattleFeed['bat
           return (
             <div key={item.id} className="grid grid-cols-[3.05rem_4.7rem_1fr] items-center gap-2 text-[11px]">
               <span className="font-mono text-[10px] text-muted-foreground">{formatClock(item.time).replace(/\s/g, '')}</span>
-              <span className={`truncate font-black ${item.severity === 'danger' ? 'text-red-400' : item.severity === 'hot' ? 'text-green-400' : 'text-primary'}`}>
-                {side?.emoji} {item.agentName}
+              <span className={`flex min-w-0 items-center gap-1 font-black ${item.severity === 'danger' ? 'text-red-400' : item.severity === 'hot' ? 'text-green-400' : 'text-primary'}`}>
+                {side && (
+                  <img
+                    src={arenaAgentAvatar(`${side.agentName}:${side.id}`)}
+                    alt=""
+                    className="h-4 w-4 shrink-0 rounded-full object-cover"
+                    loading="lazy"
+                  />
+                )}
+                <span className="truncate">{item.agentName}</span>
               </span>
               <span className="truncate text-muted-foreground">
                 {item.message}
@@ -1217,7 +1626,7 @@ function MobileTradeDeskPanel({
           <DialogHeader className="text-left">
             <DialogTitle className="text-base">Prepare P2P stake</DialogTitle>
             <DialogDescription className="text-xs">
-              BantahBro will save this stake ticket to the current 5-minute battle round.
+              BOTA will save this stake ticket to the current 5-minute battle round.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-xl border border-border bg-background p-3 text-xs">
@@ -1333,11 +1742,13 @@ function MobileBattlePanels({
 }
 
 function MobileBattleHeader({
+  battle,
   left,
   right,
   spectators,
   onBack,
 }: {
+  battle: AgentBattleFeed['battles'][number];
   left: AgentBattleSide;
   right: AgentBattleSide;
   spectators: number;
@@ -1345,6 +1756,11 @@ function MobileBattleHeader({
 }) {
   const { toast } = useToast();
   const marketCap = battleMarketCap(left, right);
+  const { isExpired } = useBattleClock({
+    startsAt: battle.startsAt,
+    endsAt: battle.endsAt,
+    fallbackSeconds: battle.timeRemainingSeconds,
+  });
 
   return (
     <div className="shrink-0 border-b border-border bg-background/95 px-2.5 py-1.5 text-foreground backdrop-blur-xl">
@@ -1367,9 +1783,9 @@ function MobileBattleHeader({
               </span>
             )}
           </div>
-          <div className="mt-[-2px] flex items-center justify-center gap-1 text-[8px] font-black uppercase leading-none text-green-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,.85)]" />
-            Live Arena
+          <div className={`mt-[-2px] flex items-center justify-center gap-1 text-[8px] font-black uppercase leading-none ${isExpired ? 'text-muted-foreground' : 'text-green-400'}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${isExpired ? 'bg-slate-400 shadow-[0_0_8px_rgba(148,163,184,.65)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,.85)]'}`} />
+            {isExpired ? 'Expired Arena' : 'Live Arena'}
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -1394,6 +1810,12 @@ function MobileBattleHeader({
 }
 
 function MobileScoreStrip({ battle, left, right }: { battle: AgentBattleFeed['battles'][number]; left: AgentBattleSide; right: AgentBattleSide }) {
+  const { timeRemainingSeconds } = useBattleClock({
+    startsAt: battle.startsAt,
+    endsAt: battle.endsAt,
+    fallbackSeconds: battle.timeRemainingSeconds,
+  });
+
   return (
     <div className="mx-2 mt-0.5 shrink-0 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm">
       <div className="grid grid-cols-[1fr_3.45rem_1fr] items-center gap-1 px-2 py-1">
@@ -1406,7 +1828,7 @@ function MobileScoreStrip({ battle, left, right }: { battle: AgentBattleFeed['ba
           </div>
         </div>
         <div className="rounded-lg border border-primary/35 bg-muted px-1 py-px text-center font-mono text-base font-black leading-tight text-foreground">
-          {formatDuration(battle.timeRemainingSeconds)}
+          {formatDuration(timeRemainingSeconds)}
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-1">
@@ -1430,6 +1852,11 @@ function MobileScoreStrip({ battle, left, right }: { battle: AgentBattleFeed['ba
 }
 
 function MobileArenaStage({ battle, left, right }: { battle: AgentBattleFeed['battles'][number]; left: AgentBattleSide; right: AgentBattleSide }) {
+  const { isExpired } = useBattleClock({
+    startsAt: battle.startsAt,
+    endsAt: battle.endsAt,
+    fallbackSeconds: battle.timeRemainingSeconds,
+  });
   const crowd = ['🐸', '🐶', '🐱', '🐺', '🦊', '🐻', '🐼', '🐵', '🐹', '🐸', '🐶', '🐱'];
 
   return (
@@ -1437,7 +1864,7 @@ function MobileArenaStage({ battle, left, right }: { battle: AgentBattleFeed['ba
       <div className="relative h-[29vh] min-h-[12rem] max-h-[14.25rem] overflow-hidden bg-[radial-gradient(circle_at_50%_38%,#62c4ff_0%,#247ec7_36%,#0b3159_70%,#04101d_100%)]">
         <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-1.5 p-2">
           <div className="rounded-xl border border-border bg-background/85 px-2 py-1 text-[9px] font-black uppercase text-foreground shadow-sm backdrop-blur-md">
-            <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500" /> Live Arena
+            <span className={`mr-1 inline-block h-2 w-2 rounded-full ${isExpired ? 'bg-slate-400' : 'bg-red-500'}`} /> {isExpired ? 'Expired Arena' : 'Live Arena'}
           </div>
           <div className="rounded-xl border border-border bg-background/85 px-2 py-1 text-[9px] font-bold text-foreground shadow-sm backdrop-blur-md">
             <Eye size={11} className="mr-1 inline inline-block" /> {formatCompactNumber(battle.spectators)}
@@ -1857,66 +2284,56 @@ function MobileChooseSideTab({
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-xl border border-border bg-muted/25 p-2">
-      <div className="mb-1 rounded-lg border border-primary/20 bg-primary/10 px-2 py-1.5 text-center text-[10px] font-black uppercase leading-tight text-foreground whitespace-normal">
+      <div className="mb-1 rounded-lg border border-primary/20 bg-primary/10 px-2 py-1 text-center text-[9px] font-black uppercase leading-tight text-foreground whitespace-normal">
         {battleMarketTitle(left)}
       </div>
-      <div className="text-center text-[10px] font-black uppercase tracking-[0.14em] text-foreground">CHOOSE YOUR SIDE</div>
+      <div className="text-center text-[9px] font-black uppercase tracking-[0.12em] text-foreground">CHOOSE YOUR SIDE</div>
 
-      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-2 gap-1.5">
+      <div className="mx-auto mt-1 grid w-full max-w-[16rem] grid-cols-2 gap-2">
         <button
           onClick={() => onJoin(left)}
-          className={`flex min-h-0 flex-col justify-center rounded-xl border px-2 py-1.5 text-left transition active:scale-[0.99] ${
+          className={`flex items-center gap-1 rounded-md border px-1 py-0.5 text-left transition active:scale-[0.99] ${
             selectedIsLeft
               ? 'border-green-400/70 bg-green-500/25 shadow-[inset_0_0_20px_rgba(34,197,94,.18)]'
               : 'border-green-500/25 bg-green-500/10 hover:bg-green-500/15'
           }`}
         >
-          <span className="flex items-center gap-1.5">
-            <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full text-xl leading-none">
-              <BattleTokenMark side={left} className="h-full w-full rounded-full object-cover" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-xs font-black uppercase leading-none text-green-400">YES</span>
-              <span className="mt-0.5 block truncate text-[9px] font-black uppercase text-foreground">{battleSymbol(left)}</span>
-            </span>
+          <span className="grid h-3.5 w-3.5 shrink-0 place-items-center overflow-hidden rounded-full text-[10px] leading-none">
+            <BattleTokenMark side={left} className="h-full w-full rounded-full object-cover" />
           </span>
-          <span className="mt-1.5 flex items-center justify-between text-[9px]">
-            <span className="font-bold uppercase text-muted-foreground">Win</span>
-            <span className="font-mono font-black text-foreground">{formatBxbt(estimatedPayout(left))}</span>
+          <span className="min-w-0 flex items-center gap-1 truncate text-[8px] font-black uppercase leading-none">
+            <span className="text-green-400">YES</span>
+            <span className="truncate text-foreground">{battleSymbol(left)}</span>
+            <span className="font-mono text-[7px] text-green-100">{left.confidence}%</span>
           </span>
         </button>
         <button
           onClick={() => onJoin(right)}
-          className={`flex min-h-0 flex-col justify-center rounded-xl border px-2 py-1.5 text-left transition active:scale-[0.99] ${
+          className={`flex items-center gap-1 rounded-md border px-1 py-0.5 text-left transition active:scale-[0.99] ${
             selectedSide.id === right.id
               ? 'border-red-400/70 bg-red-500/25 shadow-[inset_0_0_20px_rgba(239,68,68,.18)]'
               : 'border-red-500/25 bg-red-500/10 hover:bg-red-500/15'
           }`}
         >
-          <span className="flex items-center gap-1.5">
-            <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full text-xl leading-none">
-              <BattleTokenMark side={right} className="h-full w-full rounded-full object-cover" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-xs font-black uppercase leading-none text-red-400">NO</span>
-              <span className="mt-0.5 block truncate text-[9px] font-black uppercase text-foreground">{battleSymbol(right)}</span>
-            </span>
+          <span className="grid h-3.5 w-3.5 shrink-0 place-items-center overflow-hidden rounded-full text-[10px] leading-none">
+            <BattleTokenMark side={right} className="h-full w-full rounded-full object-cover" />
           </span>
-          <span className="mt-1.5 flex items-center justify-between text-[9px]">
-            <span className="font-bold uppercase text-muted-foreground">Win</span>
-            <span className="font-mono font-black text-foreground">{formatBxbt(estimatedPayout(right))}</span>
+          <span className="min-w-0 flex items-center gap-1 truncate text-[8px] font-black uppercase leading-none">
+            <span className="text-red-400">NO</span>
+            <span className="truncate text-foreground">{battleSymbol(right)}</span>
+            <span className="font-mono text-[7px] text-red-100">{right.confidence}%</span>
           </span>
         </button>
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-border pt-1.5">
-        <div className="min-w-0 truncate text-[10px] font-bold text-muted-foreground">
+      <div className="mt-1 flex items-center justify-between gap-2 border-t border-border pt-1">
+        <div className="min-w-0 truncate text-[9px] font-bold text-muted-foreground">
           Pick: <span className={selectedIsLeft ? 'text-green-400' : 'text-red-400'}>{selectedIsLeft ? 'YES' : 'NO'} · {battleSymbol(selectedSide)}</span>
           <span className="ml-1 text-primary">≈ {formatBxbt(estimatedPayout(selectedSide))}</span>
         </div>
         <button
           onClick={() => onJoin(selectedSide)}
-          className="shrink-0 rounded-lg bg-primary px-2 py-1 text-[9px] font-black text-primary-foreground active:scale-[0.98]"
+          className="shrink-0 rounded-lg bg-primary px-1.5 py-0.5 text-[8px] font-black text-primary-foreground active:scale-[0.98]"
         >
           Continue
         </button>
@@ -1969,9 +2386,9 @@ function MobileCompactActions({
 
 function MobileBattleMenuBar({ onNavigate }: { onNavigate?: (section: AppSection) => void }) {
   const items: Array<{ section: AppSection; label: string; icon: string }> = [
-    { section: 'dashboard', label: 'Markets', icon: '📊' },
+    { section: 'challenge', label: 'Challenge', icon: '📊' },
     { section: 'agents', label: 'Agents', icon: '🤖' },
-    { section: 'battles', label: 'Battle', icon: '⚔️' },
+    { section: 'battles', label: 'Arena', icon: '⚔️' },
     { section: 'chat', label: 'Chat', icon: '💬' },
     { section: 'launcher', label: 'Launcher', icon: '🚀' },
   ];
@@ -2008,15 +2425,17 @@ function MobileSocialPanel({
   right,
   events,
   messages,
+  trollboxItems,
+  positions,
+  currentRoundId,
+  onchainConfig,
+  isAuthenticated,
+  authLoading,
   selectedSide,
-  quickTradeSideIndex,
-  quickTradeAmount,
   chatInput,
   isSendingChat,
   onJoinSide,
-  onStakeSide,
-  onQuickTradeSideChange,
-  onQuickTradeAmountChange,
+  onLogin,
   onChatInputChange,
   onSubmitChat,
 }: {
@@ -2026,15 +2445,17 @@ function MobileSocialPanel({
   right: AgentBattleSide;
   events: AgentBattleFeed['battles'][number]['events'];
   messages: TrollboxMessage[];
+  trollboxItems: DesktopTrollboxItem[];
+  positions: AgentBattleP2PHistoryPosition[];
+  currentRoundId?: string | null;
+  onchainConfig?: OnchainRuntimeConfig | null;
+  isAuthenticated: boolean;
+  authLoading: boolean;
   selectedSide: AgentBattleSide;
-  quickTradeSideIndex: 0 | 1;
-  quickTradeAmount: string;
   chatInput: string;
   isSendingChat: boolean;
   onJoinSide: (side: AgentBattleSide) => void;
-  onStakeSide: (side: AgentBattleSide, amount: string) => void;
-  onQuickTradeSideChange: (index: 0 | 1) => void;
-  onQuickTradeAmountChange: (value: string) => void;
+  onLogin: () => void;
   onChatInputChange: (value: string) => void;
   onSubmitChat: (event: FormEvent) => void;
 }) {
@@ -2042,12 +2463,13 @@ function MobileSocialPanel({
     { id: 'side', label: 'Predict' },
     { id: 'trollbox', label: 'Trollbox' },
     { id: 'events', label: 'Events' },
-    { id: 'quick', label: 'Quick Trade' },
     { id: 'charts', label: 'Charts' },
     { id: 'stats', label: 'Stats' },
+    { id: 'slips', label: 'Slips' },
     { id: 'top', label: 'Top Bettors' },
   ];
   const displayMessages = messages.slice(-7);
+  const displayTrollboxItems = trollboxItems.length > 0 ? trollboxItems.slice(-18) : [];
 
   return (
     <div className="mx-2 mt-1 flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-sm">
@@ -2067,7 +2489,36 @@ function MobileSocialPanel({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
         {activeTab === 'trollbox' && (
           <div className="no-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {displayMessages.length > 0 ? displayMessages.map((message) => (
+            {displayTrollboxItems.length > 0 ? displayTrollboxItems.map((item) => (
+              <div key={item.id} className="grid grid-cols-[1.8rem_1fr_auto] gap-2">
+                {item.avatarUrl ? (
+                  <img
+                    src={item.avatarUrl}
+                    alt={`${item.user} avatar`}
+                    title={item.sourceLabel}
+                    className="h-7 w-7 rounded-full border border-border bg-muted object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className={`grid h-7 w-7 place-items-center rounded-full text-[9px] font-black ${item.sourceClassName}`}>
+                    {item.sourceLabel}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-black text-foreground">{item.user}</div>
+                  <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">
+                    {item.statusIcon && (
+                      <span className="mr-1" title={item.statusLabel || undefined}>
+                        {item.statusIcon}
+                      </span>
+                    )}
+                    {item.message}
+                  </div>
+                  {item.meta && <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">{item.meta}</div>}
+                </div>
+                <div className="text-[10px] text-muted-foreground">{formatAgo(item.createdAt)}</div>
+              </div>
+            )) : displayMessages.length > 0 ? displayMessages.map((message) => (
               <div key={message.id} className="grid grid-cols-[1.8rem_1fr_auto] gap-2">
                 <div className="grid h-7 w-7 place-items-center rounded-full bg-muted text-base">
                   {message.source === 'telegram' ? '✈️' : message.source === 'system' ? '🤖' : '🐸'}
@@ -2082,7 +2533,7 @@ function MobileSocialPanel({
               </div>
             )) : (
               <div className="rounded-2xl border border-border bg-muted/35 p-3 text-center text-xs text-muted-foreground">
-                Trollbox is quiet. Start the chant.
+                TrollBox is quiet. Chat, Telegram, and Arena updates will appear here.
               </div>
             )}
           </div>
@@ -2116,18 +2567,6 @@ function MobileSocialPanel({
           />
         )}
 
-        {activeTab === 'quick' && (
-          <MobileQuickTradeTab
-            left={left}
-            right={right}
-            selectedIndex={quickTradeSideIndex}
-            amount={quickTradeAmount}
-            onSelect={onQuickTradeSideChange}
-            onAmountChange={onQuickTradeAmountChange}
-            onStakeSide={onStakeSide}
-          />
-        )}
-
         {activeTab === 'charts' && (
           <div className="no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <BattleChartPanel side={left} index={0} />
@@ -2147,10 +2586,22 @@ function MobileSocialPanel({
           </div>
         )}
 
+        {activeTab === 'slips' && (
+          <BattleSlipsPanel
+            positions={positions}
+            currentRoundId={currentRoundId}
+            onchainConfig={onchainConfig}
+            isAuthenticated={isAuthenticated}
+            authLoading={authLoading}
+            onLogin={onLogin}
+            compact
+          />
+        )}
+
         {activeTab === 'top' && (
           <div className="grid grid-cols-2 gap-1.5">
-            <MobileMetricCard label={`${battleSymbol(left)} Pool Side`} value={`${left.confidence}%`} tone="text-green-400" emoji={left.emoji} />
-            <MobileMetricCard label={`${battleSymbol(right)} Pool Side`} value={`${right.confidence}%`} tone="text-red-400" emoji={right.emoji} />
+            <MobileMetricCard label={`${battleSymbol(left)} Pool Side`} value={`${left.confidence}%`} tone="text-green-400" />
+            <MobileMetricCard label={`${battleSymbol(right)} Pool Side`} value={`${right.confidence}%`} tone="text-red-400" />
             <div className="col-span-2 rounded-2xl border border-border bg-muted/35 p-2 text-[11px] text-muted-foreground">
               Escrow bettor leaderboard will fill from real placed bets once battle staking is connected.
             </div>
@@ -2183,15 +2634,21 @@ function MobileAgentBattleView({
   left,
   right,
   battleModeEnabled,
+  arenaPreview,
+  watchReward,
   trollboxMessages,
+  trollboxItems,
   trollboxUserCount,
-  quickTradeSideIndex,
+  positions,
+  currentRoundId,
+  onchainConfig,
+  isAuthenticated,
+  authLoading,
   quickTradeAmount,
   chatInput,
   isSendingChat,
-  onQuickTradeSideChange,
-  onQuickTradeAmountChange,
   onStakeSide,
+  onLogin,
   onChatInputChange,
   onSubmitChat,
   onNavigate,
@@ -2200,23 +2657,35 @@ function MobileAgentBattleView({
   left: AgentBattleSide;
   right: AgentBattleSide;
   battleModeEnabled: boolean;
+  arenaPreview: ArenaPreviewState;
+  watchReward: BattleSpectatorRewardHudState;
   trollboxMessages: TrollboxMessage[];
+  trollboxItems: DesktopTrollboxItem[];
   trollboxUserCount: number;
-  quickTradeSideIndex: 0 | 1;
+  positions: AgentBattleP2PHistoryPosition[];
+  currentRoundId?: string | null;
+  onchainConfig?: OnchainRuntimeConfig | null;
+  isAuthenticated: boolean;
+  authLoading: boolean;
   quickTradeAmount: string;
   chatInput: string;
   isSendingChat: boolean;
-  onQuickTradeSideChange: (index: 0 | 1) => void;
-  onQuickTradeAmountChange: (value: string) => void;
   onStakeSide: (side: AgentBattleSide, amount: string) => void;
+  onLogin: () => void;
   onChatInputChange: (value: string) => void;
   onSubmitChat: (event: FormEvent) => void;
   onNavigate?: (section: AppSection) => void;
 }) {
-  const [socialTab, setSocialTab] = useState<MobileSocialTab>('side');
+  const [socialTab, setSocialTab] = useState<MobileSocialTab>(() => battleModeEnabled ? 'trollbox' : 'side');
   const [joinSide, setJoinSide] = useState<AgentBattleSide | null>(null);
   const defaultSide = left.confidence >= right.confidence ? left : right;
   const [chosenSide, setChosenSide] = useState<AgentBattleSide | null>(defaultSide);
+
+  useEffect(() => {
+    if (battleModeEnabled) {
+      setSocialTab('trollbox');
+    }
+  }, [battleModeEnabled]);
 
   const openJoinSide = (side: AgentBattleSide) => {
     setChosenSide(side);
@@ -2229,34 +2698,56 @@ function MobileAgentBattleView({
     setJoinSide(null);
   };
 
+  const socialPanel = (
+    <MobileSocialPanel
+      activeTab={socialTab}
+      onTabChange={setSocialTab}
+      left={left}
+      right={right}
+      events={battle.events}
+      messages={trollboxMessages}
+      trollboxItems={trollboxItems}
+      positions={positions}
+      currentRoundId={currentRoundId}
+      onchainConfig={onchainConfig}
+      isAuthenticated={isAuthenticated}
+      authLoading={authLoading}
+      selectedSide={chosenSide || defaultSide}
+      chatInput={chatInput}
+      isSendingChat={isSendingChat}
+      onJoinSide={openJoinSide}
+      onLogin={onLogin}
+      onChatInputChange={onChatInputChange}
+      onSubmitChat={onSubmitChat}
+    />
+  );
+
   return (
     <div className="lg:hidden flex-1 min-h-0 overflow-hidden bg-background text-foreground">
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
-        <MobileBattleHeader left={left} right={right} spectators={battle.spectators} onBack={() => onNavigate?.('dashboard')} />
+        <MobileBattleHeader battle={battle} left={left} right={right} spectators={battle.spectators} onBack={() => onNavigate?.('challenge')} />
         {battleModeEnabled && (
-          <RetroBattleArena battle={battle} compact />
+          <>
+            <FightingGameArenaEmbed
+              compact
+              battle={battle}
+              battleMode={arenaPreview.mode}
+              battleStatus={arenaPreview.status}
+              startsAtMs={arenaPreview.startsAtMs}
+              matchupLabel={arenaPreview.matchupLabel}
+              arenaLabel={arenaPreview.arenaLabel}
+              watchReward={watchReward}
+            />
+            <div className="min-h-0 flex-1 pb-1">
+              {socialPanel}
+            </div>
+          </>
         )}
-        <div className="min-h-0 flex-1">
-          <MobileSocialPanel
-            activeTab={socialTab}
-            onTabChange={setSocialTab}
-            left={left}
-            right={right}
-            events={battle.events}
-            messages={trollboxMessages}
-            selectedSide={chosenSide || defaultSide}
-            quickTradeSideIndex={quickTradeSideIndex}
-            quickTradeAmount={quickTradeAmount}
-            chatInput={chatInput}
-            isSendingChat={isSendingChat}
-            onJoinSide={openJoinSide}
-            onStakeSide={onStakeSide}
-            onQuickTradeSideChange={onQuickTradeSideChange}
-            onQuickTradeAmountChange={onQuickTradeAmountChange}
-            onChatInputChange={onChatInputChange}
-            onSubmitChat={onSubmitChat}
-          />
-        </div>
+        {!battleModeEnabled && (
+          <div className="min-h-0 flex-1">
+            {socialPanel}
+          </div>
+        )}
       </div>
 
       <Dialog open={Boolean(joinSide)} onOpenChange={(open) => !open && setJoinSide(null)}>
@@ -2322,6 +2813,11 @@ function AgentBattleP2PStakeDialog({
   onLogin: () => void;
   onSubmit: () => void;
 }) {
+  const { timeRemainingSeconds } = useBattleClock({
+    startsAt: battle.startsAt,
+    endsAt: battle.endsAt,
+    fallbackSeconds: battle.timeRemainingSeconds,
+  });
   const poolSide = side ? pool?.sides.find((item) => item.sideId === side.id) : null;
   const opponentPoolSide = side ? pool?.sides.find((item) => item.sideId !== side.id) : null;
   const numericAmount = Number(amount || 0);
@@ -2335,7 +2831,7 @@ function AgentBattleP2PStakeDialog({
             {side ? `P2P Stake: ${battleArmyName(side)}` : 'P2P Stake'}
           </DialogTitle>
           <DialogDescription className="text-[10px] leading-relaxed text-[#64748b] dark:text-[#999999]">
-            This uses the existing Bantah escrow contract with a battle-round escrow ID. No new BantahBro escrow contract is required.
+            This uses the existing Bantah escrow contract with a battle-round escrow ID. No new BOTA escrow contract is required.
           </DialogDescription>
         </DialogHeader>
 
@@ -2348,7 +2844,7 @@ function AgentBattleP2PStakeDialog({
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] font-black text-[#0f172a] dark:text-[#f2f2f2]">{battleMarketTitle(side)}</div>
                 <div className="mt-0.5 truncate text-[10px] text-[#64748b] dark:text-[#999999]">
-                  Round ends in {formatDuration(battle.timeRemainingSeconds)} · {side.priceDisplay}
+                  Round ends in {formatDuration(timeRemainingSeconds)} · {side.priceDisplay}
                 </div>
               </div>
             </div>
@@ -2443,16 +2939,201 @@ function LoadingBattle() {
   );
 }
 
-function EmptyBattle({ isError }: { isError: boolean }) {
+function EmptyBattle({ isError: _isError }: { isError: boolean }) {
   return (
-    <div className="flex-1 grid place-items-center bg-card border border-border rounded">
-      <div className="max-w-md text-center px-4">
-        <div className="text-sm font-bold text-foreground mb-2">
-          {isError ? 'Agent Battle engine is reconnecting' : 'Loading live Agent Battles'}
+    <div className="flex-1 flex gap-0.5 overflow-hidden">
+      <div className="flex-1 flex flex-col gap-2 p-3">
+        <Skeleton className="h-24 w-full rounded" />
+        <div className="grid grid-cols-2 gap-2">
+          <Skeleton className="h-64 rounded" />
+          <Skeleton className="h-64 rounded" />
         </div>
-        <div className="text-xs text-muted-foreground leading-relaxed">
-          Live battles come from Dexscreener-backed pairs. If this stays here, refresh once after the local server finishes warming the battle cache.
+        <Skeleton className="h-24 w-full rounded" />
+        <Skeleton className="h-48 w-full rounded" />
+      </div>
+      <div className="hidden lg:flex w-64 flex-col gap-2 p-3">
+        <Skeleton className="h-full rounded" />
+      </div>
+    </div>
+  );
+}
+
+function BattleSlipsPanel({
+  positions,
+  currentRoundId,
+  onchainConfig,
+  isAuthenticated,
+  authLoading,
+  onLogin,
+  compact = false,
+}: {
+  positions: AgentBattleP2PHistoryPosition[];
+  currentRoundId?: string | null;
+  onchainConfig?: OnchainRuntimeConfig | null;
+  isAuthenticated: boolean;
+  authLoading: boolean;
+  onLogin: () => void;
+  compact?: boolean;
+}) {
+  const visiblePositions = positions.slice(0, compact ? 6 : 10);
+  const wonCount = positions.filter((position) => position.resultStatus === 'won').length;
+  const baseCardClass = compact
+    ? 'rounded-xl border border-border bg-muted/25 p-2.5'
+    : 'rounded-2xl border border-border bg-muted/25 p-3';
+
+  if (authLoading) {
+    return (
+      <div className={`${baseCardClass} flex h-full min-h-0 items-center justify-center text-xs text-muted-foreground`}>
+        Loading battle slips...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className={`${baseCardClass} flex h-full min-h-0 flex-col items-center justify-center text-center`}>
+        <div className="text-sm font-black uppercase text-foreground">My Battle Slips</div>
+        <div className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
+          Sign in to see settled battle results, payout amounts, and onchain transaction hashes after each round expires.
         </div>
+        <button
+          type="button"
+          onClick={onLogin}
+          className="mt-3 rounded-lg bg-primary px-3 py-2 text-xs font-black uppercase text-primary-foreground transition hover:opacity-90"
+        >
+          Sign In With Privy
+        </button>
+      </div>
+    );
+  }
+
+  if (visiblePositions.length === 0) {
+    return (
+      <div className={`${baseCardClass} flex h-full min-h-0 flex-col justify-center text-center`}>
+        <div className="text-sm font-black uppercase text-foreground">My Battle Slips</div>
+        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Your locked battle tickets and settled payouts will show up here after you join a round.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${baseCardClass} flex h-full min-h-0 flex-col overflow-hidden`}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-black uppercase text-foreground">My Battle Slips</div>
+          <div className="text-[11px] text-muted-foreground">{positions.length} tracked · {wonCount} wins</div>
+        </div>
+        <div className="rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[10px] font-black uppercase text-primary">
+          Payout History
+        </div>
+      </div>
+
+      <div className="no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {visiblePositions.map((position) => {
+          const txUrl = buildExplorerTxUrl(position, onchainConfig);
+          const currentBattle = currentRoundId && position.roundId === currentRoundId;
+          const settlementSymbol = position.escrowTokenSymbol || position.stakeCurrency;
+          const payoutLabel =
+            position.earnedAmount !== null
+              ? formatTokenAmount(position.earnedAmount, settlementSymbol)
+              : null;
+
+          return (
+            <div
+              key={position.id}
+              className={`rounded-xl border px-3 py-2 ${
+                currentBattle
+                  ? 'border-primary/30 bg-primary/10'
+                  : 'border-border bg-background/70'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-black uppercase text-foreground">{position.battleTitle}</div>
+                  <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    Backed {position.sideLabel}
+                    {position.opponentSideLabel ? ` vs ${position.opponentSideLabel}` : ''}
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase ${battleSlipStatusClassName(position.resultStatus)}`}>
+                  {battleSlipStatusLabel(position.resultStatus)}
+                </span>
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded-lg bg-muted/35 px-2 py-1.5">
+                  <div className="font-black uppercase text-muted-foreground">Stake</div>
+                  <div className="mt-0.5 font-mono font-bold text-foreground">
+                    {formatTokenAmount(position.stakeAmount, position.stakeCurrency)}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-muted/35 px-2 py-1.5">
+                  <div className="font-black uppercase text-muted-foreground">Payout</div>
+                  <div className={`mt-0.5 font-mono font-bold ${
+                    position.resultStatus === 'won'
+                      ? 'text-green-400'
+                      : position.resultStatus === 'lost'
+                        ? 'text-red-400'
+                        : 'text-foreground'
+                  }`}>
+                    {payoutLabel || 'Pending'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                <span>Round ended {formatRelativeTime(position.roundEndsAt)}</span>
+                {position.settledAt && <span>Settled {formatRelativeTime(position.settledAt)}</span>}
+                {currentBattle && <span className="font-black uppercase text-primary">Current battle</span>}
+              </div>
+
+              {position.resultStatus === 'awaiting_settlement' && (
+                <div className="mt-2 text-[10px] text-amber-300">
+                  Escrow was locked. Settlement worker is still resolving the payout onchain.
+                </div>
+              )}
+              {position.resultStatus === 'unmatched' && (
+                <div className="mt-2 text-[10px] text-orange-300">
+                  This round is only partially settled right now. Your locked position still needs final pairing or admin resolution.
+                </div>
+              )}
+              {position.resultStatus === 'needs_escrow' && (
+                <div className="mt-2 text-[10px] text-slate-300">
+                  This ticket never became escrow-locked, so it is not eligible for payout settlement.
+                </div>
+              )}
+              {position.resultStatus === 'failed' && position.settlementError && (
+                <div className="mt-2 text-[10px] text-rose-300">
+                  {position.settlementError}
+                </div>
+              )}
+
+              {(txUrl || position.payoutTxHash || position.escrowTxHash) && (
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0 text-[10px] text-muted-foreground">
+                    <span className="font-black uppercase">
+                      {position.payoutTxHash ? 'Payout tx' : 'Escrow tx'}
+                    </span>
+                    <span className="ml-1 font-mono">
+                      {shortAddress(position.payoutTxHash || position.escrowTxHash || '')}
+                    </span>
+                  </div>
+                  {txUrl && (
+                    <button
+                      type="button"
+                      onClick={() => window.open(txUrl, '_blank', 'noopener,noreferrer')}
+                      className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-[10px] font-black uppercase text-foreground transition hover:bg-muted"
+                    >
+                      View Tx
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2462,7 +3143,7 @@ export default function BattlesPage({
   onNavigate,
   externalBattle = null,
   externalExecutionUrl = null,
-  externalSourceLabel = 'Agent Battle',
+  externalSourceLabel = 'Battle',
   onExternalBack,
 }: BattlesPageProps) {
   const { toast } = useToast();
@@ -2485,7 +3166,13 @@ export default function BattlesPage({
     return window.localStorage.getItem(BATTLE_MODE_STORAGE_KEY) !== 'off';
   });
   const [requestedBattleId, setRequestedBattleId] = useState<string | null>(() => readBattleIdFromUrl());
+  const [arenaPreview, setArenaPreview] = useState<ArenaPreviewState>(() => readArenaPreviewFromUrl());
+  const [stickyBattleFeed, setStickyBattleFeed] = useState<AgentBattleFeed | null>(null);
+  const [stickyRequestedBattle, setStickyRequestedBattle] = useState<AgentBattle | null>(null);
+  const [isDesktopBattleLayout, setIsDesktopBattleLayout] = useState(readIsDesktopBattleLayout);
+  const [localTrollboxActionItems, setLocalTrollboxActionItems] = useState<DesktopTrollboxItem[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const previousBattleRef = useRef<AgentBattle | null>(null);
   const isExternalBattle = Boolean(externalBattle);
 
   const { data, isLoading, isError, isFetching } = useQuery<AgentBattleFeed>({
@@ -2498,11 +3185,63 @@ export default function BattlesPage({
     placeholderData: (previousData) => previousData,
   });
 
+  useEffect(() => {
+    if (isExternalBattle) return;
+    if (!data?.battles?.length) return;
+    setStickyBattleFeed(data);
+  }, [data, isExternalBattle]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia(DESKTOP_BATTLE_MEDIA_QUERY);
+    const syncLayout = () => setIsDesktopBattleLayout(mediaQuery.matches);
+
+    syncLayout();
+    mediaQuery.addEventListener('change', syncLayout);
+    return () => mediaQuery.removeEventListener('change', syncLayout);
+  }, []);
+
+  useEffect(() => {
+    if (isExternalBattle) return;
+    if (!requestedBattleId) {
+      setStickyRequestedBattle(null);
+      return;
+    }
+    const nextStickyRequestedBattle =
+      data?.battles?.find((candidate) => candidate.id === requestedBattleId) ||
+      stickyBattleFeed?.battles?.find((candidate) => candidate.id === requestedBattleId) ||
+      null;
+    if (nextStickyRequestedBattle) {
+      setStickyRequestedBattle(nextStickyRequestedBattle);
+    }
+  }, [data?.battles, requestedBattleId, stickyBattleFeed, isExternalBattle]);
+
+  const resolvedBattleFeed = !isExternalBattle && (data?.battles?.length ? data : stickyBattleFeed);
+  const requestedBattleFromLiveFeed = requestedBattleId
+    ? data?.battles?.find((candidate) => candidate.id === requestedBattleId)
+    : null;
+  const requestedBattleFromStickyFeed = requestedBattleId
+    ? stickyBattleFeed?.battles?.find((candidate) => candidate.id === requestedBattleId)
+    : null;
+  const requestedBattleFromPinnedSnapshot =
+    requestedBattleId && stickyRequestedBattle?.id === requestedBattleId
+      ? stickyRequestedBattle
+      : null;
+
   const battle =
     externalBattle ||
     (requestedBattleId
-      ? data?.battles?.find((candidate) => candidate.id === requestedBattleId) || data?.battles?.[0]
-      : data?.battles?.[0]);
+      ? requestedBattleFromLiveFeed ||
+        requestedBattleFromPinnedSnapshot ||
+        requestedBattleFromStickyFeed ||
+        resolvedBattleFeed?.battles?.[0]
+      : resolvedBattleFeed?.battles?.[0]);
+  const { isExpired: isBattleExpired } = useBattleClock({
+    startsAt: battle?.startsAt,
+    endsAt: battle?.endsAt,
+    fallbackSeconds: battle?.timeRemainingSeconds || 0,
+  });
   const trollboxRoomId = 'agent-battle';
   const battleP2PUrl = !isExternalBattle && battle?.id
     ? `/api/bantahbro/agent-battles/${encodeURIComponent(battle.id)}/p2p/${isAuthenticated ? 'my' : 'pool'}`
@@ -2515,12 +3254,28 @@ export default function BattlesPage({
     refetchInterval: 3_000,
   });
 
+  const { data: desktopSidebarFeed } = useQuery<SidebarFeedResponse>({
+    queryKey: ['/api/bantahbro/feed', { limit: '30' }],
+    enabled: Boolean(battle),
+    staleTime: 5_000,
+    refetchInterval: 30_000,
+  });
+
   const { data: p2pPool } = useQuery<AgentBattleP2PPool>({
     queryKey: ['/api/bantahbro/agent-battles/p2p/pool', battle?.id || 'none', isAuthenticated ? 'my' : 'public'],
     queryFn: () => apiRequest('GET', battleP2PUrl),
     enabled: Boolean(battleP2PUrl) && !isExternalBattle,
     staleTime: 1_000,
     refetchInterval: 5_000,
+    retry: 1,
+  });
+
+  const { data: p2pHistoryData } = useQuery<AgentBattleP2PHistoryResponse>({
+    queryKey: ['/api/bantahbro/agent-battles/p2p/positions/my', { limit: '20' }],
+    queryFn: () => apiRequest('GET', '/api/bantahbro/agent-battles/p2p/positions/my?limit=20'),
+    enabled: isAuthenticated && !isExternalBattle,
+    staleTime: 3_000,
+    refetchInterval: 10_000,
     retry: 1,
   });
 
@@ -2539,11 +3294,53 @@ export default function BattlesPage({
   const battleEscrowChain = onchainConfig?.chains?.[String(battleEscrowChainId)];
   const battleEscrowReady =
     !isExternalBattle && onchainConfig?.contractEnabled === true && battleEscrowChain?.escrowSupportsChallengeLock === true;
+  const battleSlipHistory = p2pHistoryData?.positions || [];
+  const handleBattleWatchRewardAward = useCallback(
+    (points: number) => {
+      const createdAt = new Date().toISOString();
+      const battleTitle = battle?.title || 'this Arena battle';
+      setLocalTrollboxActionItems((current) =>
+        dedupeTrollboxItems([
+          ...current,
+          {
+            id: `reward-${battle?.id || 'arena'}-${createdAt}`,
+            createdAt,
+            sourceLabel: 'REWARD',
+            sourceClassName: actionSourceColor('reward'),
+            statusIcon: '🟢',
+            statusLabel: 'reward',
+            user: 'BantCredit',
+            message: `+${points} BantCredit watch reward.`,
+            meta: truncateTrollboxText(battleTitle, 34),
+          },
+        ]).slice(-12),
+      );
+      tanstackQueryClient.invalidateQueries({ queryKey: ['/api/bantahbro/stats/bantcredit'] });
+      tanstackQueryClient.invalidateQueries({ queryKey: ['/api/wallet/balance'] });
+      tanstackQueryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      toast({
+        title: 'BantCredit earned',
+        description: `+${points} BantCredit for watching this Arena battle.`,
+      });
+    },
+    [battle?.id, battle?.title, tanstackQueryClient, toast],
+  );
+  const battleWatchReward = useBattleSpectatorRewards({
+    battleId: battle?.id,
+    enabled: Boolean(battleModeEnabled && battle),
+    isAuthenticated,
+    battleMode: arenaPreview.mode,
+    battleStatus: isBattleExpired ? 'cancelled' : arenaPreview.status,
+    onAward: handleBattleWatchRewardAward,
+  });
 
   const stakeMutation = useMutation<AgentBattleP2PStakeResponse, Error>({
     mutationFn: async () => {
       if (!battle || !stakeDialogSide) {
         throw new Error('No live Agent Battle side selected');
+      }
+      if (isBattleExpired) {
+        throw new Error('This Agent Battle round has expired.');
       }
       if (!battleEscrowReady) {
         throw new Error('Bantah V2 onchain escrow is not configured for battle-round locks yet.');
@@ -2597,6 +3394,7 @@ export default function BattlesPage({
       setQuickTradeSideIndex(response.position.sideId === battle?.sides?.[1]?.id ? 1 : 0);
       setStakeDialogSide(null);
       tanstackQueryClient.invalidateQueries({ queryKey: ['/api/bantahbro/agent-battles/p2p/pool'] });
+      tanstackQueryClient.invalidateQueries({ queryKey: ['/api/bantahbro/agent-battles/p2p/positions/my'] });
       toast({
         title: 'Battle stake escrow locked',
         description: response.message,
@@ -2612,6 +3410,34 @@ export default function BattlesPage({
   });
 
   const trollboxMessages = trollboxFeed?.messages || [];
+  const battleTrollboxActionItems = useMemo(() => {
+    const items: DesktopTrollboxItem[] = [];
+    const liveStateItem = buildBattleOutcomeItem(
+      battle,
+      arenaPreview.mode,
+      Boolean(isBattleExpired || battle?.status === 'expired'),
+    );
+    if (liveStateItem) items.push(liveStateItem);
+    items.push(...buildBattleSlipActionItems(battleSlipHistory));
+    items.push(...localTrollboxActionItems);
+    return items;
+  }, [
+    arenaPreview.mode,
+    battle,
+    battleSlipHistory,
+    isBattleExpired,
+    localTrollboxActionItems,
+  ]);
+  const desktopTrollboxItems = useMemo(
+    () => buildDesktopTrollboxItems(
+      trollboxMessages,
+      battle?.events || [],
+      desktopSidebarFeed?.items || [],
+      battle?.sides || [],
+      battleTrollboxActionItems,
+    ),
+    [battle?.events, battle?.sides, battleTrollboxActionItems, desktopSidebarFeed?.items, trollboxMessages],
+  );
   const trollboxUserCount = useMemo(() => {
     const users = new Set(
       trollboxMessages
@@ -2622,16 +3448,76 @@ export default function BattlesPage({
   }, [trollboxMessages]);
 
   useEffect(() => {
+    if (!battle) return;
+    const previousBattle = previousBattleRef.current;
+    if (previousBattle && previousBattle.id !== battle.id) {
+      const resultItem = buildBattleOutcomeItem(
+        previousBattle,
+        arenaPreview.mode,
+        true,
+        previousBattle.endsAt || new Date().toISOString(),
+      );
+      if (resultItem) {
+        setLocalTrollboxActionItems((current) =>
+          dedupeTrollboxItems([...current, resultItem]).slice(-12),
+        );
+      }
+    }
+    previousBattleRef.current = battle;
+  }, [arenaPreview.mode, battle]);
+
+  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ block: 'end' });
-  }, [trollboxMessages.length]);
+  }, [desktopTrollboxItems.length]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const syncBattleId = () => setRequestedBattleId(readBattleIdFromUrl());
-    window.addEventListener('popstate', syncBattleId);
-    syncBattleId();
-    return () => window.removeEventListener('popstate', syncBattleId);
+    const syncBattleUrlState = () => {
+      setRequestedBattleId(readBattleIdFromUrl());
+      setArenaPreview(readArenaPreviewFromUrl());
+    };
+    window.addEventListener('popstate', syncBattleUrlState);
+    window.addEventListener(ARENA_PREVIEW_EVENT, syncBattleUrlState);
+    syncBattleUrlState();
+    return () => {
+      window.removeEventListener('popstate', syncBattleUrlState);
+      window.removeEventListener(ARENA_PREVIEW_EVENT, syncBattleUrlState);
+    };
   }, []);
+
+  useEffect(() => {
+    if (isExternalBattle) return;
+    const firstBattleId = resolvedBattleFeed?.battles?.[0]?.id;
+    if (!firstBattleId) return;
+    setRequestedBattleId((current) => {
+      if (current && data?.battles?.some((candidate) => candidate.id === current)) {
+        return current;
+      }
+      if (current) {
+        if (
+          stickyRequestedBattle?.id === current &&
+          getBattleTimeRemainingSeconds(
+            stickyRequestedBattle.endsAt,
+            stickyRequestedBattle.timeRemainingSeconds,
+          ) > 0
+        ) {
+          return current;
+        }
+        const stickyBattle = stickyBattleFeed?.battles?.find((candidate) => candidate.id === current);
+        if (stickyBattle) {
+          const stickyBattleStillLive =
+            getBattleTimeRemainingSeconds(stickyBattle.endsAt, stickyBattle.timeRemainingSeconds) > 0;
+          if (stickyBattleStillLive) {
+            return current;
+          }
+        }
+      }
+      if (current && resolvedBattleFeed?.battles?.some((candidate) => candidate.id === current)) {
+        return current;
+      }
+      return firstBattleId;
+    });
+  }, [data?.battles, resolvedBattleFeed, stickyBattleFeed, stickyRequestedBattle, isExternalBattle]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2668,10 +3554,18 @@ export default function BattlesPage({
   const openStakeDialog = (side: AgentBattleSide, amount = quickTradeAmount || '100') => {
     setDesktopChosenSideId(side.id);
     setQuickTradeSideIndex(side.id === right.id ? 1 : 0);
+    if (isBattleExpired) {
+      toast({
+        title: 'Battle round expired',
+        description: 'This round already hit zero. Wait for the next live battle window.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (isExternalBattle && externalExecutionUrl) {
       toast({
         title: `${externalSourceLabel} execution`,
-        description: 'Opening the source market. BantahBro is the battle layer for this listing.',
+        description: 'Opening the source market. BOTA is the battle layer for this listing.',
       });
       window.open(externalExecutionUrl, '_blank', 'noopener,noreferrer');
       return;
@@ -2685,26 +3579,35 @@ export default function BattlesPage({
 
   return (
     <>
-      <MobileAgentBattleView
-        battle={battle}
-        left={left}
-        right={right}
-        battleModeEnabled={battleModeEnabled}
-        trollboxMessages={trollboxMessages}
-        trollboxUserCount={trollboxUserCount}
-        quickTradeSideIndex={quickTradeSideIndex}
-        quickTradeAmount={quickTradeAmount}
-        chatInput={chatInput}
-        isSendingChat={isSendingChat}
-        onQuickTradeSideChange={setQuickTradeSideIndex}
-        onQuickTradeAmountChange={setQuickTradeAmount}
-        onStakeSide={openStakeDialog}
-        onChatInputChange={setChatInput}
-        onSubmitChat={submitChat}
-        onNavigate={onNavigate}
-      />
+      {!isDesktopBattleLayout && (
+        <MobileAgentBattleView
+          battle={battle}
+          left={left}
+          right={right}
+          battleModeEnabled={battleModeEnabled}
+          arenaPreview={arenaPreview}
+          watchReward={battleWatchReward}
+          trollboxMessages={trollboxMessages}
+          trollboxItems={desktopTrollboxItems}
+          trollboxUserCount={trollboxUserCount}
+          positions={battleSlipHistory}
+          currentRoundId={p2pPool?.roundId}
+          onchainConfig={onchainConfig}
+          isAuthenticated={isAuthenticated}
+          authLoading={authLoading}
+          quickTradeAmount={quickTradeAmount}
+          chatInput={chatInput}
+          isSendingChat={isSendingChat}
+          onStakeSide={openStakeDialog}
+          onLogin={login}
+          onChatInputChange={setChatInput}
+          onSubmitChat={submitChat}
+          onNavigate={onNavigate}
+        />
+      )}
 
-    <div className="hidden lg:flex flex-1 gap-0 overflow-hidden min-w-0">
+      {isDesktopBattleLayout && (
+        <div className="hidden lg:flex flex-1 gap-0 overflow-hidden min-w-0">
       <div className="flex-1 flex flex-col bg-card border border-border rounded overflow-hidden min-w-0">
         <div className="border-b border-border bg-background px-3 py-2 flex items-center gap-3 shrink-0">
           <button
@@ -2713,7 +3616,7 @@ export default function BattlesPage({
                 onExternalBack();
                 return;
               }
-              onNavigate?.('dashboard');
+              onNavigate?.('challenge');
             }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition"
           >
@@ -2722,55 +3625,56 @@ export default function BattlesPage({
           <div className="flex items-center gap-1.5 ml-auto">
             <span className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
             <span className="text-xs font-bold text-foreground">LIVE</span>
-            <span className="hidden sm:inline text-xs text-muted-foreground">{externalSourceLabel}</span>
           </div>
           <BattleModeToggle
             enabled={battleModeEnabled}
             onToggle={() => setBattleModeEnabled((current) => !current)}
           />
-          <button
-            onClick={() => onNavigate?.('leaderboard')}
-            className="flex items-center gap-1 text-xs font-bold bg-muted px-2 py-1 rounded hover:bg-muted/80 transition"
-          >
-            <Trophy size={11} className="text-primary" /> Leaderboard
-          </button>
         </div>
 
         <div className="no-scrollbar flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="border-b border-border bg-background/70">
             {battleModeEnabled && (
-              <RetroBattleArena battle={battle} flush />
+              <FightingGameArenaEmbed
+                flush
+                battle={battle}
+                battleMode={arenaPreview.mode}
+                battleStatus={arenaPreview.status}
+                startsAtMs={arenaPreview.startsAtMs}
+                matchupLabel={arenaPreview.matchupLabel}
+                arenaLabel={arenaPreview.arenaLabel}
+                watchReward={battleWatchReward}
+              />
             )}
           </div>
-          <MobileBattlePanels
-            activePanel={mobileBattlePanel}
-            onPanelChange={setMobileBattlePanel}
-            left={left}
-            right={right}
-            selectedSide={desktopSelectedSide}
-            events={battle.events}
-            quickTradeSideIndex={quickTradeSideIndex}
-            quickTradeAmount={quickTradeAmount}
-            onJoinSide={chooseDesktopSide}
-            onStakeSide={openStakeDialog}
-            onQuickTradeSideChange={setQuickTradeSideIndex}
-            onQuickTradeAmountChange={setQuickTradeAmount}
-          />
+          {!battleModeEnabled && (
+            <>
+              <MobileBattlePanels
+                activePanel={mobileBattlePanel}
+                onPanelChange={setMobileBattlePanel}
+                left={left}
+                right={right}
+                selectedSide={desktopSelectedSide}
+                events={battle.events}
+                quickTradeSideIndex={quickTradeSideIndex}
+                quickTradeAmount={quickTradeAmount}
+                onJoinSide={chooseDesktopSide}
+                onStakeSide={openStakeDialog}
+                onQuickTradeSideChange={setQuickTradeSideIndex}
+                onQuickTradeAmountChange={setQuickTradeAmount}
+              />
 
-          <DesktopBattleTabs
-            activeTab={desktopBattleTab}
-            onTabChange={setDesktopBattleTab}
-            left={left}
-            right={right}
-            selectedSide={desktopSelectedSide}
-            events={battle.events}
-            quickTradeSideIndex={quickTradeSideIndex}
-            quickTradeAmount={quickTradeAmount}
-            onJoinSide={chooseDesktopSide}
-            onStakeSide={openStakeDialog}
-            onQuickTradeSideChange={setQuickTradeSideIndex}
-            onQuickTradeAmountChange={setQuickTradeAmount}
-          />
+              <DesktopBattleTabs
+                activeTab={desktopBattleTab}
+                onTabChange={setDesktopBattleTab}
+                left={left}
+                right={right}
+                selectedSide={desktopSelectedSide}
+                events={battle.events}
+                onJoinSide={chooseDesktopSide}
+              />
+            </>
+          )}
         </div>
       </div>
 
@@ -2779,7 +3683,7 @@ export default function BattlesPage({
           <div className="flex items-center gap-1 rounded bg-background/70 p-0.5">
             {[
               { id: 'trollbox' as const, label: 'TrollBox' },
-              { id: 'feed' as const, label: 'Feed' },
+              { id: 'slips' as const, label: 'Slips' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -2804,17 +3708,42 @@ export default function BattlesPage({
         {desktopSideTab === 'trollbox' ? (
           <>
             <div className="no-scrollbar flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-2 py-2 space-y-2">
-              {trollboxMessages.map((message) => (
-                <div key={message.id} className="flex items-start gap-1.5 text-xs">
-                  <span className={`shrink-0 text-xs font-bold px-1 py-0.5 rounded ${sourceColor(message.source)}`}>
-                    {sourceLabel(message.source)}
-                  </span>
+              {desktopTrollboxItems.length > 0 ? desktopTrollboxItems.map((item) => (
+                <div key={item.id} className="flex items-start gap-1.5 text-xs">
+                  {item.avatarUrl ? (
+                    <img
+                      src={item.avatarUrl}
+                      alt={`${item.user} avatar`}
+                      title={item.sourceLabel}
+                      className="h-7 w-7 shrink-0 rounded-full border border-border bg-muted object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className={`shrink-0 text-xs font-bold px-1 py-0.5 rounded ${item.sourceClassName}`}>
+                      {item.sourceLabel}
+                    </span>
+                  )}
                   <div className="min-w-0">
-                    <span className="font-bold text-foreground">{message.user}: </span>
-                    <span className="text-muted-foreground">{message.message}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate font-bold text-foreground">{item.user}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{formatAgo(item.createdAt)}</span>
+                    </div>
+                    <div className="text-muted-foreground">
+                      {item.statusIcon && (
+                        <span className="mr-1" title={item.statusLabel || undefined}>
+                          {item.statusIcon}
+                        </span>
+                      )}
+                      {item.message}
+                    </div>
+                    {item.meta && <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">{item.meta}</div>}
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div className="rounded border border-border bg-muted/30 p-3 text-center text-xs text-muted-foreground">
+                  TrollBox is quiet. Chat, Telegram, and Arena updates will appear here.
+                </div>
+              )}
               <div ref={chatEndRef} />
             </div>
 
@@ -2837,13 +3766,21 @@ export default function BattlesPage({
               </div>
             </form>
           </>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-hidden p-1">
-            <FeedPage compact />
+        ) : desktopSideTab === 'slips' ? (
+          <div className="min-h-0 flex-1 overflow-hidden p-2">
+            <BattleSlipsPanel
+              positions={battleSlipHistory}
+              currentRoundId={p2pPool?.roundId}
+              onchainConfig={onchainConfig}
+              isAuthenticated={isAuthenticated}
+              authLoading={authLoading}
+              onLogin={login}
+            />
           </div>
-        )}
+        ) : null}
       </div>
     </div>
+      )}
       {!isExternalBattle && (
         <AgentBattleP2PStakeDialog
           battle={battle}

@@ -1,19 +1,13 @@
 'use client'
 
 import {
-  Activity,
   BarChart3,
-  Bell,
   Bot,
   Compass,
   Megaphone,
   MessageSquare,
   Rocket,
-  Search,
-  Shield,
-  TrendingUp,
   Trophy,
-  Wallet,
   Zap,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -29,27 +23,13 @@ interface SidebarProps {
 }
 
 const menuItems: { icon: typeof BarChart3; label: string; section: AppSection }[] = [
-  { icon: BarChart3, label: 'Prediction Markets', section: 'dashboard' },
-  { icon: Zap, label: 'Agent Battles', section: 'battles' },
+  { icon: Compass, label: 'Challenge', section: 'challenge' },
+  { icon: Zap, label: 'Arena', section: 'battles' },
   { icon: Bot, label: 'Agents', section: 'agents' },
   { icon: Trophy, label: 'Leaderboard', section: 'leaderboard' },
-  { icon: Shield, label: 'Rug Scorer', section: 'rug-scorer' },
   { icon: Rocket, label: 'Launcher', section: 'launcher' },
   { icon: Megaphone, label: 'Advertise', section: 'ads' },
   { icon: MessageSquare, label: 'Chat Agent', section: 'chat' },
-]
-
-const toolItems: { icon: typeof Search; label: string; tool: BantahTool; helper: string }[] = [
-  { icon: Wallet, label: 'Wallet Ops', tool: 'wallet', helper: 'Balance + wallet state' },
-  { icon: Compass, label: 'Discover', tool: 'discover', helper: 'Trending meme coins' },
-  { icon: Zap, label: 'Battle Desk', tool: 'battle', helper: 'Join + create battles' },
-  { icon: Search, label: 'Analyze Token', tool: 'analyze', helper: 'Quick contract read' },
-  { icon: Shield, label: 'Rug Score', tool: 'rug', helper: 'Full live risk scan' },
-  { icon: TrendingUp, label: 'Runner Score', tool: 'runner', helper: 'Momentum check' },
-  { icon: Bell, label: 'Live Alerts', tool: 'alerts', helper: 'Whale + smart money' },
-  { icon: BarChart3, label: 'Live Markets', tool: 'markets', helper: 'Open setups' },
-  { icon: Activity, label: 'BXBT Status', tool: 'bxbt', helper: 'System health' },
-  { icon: Rocket, label: 'Launch Token', tool: 'launcher', helper: 'Draft + deploy' },
 ]
 
 export default function Sidebar({
@@ -71,20 +51,14 @@ export default function Sidebar({
     onClose?.()
   }
 
-  const handleToolClick = (tool: BantahTool) => {
-    onToolSelect?.(tool)
-    onNavigate?.('chat')
-    onClose?.()
-  }
-
   return (
     <div className="w-52 bg-sidebar border-r border-border flex flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="p-2 border-b border-border">
         <div className="flex items-center gap-2 mb-2">
-          <img src="/bantahbrologo.png" alt="BantahBro" width={36} height={36} className="rounded-full object-cover" />
+          <img src="/bantahbrologo.png" alt="BOTA" width={36} height={36} className="rounded-full object-cover" />
           <div>
-            <div className="text-sm font-bold text-primary leading-tight">BantahBro</div>
-            <div className="text-xs text-muted-foreground leading-tight">AI DEGEN</div>
+            <div className="text-sm font-bold text-primary leading-tight">BOTA</div>
+            <div className="text-xs text-muted-foreground leading-tight">Battle Of The Agents</div>
           </div>
         </div>
       </div>
@@ -122,46 +96,13 @@ export default function Sidebar({
           })}
         </div>
 
-        <div className="py-1 px-0 border-t border-border">
-          <div className="text-xs font-bold text-muted-foreground px-3 py-1 mt-1 tracking-wider">BANTAH TOOLS</div>
-          <div className="px-3 pb-1 text-[11px] text-muted-foreground leading-tight">
-            These open inside Chat Agent as tabs and tools, not separate pages.
-          </div>
-          {toolItems.map((item) => {
-            const isActive = activeSection === 'chat' && activeTool === item.tool
-
-            return (
-              <button
-                key={item.tool}
-                onClick={() => handleToolClick(item.tool)}
-                className={`w-full text-left text-sm py-1.5 px-3 transition flex items-start justify-between gap-2 ${
-                  isActive
-                    ? 'bg-primary/20 text-primary font-bold border-r-2 border-primary'
-                    : 'hover:bg-sidebar-accent hover:text-accent-foreground text-sidebar-foreground'
-                }`}
-              >
-                <span className="flex items-center gap-2 min-w-0">
-                  <item.icon size={15} className="mt-0.5 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                </span>
-                <span className={`shrink-0 text-[10px] ${isActive ? 'text-primary/80' : 'text-muted-foreground'}`}>
-                  {item.helper}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-
       </div>
 
       <div className="border-t border-border p-2 text-center">
-        <div className="text-xs font-bold text-primary mb-1">SEE IT.</div>
-        <div className="text-xs font-bold text-primary mb-1">CALL IT.</div>
-        <div className="text-xs font-bold text-primary mb-2">BET IT.</div>
-        <div className="text-xs text-muted-foreground mb-1">WIN BIG.</div>
+        <div className="text-xs font-bold text-primary mb-2">Battle Of The Agent</div>
         <div className="flex items-center justify-center gap-1.5">
-          <img src="/bantahbrologo.png" alt="BantahBro" width={18} height={18} className="rounded-full object-cover" />
-          <span className="text-xs font-bold text-primary">BantahBro</span>
+          <img src="/bantahbrologo.png" alt="BOTA" width={18} height={18} className="rounded-full object-cover" />
+          <span className="text-xs font-bold text-primary">BOTA</span>
         </div>
       </div>
     </div>

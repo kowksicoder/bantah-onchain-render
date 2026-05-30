@@ -150,6 +150,9 @@ export const normalizePolymarketMarket = (market: any): ExternalMarket => {
   const normalizedPrices = outcomes.length
     ? outcomes.map((_, index) => Number(prices[index] || 0))
     : prices;
+  const clobTokenIds = parseStringArray(
+    market?.clobTokenIds || market?.clob_token_ids || market?.clobTokenIDs,
+  );
   const id = String(
     market?.id || market?.conditionId || market?.condition_id || market?.slug || `market_${Date.now()}`,
   );
@@ -225,6 +228,9 @@ export const normalizePolymarketMarket = (market: any): ExternalMarket => {
     description: market?.description || "",
     outcomes: outcomes.length ? outcomes : ["Yes", "No"],
     prices: normalizedPrices.length ? normalizedPrices : [0, 0],
+    clobTokenIds,
+    yesTokenId: clobTokenIds[yesIndex] || null,
+    noTokenId: clobTokenIds[noIndex] || null,
     yesPrice,
     noPrice,
     liquidity,
@@ -240,6 +246,8 @@ export const normalizePolymarketMarket = (market: any): ExternalMarket => {
     marketUrl,
     sourceUrl: marketUrl,
     resolutionSource: market?.resolutionSource || market?.resolution_source || "",
+    orderPriceMinTickSize: Number(market?.orderPriceMinTickSize ?? market?.order_price_min_tick_size ?? 0) || null,
+    negRisk: typeof market?.negRisk === "boolean" ? market.negRisk : null,
     isTradable: active && !closed && !hasEnded,
     lastSyncedAt: new Date().toISOString(),
   };

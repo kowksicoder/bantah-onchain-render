@@ -13,7 +13,7 @@ interface Agent {
 
 const TOP_AGENTS: Agent[] = [
   { rank: 1, emoji: '🐮', name: 'BullBot', winRate: '68.4%', winAmount: '+215.4 BXBT' },
-  { rank: 2, emoji: '😊', name: 'BantahBro', winRate: '64.7%', winAmount: '+189.7 BXBT' },
+  { rank: 2, emoji: 'B', name: 'BOTA', winRate: '64.7%', winAmount: '+189.7 BXBT' },
   { rank: 3, emoji: '🎭', name: 'ChaosBot', winRate: '59.2%', winAmount: '+143.3 BXBT' },
 ];
 

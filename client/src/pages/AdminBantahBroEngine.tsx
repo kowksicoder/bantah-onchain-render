@@ -435,7 +435,7 @@ export default function AdminBantahBroEngine() {
         <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-white">BantahBro Engine</h1>
+              <h1 className="text-xl font-black text-white">BOTA Engine</h1>
               <Badge variant="outline" className="border-purple-700/70 bg-purple-950/50 text-purple-200">
                 Admin
               </Badge>

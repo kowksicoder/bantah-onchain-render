@@ -68,7 +68,7 @@ export default function Profile() {
     const shareUrl = `${window.location.origin}/@${currentUsername}`;
     if (navigator.share) {
       navigator.share({
-        title: 'Check out my profile on BetChat',
+        title: 'Check out my profile on BOTA',
         url: shareUrl
       }).catch(() => {
         navigator.clipboard.writeText(shareUrl);

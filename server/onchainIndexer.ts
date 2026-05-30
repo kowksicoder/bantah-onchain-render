@@ -190,6 +190,13 @@ export function getOnchainIndexerHealthSnapshot() {
   };
 }
 
+function getConfiguredIndexerChains() {
+  const config = getOnchainServerConfig();
+  return Object.values(config.chains).filter(
+    (chain) => Boolean(chain.rpcUrl) && Boolean(chain.escrowContractAddress),
+  );
+}
+
 async function getLastProcessedBlock(chainId: number): Promise<number | null> {
   const res = await pool.query(
     `select last_block from onchain_indexer_state where chain_id = $1`,
@@ -789,10 +796,7 @@ export function startOnchainIndexer(): void {
 
   const runtime = buildRuntimeConfig();
   indexerHealthState.pollIntervalMs = runtime.pollIntervalMs;
-  const config = getOnchainServerConfig();
-  const chains = Object.values(config.chains).filter(
-    (chain) => Boolean(chain.rpcUrl) && Boolean(chain.escrowContractAddress),
-  );
+  const chains = getConfiguredIndexerChains();
 
   if (chains.length === 0) {
     console.log("[onchain-indexer] No chains configured for indexing.");
@@ -841,4 +845,81 @@ export function startOnchainIndexer(): void {
     void tick();
     setInterval(tick, runtime.pollIntervalMs);
   }
+}
+
+export async function runOnchainIndexerOnce() {
+  const enabled = parseBool(process.env.ONCHAIN_INDEXER_ENABLED, false);
+  indexerHealthState.enabled = enabled;
+  indexerHealthState.startedAt = enabled ? new Date().toISOString() : null;
+  indexerHealthState.pollIntervalMs = null;
+  indexerHealthState.chains.clear();
+
+  if (!enabled) {
+    return {
+      enabled: false,
+      chains: [],
+      reason: "disabled",
+    };
+  }
+
+  const runtime = buildRuntimeConfig();
+  indexerHealthState.pollIntervalMs = runtime.pollIntervalMs;
+  const chains = getConfiguredIndexerChains();
+
+  if (chains.length === 0) {
+    return {
+      enabled: true,
+      chains: [],
+      reason: "no-configured-chains",
+    };
+  }
+
+  const results = await Promise.all(
+    chains.map(async (chain) => {
+      const health = getOrCreateChainHealth(chain);
+      const provider = new ethers.JsonRpcProvider(chain.rpcUrl, chain.chainId, {
+        staticNetwork: true,
+      });
+      const runStartedAt = new Date();
+      health.running = true;
+      health.lastStartedAt = runStartedAt.toISOString();
+      health.lastError = null;
+
+      try {
+        const stats = await syncChain(chain, provider, runtime);
+        const runCompletedAt = new Date();
+        health.running = false;
+        health.lastCompletedAt = runCompletedAt.toISOString();
+        health.lastSuccessAt = runCompletedAt.toISOString();
+        health.safeLatest = stats.safeLatest;
+        health.processedThrough = stats.processedThrough;
+        health.lagBlocks = Math.max(0, stats.safeLatest - stats.processedThrough);
+        health.createdLastRun = stats.created;
+        health.skippedLastRun = stats.skipped;
+        health.durationMsLastRun = stats.durationMs;
+
+        return {
+          ok: true,
+          ...stats,
+        };
+      } catch (error: any) {
+        const runCompletedAt = new Date();
+        health.running = false;
+        health.lastCompletedAt = runCompletedAt.toISOString();
+        health.lastError = String(error?.message || error || "unknown_error");
+
+        return {
+          ok: false,
+          chainId: chain.chainId,
+          chainName: chain.name,
+          error: health.lastError,
+        };
+      }
+    }),
+  );
+
+  return {
+    enabled: true,
+    chains: results,
+  };
 }

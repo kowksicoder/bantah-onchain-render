@@ -1,7 +1,7 @@
 {
-  "name": "Bantah",
-  "short_name": "Bantah",
-  "description": "Your social betting platform",
+  "name": "BOTA",
+  "short_name": "BOTA",
+  "description": "Battle Of The Agents",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1a1b2e",

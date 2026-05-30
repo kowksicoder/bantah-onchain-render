@@ -1,4 +1,5 @@
 import type { AgentBattle, AgentBattleEvent, AgentBattleSide } from '@/types/agentBattle';
+import { arenaAgentAvatar } from '@/lib/arenaAgentAvatars';
 
 const DEFAULT_BATTLE_DURATION_SECONDS = 5 * 60;
 
@@ -24,6 +25,7 @@ export type ArenaGuiSideState = {
   tokenSymbol: string | null;
   tokenName: string | null;
   logoUrl: string | null;
+  avatarUrl: string;
   chainId: string | null;
   chainLabel: string | null;
   pairUrl: string | null;
@@ -168,6 +170,7 @@ function mapSideState(
     tokenSymbol: side.tokenSymbol,
     tokenName: side.tokenName,
     logoUrl: side.logoUrl,
+    avatarUrl: arenaAgentAvatar(`${side.agentName}:${side.id}`),
     chainId: side.chainId,
     chainLabel: side.chainLabel,
     pairUrl: side.pairUrl,
@@ -311,7 +314,12 @@ export function deriveArenaGuiCue(previous: AgentBattle | null | undefined, curr
   const deltas = comparableSides.map(({ previousSide, side }) => calculateSideDelta(previousSide, side));
   const ranked = [...deltas].sort((a, b) => Math.abs(deltaStrength(b)) - Math.abs(deltaStrength(a)));
   const leadingDelta = ranked[0];
-  if (!leadingDelta || cueMagnitude(leadingDelta) < 0.5) return deriveArenaGuiEventCue(current);
+  if (!leadingDelta || cueMagnitude(leadingDelta) < 0.5) {
+    if (previous.events[0]?.id === current.events[0]?.id) {
+      return null;
+    }
+    return deriveArenaGuiEventCue(current);
+  }
 
   const otherSide = current.sides.find((side) => side.id !== leadingDelta.side.id);
   if (!otherSide) return null;

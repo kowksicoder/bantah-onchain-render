@@ -94,6 +94,7 @@ import {
 import { getLiveBantahBroAgentBattles } from "../bantahBro/agentBattleService";
 import {
   getAgentBattleP2PPool,
+  listAgentBattleP2PHistoryPositions,
   markAgentBattleP2PEscrowLocked,
   placeAgentBattleP2PStake,
   settleAgentBattleP2PRound,
@@ -121,6 +122,11 @@ import { getBantahBroTelegramBot } from "../telegramBot";
 import { getTelegramSync } from "../telegramSync";
 import { sendManagedBantahAgentRuntimeMessage } from "../bantahElizaRuntimeManager";
 import { agents, transactions, users } from "@shared/schema";
+import {
+  BANTCREDIT_BATTLE_WATCH_REWARD_TIERS,
+  BANTCREDIT_BATTLE_WATCH_TRANSACTION_TYPE,
+  calculateBattleWatchBantCredit,
+} from "@shared/bantCredit";
 import { bantahBroWalletPrepareRequestSchema } from "@shared/bantahBroWallet";
 import { normalizeEvmAddress, parseWalletAddresses } from "@shared/onchainConfig";
 
@@ -132,6 +138,7 @@ const BANTCREDIT_TRANSACTION_TYPES = [
   "referral_reward",
   "daily_signin",
   "challenge_creation_reward",
+  BANTCREDIT_BATTLE_WATCH_TRANSACTION_TYPE,
   "admin_points",
 ];
 
@@ -195,6 +202,14 @@ const agentBattleP2PSettlementSchema = z.object({
   winnerSideId: z.string().trim().min(1).max(500),
   maxPairs: z.coerce.number().int().positive().max(100).default(20),
   dryRun: z.coerce.boolean().default(false),
+});
+
+const agentBattleWatchRewardSchema = z.object({
+  battleMode: z.enum(["arena", "challenge"]).default("arena"),
+  battleStatus: z.enum(["live", "queued", "cancelled", "rematch"]).default("live"),
+  watchedSeconds: z.coerce.number().min(0).max(7_200),
+  activeSeconds: z.coerce.number().min(0).max(7_200),
+  interactionCount: z.coerce.number().int().min(0).max(10_000).default(0),
 });
 
 const rugScorerV2WatchSchema = z.object({
@@ -305,6 +320,36 @@ function parseFeedSource(value: unknown): BantahBroFeedSource | undefined {
     return source;
   }
   return undefined;
+}
+
+function positiveIntHash(value: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return ((hash >>> 0) % 2_147_483_647) || 1;
+}
+
+function getBattleWatchRewardRelatedId(battleId: string, tierSeconds: number) {
+  return positiveIntHash(`battle-watch:${battleId}:${tierSeconds}`);
+}
+
+function getNextBattleWatchRewardTier(totalAwardedForBattle: number) {
+  const earned = Math.max(0, Math.round(totalAwardedForBattle || 0));
+  return (
+    [...BANTCREDIT_BATTLE_WATCH_REWARD_TIERS]
+      .reverse()
+      .find((tier) => tier.totalPoints > earned) ?? null
+  );
+}
+
+function displayActorName(user: any) {
+  return (
+    String(user?.username || "").trim() ||
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
+    "Arena watcher"
+  );
 }
 
 async function resolveOptionalBantahBroChatActor(req: any) {
@@ -457,6 +502,41 @@ function buildBantahBroChatRuntimeFallback(message: string, tool: string) {
   ].join("\n");
 }
 
+function isBantahBroChatRuntimeUnavailableError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /BANTAHBRO_SYSTEM_USERNAME|BANTAHBRO_SYSTEM_EMAIL|BANTAHBRO_AGENT_NAME|required for BantahBro|AgentKit provisioning is not configured|runtime config is missing|wallet is invalid/i.test(
+    message,
+  );
+}
+
+function buildBantahBroChatUnavailableFallback(tool: string) {
+  const normalizedTool = String(tool || "assistant");
+  const header =
+    "The live BantahBro agent is still being configured on this server, so chat replies are temporarily unavailable.";
+
+  if (normalizedTool === "wallet") {
+    return [
+      header,
+      "",
+      "Wallet-aware replies will come back once the BantahBro runtime finishes starting.",
+    ].join("\n");
+  }
+
+  if (normalizedTool === "battle") {
+    return [
+      header,
+      "",
+      "Battle chat will come back once the BantahBro runtime finishes starting.",
+    ].join("\n");
+  }
+
+  return [
+    header,
+    "",
+    "Try again in a moment after the runtime finishes warming up.",
+  ].join("\n");
+}
+
 function requireAdmin(req: any, res: any, next: any) {
   if (!req.user?.id) {
     return res.status(401).json({ message: "Unauthorized" });
@@ -539,6 +619,115 @@ router.get("/agent-battles/live", async (req, res) => {
   }
 });
 
+router.post("/agent-battles/:battleId/watch-reward", PrivyAuthMiddleware, async (req: any, res) => {
+  try {
+    const battleId = String(req.params.battleId || "").trim();
+    if (!battleId) {
+      return res.status(400).json({ message: "Battle ID is required" });
+    }
+
+    const parsed = agentBattleWatchRewardSchema.parse(req.body || {});
+    if (parsed.battleMode !== "arena") {
+      return res.status(400).json({ message: "Watch rewards are only available in Arena Mode" });
+    }
+    if (parsed.battleStatus !== "live") {
+      return res.status(400).json({ message: "Watch rewards require a live Arena battle" });
+    }
+
+    const tierRelatedIds = BANTCREDIT_BATTLE_WATCH_REWARD_TIERS.map((tier) =>
+      getBattleWatchRewardRelatedId(battleId, tier.minSeconds),
+    );
+
+    const existingRewardRows = await db
+      .select({
+        amount: transactions.amount,
+        relatedId: transactions.relatedId,
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, req.user.id),
+          eq(transactions.type, BANTCREDIT_BATTLE_WATCH_TRANSACTION_TYPE),
+          eq(transactions.status, "completed"),
+          inArray(transactions.relatedId, tierRelatedIds),
+        ),
+      );
+
+    const previousPointsAwarded = existingRewardRows.reduce(
+      (total, row) => total + (Number.parseFloat(String(row.amount || 0)) || 0),
+      0,
+    );
+    const reward = calculateBattleWatchBantCredit({
+      watchedSeconds: parsed.watchedSeconds,
+      activeSeconds: parsed.activeSeconds,
+      previousPointsAwarded,
+    });
+
+    if (reward.eligible && reward.pointsAwarded > 0 && reward.tier) {
+      const relatedId = getBattleWatchRewardRelatedId(battleId, reward.tier.minSeconds);
+      const alreadyAwardedTier = existingRewardRows.some((row) => row.relatedId === relatedId);
+
+      if (!alreadyAwardedTier) {
+        await db.transaction(async (tx) => {
+          await tx
+            .update(users)
+            .set({
+              points: sql`COALESCE(${users.points}, 0) + ${reward.pointsAwarded}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, req.user.id));
+
+          await tx.insert(transactions).values({
+            userId: req.user.id,
+            type: BANTCREDIT_BATTLE_WATCH_TRANSACTION_TYPE,
+            amount: String(reward.pointsAwarded),
+            description:
+              `Arena Mode watch reward for ${battleId} ` +
+              `(${reward.tier.minSeconds}s tier, ${Math.round(parsed.activeSeconds)}s active)`,
+            relatedId,
+            status: "completed",
+          });
+        });
+        recordBantahBroTrollboxMessage({
+          roomId: "agent-battle",
+          battleId,
+          source: "system",
+          user: "BantCredit",
+          handle: "watch reward",
+          message: `${displayActorName(req.user)} earned +${reward.pointsAwarded} BantCredit watching the Arena.`,
+        });
+      } else {
+        reward.awarded = false;
+        reward.pointsAwarded = 0;
+        reward.reason = "already_awarded";
+      }
+    }
+
+    const earnedForBattle = Math.max(0, Math.round(previousPointsAwarded + reward.pointsAwarded));
+    const nextTier = getNextBattleWatchRewardTier(earnedForBattle);
+
+    res.json({
+      battleId,
+      mode: "arena",
+      awarded: reward.awarded,
+      eligible: reward.eligible,
+      pointsAwarded: reward.pointsAwarded,
+      earnedForBattle,
+      totalEligiblePoints: reward.totalEligiblePoints,
+      previousPointsAwarded: reward.previousPointsAwarded,
+      watchedSeconds: reward.watchedSeconds,
+      activeSeconds: reward.activeSeconds,
+      requiredActiveSeconds: reward.requiredActiveSeconds,
+      tier: reward.tier,
+      nextTier,
+      reason: reward.reason,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
 router.get("/agent-battles/:battleId/p2p/pool", async (req, res) => {
   try {
     const pool = await getAgentBattleP2PPool({
@@ -557,6 +746,21 @@ router.get("/agent-battles/:battleId/p2p/my", PrivyAuthMiddleware, async (req: a
       userId: req.user.id,
     });
     res.json(pool);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.get("/agent-battles/p2p/positions/my", PrivyAuthMiddleware, async (req: any, res) => {
+  try {
+    const positions = await listAgentBattleP2PHistoryPositions(
+      req.user.id,
+      parseLimit(req.query.limit, 20, 100),
+    );
+    res.json({
+      positions,
+      updatedAt: new Date().toISOString(),
+    });
   } catch (error) {
     handleError(res, error);
   }
@@ -611,6 +815,19 @@ router.post(
         maxPairs: parsed.maxPairs,
         dryRun: parsed.dryRun,
       });
+      if (!parsed.dryRun) {
+        const winnerLabel = result.winnerSideLabel || result.winnerSideId;
+        const loserText = result.loserSideLabel ? `; ${result.loserSideLabel} lost` : "";
+        recordBantahBroTrollboxMessage({
+          roomId: "agent-battle",
+          source: "system",
+          user: "Battle Settlement",
+          handle: "arena result",
+          message:
+            `Arena round settled: ${winnerLabel} won${loserText}, ` +
+            `${result.pairsSettled} matched payout${result.pairsSettled === 1 ? "" : "s"} processed.`,
+        });
+      }
       res.json(result);
     } catch (error) {
       handleError(res, error);
@@ -1477,7 +1694,23 @@ router.post("/chat", async (req, res) => {
       }
     }
 
-    const systemAgent = await ensureBantahBroSystemAgent({ preferLiveWallet: true });
+    let systemAgent;
+    try {
+      systemAgent = await ensureBantahBroSystemAgent({ preferLiveWallet: true });
+    } catch (systemAgentError) {
+      if (!isBantahBroChatRuntimeUnavailableError(systemAgentError)) {
+        throw systemAgentError;
+      }
+
+      return res.json({
+        reply: buildBantahBroChatUnavailableFallback(effectiveTool),
+        actions: ["AGENT_RUNTIME_UNAVAILABLE"],
+        providers: [],
+        agent: null,
+        roomId: parsed.sessionId || `web-${effectiveTool}`,
+      });
+    }
+
     let reply;
     try {
       reply = await withTimeout(
@@ -1489,10 +1722,16 @@ router.post("/chat", async (req, res) => {
         getBantahBroChatRuntimeTimeoutMs(),
         "BantahBro runtime timed out.",
       );
-    } catch (_runtimeError) {
+    } catch (runtimeError) {
       return res.json({
-        reply: buildBantahBroChatRuntimeFallback(parsed.message, effectiveTool),
-        actions: ["AGENT_RUNTIME_FALLBACK"],
+        reply: isBantahBroChatRuntimeUnavailableError(runtimeError)
+          ? buildBantahBroChatUnavailableFallback(effectiveTool)
+          : buildBantahBroChatRuntimeFallback(parsed.message, effectiveTool),
+        actions: [
+          isBantahBroChatRuntimeUnavailableError(runtimeError)
+            ? "AGENT_RUNTIME_UNAVAILABLE"
+            : "AGENT_RUNTIME_FALLBACK",
+        ],
         providers: [],
         agent: {
           agentId: systemAgent.agentId,

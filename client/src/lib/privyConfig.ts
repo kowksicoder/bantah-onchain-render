@@ -6,7 +6,7 @@ export const privyConfig = {
       theme: '#f8fafc',
       accentColor: '#7c3aed',
       logo: '/bantahbrologo.png',
-      landingHeader: 'BantahBro Sign In',
+      landingHeader: 'BOTA Sign In',
       loginMessage: 'Connect fast to place stakes and manage live battles.',
       showWalletLoginFirst: true,
     },

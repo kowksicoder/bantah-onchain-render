@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { ethers } from "ethers";
 import { db } from "../db";
-import { agentBattleP2PPositions, agentBattleP2PRounds } from "@shared/schema";
+import { agentBattleP2PPositions, agentBattleP2PRounds, users } from "@shared/schema";
 import type { BantahBroPairSnapshot } from "@shared/bantahBro";
 import {
   getOnchainServerConfig,
@@ -13,6 +13,7 @@ import {
   type OnchainTokenSymbol,
 } from "@shared/onchainConfig";
 import type {
+  AgentBattleP2PHistoryPosition,
   AgentBattleP2PPool,
   AgentBattleP2PPosition,
   AgentBattleP2PStakeResponse,
@@ -48,6 +49,11 @@ function toIsoString(value: Date | string | null | undefined) {
     return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
   }
   return new Date().toISOString();
+}
+
+function roundEndedAtOrBeforeNow(roundEndsAt: Date | string | null | undefined, nowMs = Date.now()) {
+  const endsAtMs = new Date(roundEndsAt || 0).getTime();
+  return Number.isFinite(endsAtMs) && endsAtMs <= nowMs;
 }
 
 function battleSymbol(side: BantahBroAgentBattleSide) {
@@ -915,6 +921,326 @@ function resolveSnapshotWinnerLogic(rows: Array<typeof agentBattleP2PPositions.$
   return "Hybrid live score";
 }
 
+function normalizeRoundSettlementStatus(value: unknown): AgentBattleP2PHistoryPosition["settlementStatus"] {
+  return value === "open" ||
+    value === "settling" ||
+    value === "settled" ||
+    value === "partially_settled" ||
+    value === "settlement_failed"
+    ? value
+    : null;
+}
+
+function getHistoryBattleTitle(row: typeof agentBattleP2PPositions.$inferSelect) {
+  const snapshot = asRecord(row.snapshot);
+  const battle = asRecord(snapshot.battle);
+  const snapshotTitle = stringOrNull(battle.title);
+  if (snapshotTitle) return snapshotTitle;
+
+  const opponent = asRecord(snapshot.opponent);
+  const opponentLabel = stringOrNull(opponent.label) || stringOrNull(opponent.tokenSymbol);
+  if (row.sideLabel && opponentLabel) {
+    return `${row.sideLabel} vs ${opponentLabel}`;
+  }
+  if (row.sideLabel) {
+    return row.sideLabel;
+  }
+  return "Agent Battle";
+}
+
+function getSnapshotOpponentDetails(row: typeof agentBattleP2PPositions.$inferSelect) {
+  const snapshot = asRecord(row.snapshot);
+  const opponent = asRecord(snapshot.opponent);
+  return {
+    label: stringOrNull(opponent.label),
+    symbol: stringOrNull(opponent.tokenSymbol),
+    logoUrl: stringOrNull(opponent.logoUrl),
+  };
+}
+
+function resolveHistoryResultStatus(params: {
+  position: typeof agentBattleP2PPositions.$inferSelect;
+  settlementStatus: AgentBattleP2PHistoryPosition["settlementStatus"];
+  nowMs: number;
+}): AgentBattleP2PHistoryPosition["resultStatus"] {
+  const { position, settlementStatus, nowMs } = params;
+  const roundEnded = roundEndedAtOrBeforeNow(position.roundEndsAt, nowMs);
+
+  if (position.escrowStatus === "cancelled") return "cancelled";
+  if (position.escrowStatus === "failed" || settlementStatus === "settlement_failed") return "failed";
+  if (position.escrowStatus === "settled") {
+    return position.winnerSideId === position.sideId ? "won" : "lost";
+  }
+  if (position.escrowStatus === "intent_saved" || position.escrowStatus === "escrow_required") {
+    return "needs_escrow";
+  }
+  if (position.escrowStatus === "escrow_locked") {
+    if (!roundEnded) return "live";
+    if (settlementStatus === "partially_settled") return "unmatched";
+    if (settlementStatus === "settled" && position.winnerSideId) {
+      return position.winnerSideId === position.sideId ? "won" : "lost";
+    }
+    return "awaiting_settlement";
+  }
+  return roundEnded ? "awaiting_settlement" : "live";
+}
+
+function hydrateHistoryPosition(
+  row: typeof agentBattleP2PPositions.$inferSelect,
+  round?: typeof agentBattleP2PRounds.$inferSelect | null,
+): AgentBattleP2PHistoryPosition {
+  const base = hydratePosition(row);
+  const opponent = getSnapshotOpponentDetails(row);
+  const settlementStatus = normalizeRoundSettlementStatus(round?.settlementStatus);
+  const didWin =
+    row.winnerSideId && row.escrowStatus === "settled"
+      ? row.winnerSideId === row.sideId
+      : null;
+  const winningPayoutAmount = row.payoutAmount === null ? null : toNumber(row.payoutAmount);
+  const earnedAmount =
+    didWin === null
+      ? null
+      : didWin
+        ? winningPayoutAmount
+        : 0;
+  const resultStatus = resolveHistoryResultStatus({
+    position: row,
+    settlementStatus,
+    nowMs: Date.now(),
+  });
+
+  return {
+    ...base,
+    battleTitle: getHistoryBattleTitle(row),
+    opponentSideLabel: opponent.label,
+    opponentSideSymbol: opponent.symbol,
+    opponentSideLogoUrl: opponent.logoUrl,
+    settlementStatus,
+    settlementError: stringOrNull(round?.settlementError),
+    settledAt: round?.settledAt ? toIsoString(round.settledAt) : null,
+    resultStatus,
+    didWin,
+    earnedAmount,
+    winningPayoutAmount,
+  };
+}
+
+export async function listAgentBattleP2PHistoryPositions(
+  userId: string,
+  limit = 20,
+): Promise<AgentBattleP2PHistoryPosition[]> {
+  await ensureAgentBattleP2PPositionsTable();
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) return [];
+
+  const rows = await db
+    .select({
+      position: agentBattleP2PPositions,
+      round: agentBattleP2PRounds,
+    })
+    .from(agentBattleP2PPositions)
+    .leftJoin(
+      agentBattleP2PRounds,
+      eq(agentBattleP2PRounds.roundId, agentBattleP2PPositions.roundId),
+    )
+    .where(eq(agentBattleP2PPositions.userId, normalizedUserId))
+    .orderBy(desc(agentBattleP2PPositions.updatedAt), desc(agentBattleP2PPositions.createdAt))
+    .limit(Math.max(1, Math.min(Number(limit || 20), 100)));
+
+  return rows.map(({ position, round }) => hydrateHistoryPosition(position, round));
+}
+
+type AgentBattleLeaderboardEntry = {
+  userId: string;
+  name: string;
+  handle: string | null;
+  profileImageUrl: string | null;
+  score: number;
+  wins: number;
+  balance: number;
+  balanceDisplay: string;
+  points: number;
+  coins: number;
+  challengesWon: number;
+  eventsWon: number;
+  battleJoins: number;
+  liveBattles: number;
+  totalStake: number;
+  stakeDisplay: string;
+  currentBattleTitle: string | null;
+  activeSideLabel: string | null;
+};
+
+function compactAmount(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 1 : 2)}K`;
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: value >= 100 ? 0 : 2,
+  });
+}
+
+function userDisplayName(rowUser: typeof users.$inferSelect | null, userId: string) {
+  const name =
+    rowUser?.username ||
+    [rowUser?.firstName, rowUser?.lastName].filter(Boolean).join(" ").trim();
+  if (name) return name;
+  const compactId = userId.replace(/^did:privy:/, "").replace(/^user[-_:]/i, "");
+  return compactId ? `user_${compactId.slice(0, 8)}` : "Arena user";
+}
+
+function stakeStatusWeight(status: AgentBattleP2PPosition["escrowStatus"]) {
+  if (status === "settled") return 1.25;
+  if (status === "escrow_locked") return 1;
+  if (status === "escrow_required" || status === "intent_saved") return 0.35;
+  return 0;
+}
+
+function buildLiveBattleSideLeaderboard(
+  liveBattles: BantahBroAgentBattle[],
+  limit: number,
+): AgentBattleLeaderboardEntry[] {
+  return liveBattles
+    .flatMap((battle) =>
+      battle.sides.map((side) => ({
+        userId: `agent:${battle.id}:${side.id}`,
+        name: side.agentName || side.label,
+        handle: side.tokenSymbol ? `$${side.tokenSymbol}` : null,
+        profileImageUrl: side.logoUrl,
+        score: Math.round(side.score + side.confidence + (battle.leadingSideId === side.id ? 25 : 0)),
+        wins: battle.leadingSideId === side.id ? 1 : 0,
+        balance: side.confidence,
+        balanceDisplay: `${side.confidence}% confidence`,
+        points: Math.round(side.score),
+        coins: 0,
+        challengesWon: 0,
+        eventsWon: battle.leadingSideId === side.id ? 1 : 0,
+        battleJoins: 0,
+        liveBattles: 1,
+        totalStake: 0,
+        stakeDisplay: `${side.confidence}% confidence`,
+        currentBattleTitle: battle.title,
+        activeSideLabel: side.label,
+      })),
+    )
+    .sort((left, right) => right.score - left.score || right.wins - left.wins)
+    .slice(0, limit);
+}
+
+export async function getLiveAgentBattleLeaderboard(limit = 25): Promise<{
+  entries: AgentBattleLeaderboardEntry[];
+  updatedAt: string;
+  activeBattleCount: number;
+}> {
+  const requestedLimit = Math.max(1, Math.min(Math.round(limit || 25), 100));
+  const liveFeed = await getLiveBantahBroAgentBattles(40);
+  const liveBattles = liveFeed.battles.filter((battle) => {
+    const endsAtMs = new Date(battle.endsAt).getTime();
+    return Number.isFinite(endsAtMs) && endsAtMs > Date.now();
+  });
+  const liveRoundIds = new Set(liveBattles.map((battle) => makeRoundId(battle)));
+  const battleTitleById = new Map(liveFeed.battles.map((battle) => [battle.id, battle.title]));
+
+  let rows: Array<{
+    position: typeof agentBattleP2PPositions.$inferSelect;
+    user: typeof users.$inferSelect | null;
+  }>;
+  try {
+    await ensureAgentBattleP2PPositionsTable();
+    rows = await db
+      .select({
+        position: agentBattleP2PPositions,
+        user: users,
+      })
+      .from(agentBattleP2PPositions)
+      .leftJoin(users, eq(users.id, agentBattleP2PPositions.userId))
+      .orderBy(desc(agentBattleP2PPositions.updatedAt), desc(agentBattleP2PPositions.createdAt))
+      .limit(Math.max(250, requestedLimit * 20));
+  } catch {
+    return {
+      entries: buildLiveBattleSideLeaderboard(liveBattles, requestedLimit),
+      updatedAt: new Date().toISOString(),
+      activeBattleCount: liveBattles.length,
+    };
+  }
+
+  const entriesByUser = new Map<string, AgentBattleLeaderboardEntry & { latestUpdatedAt: number }>();
+
+  for (const { position, user } of rows) {
+    if (position.escrowStatus === "cancelled" || position.escrowStatus === "failed") continue;
+
+    const stakeAmount = toNumber(position.stakeAmount);
+    const weightedStake = stakeAmount * stakeStatusWeight(position.escrowStatus);
+    const didWin = position.escrowStatus === "settled" && position.winnerSideId === position.sideId;
+    const isLive = liveRoundIds.has(position.roundId);
+    const updatedAtMs = new Date(position.updatedAt).getTime();
+    const currency = position.escrowTokenSymbol || position.stakeCurrency || "USDC";
+    const existing = entriesByUser.get(position.userId);
+    const entry =
+      existing ||
+      ({
+        userId: position.userId,
+        name: userDisplayName(user, position.userId),
+        handle: user?.username ? `@${user.username}` : null,
+        profileImageUrl: user?.profileImageUrl || null,
+        score: 0,
+        wins: 0,
+        balance: 0,
+        balanceDisplay: "0 stake",
+        points: 0,
+        coins: 0,
+        challengesWon: 0,
+        eventsWon: 0,
+        battleJoins: 0,
+        liveBattles: 0,
+        totalStake: 0,
+        stakeDisplay: "0 stake",
+        currentBattleTitle: null,
+        activeSideLabel: null,
+        latestUpdatedAt: 0,
+      } satisfies AgentBattleLeaderboardEntry & { latestUpdatedAt: number });
+
+    entry.battleJoins += 1;
+    entry.liveBattles += isLive ? 1 : 0;
+    entry.totalStake += stakeAmount;
+    entry.balance += toNumber(position.payoutAmount) + weightedStake;
+    entry.wins += didWin ? 1 : 0;
+    entry.eventsWon = entry.wins;
+    entry.score += Math.round(weightedStake + (didWin ? 500 : 0) + (isLive ? 50 : 0) + 15);
+    entry.points = entry.score;
+    entry.coins = 0;
+
+    if (!existing || (Number.isFinite(updatedAtMs) && updatedAtMs >= entry.latestUpdatedAt)) {
+      entry.latestUpdatedAt = Number.isFinite(updatedAtMs) ? updatedAtMs : Date.now();
+      entry.currentBattleTitle = battleTitleById.get(position.battleId) || getHistoryBattleTitle(position);
+      entry.activeSideLabel = position.sideLabel || position.sideSymbol || null;
+      entry.stakeDisplay = `${compactAmount(entry.totalStake)} ${currency}`;
+      entry.balanceDisplay = `${compactAmount(entry.balance)} ${currency}`;
+    } else {
+      entry.stakeDisplay = `${compactAmount(entry.totalStake)} ${currency}`;
+      entry.balanceDisplay = `${compactAmount(entry.balance)} ${currency}`;
+    }
+
+    entriesByUser.set(position.userId, entry);
+  }
+
+  const entries = Array.from(entriesByUser.values())
+    .sort((left, right) => {
+      if (right.liveBattles !== left.liveBattles) return right.liveBattles - left.liveBattles;
+      if (right.score !== left.score) return right.score - left.score;
+      if (right.wins !== left.wins) return right.wins - left.wins;
+      return right.balance - left.balance;
+    })
+    .slice(0, requestedLimit)
+    .map(({ latestUpdatedAt: _latestUpdatedAt, ...entry }) => entry);
+
+  return {
+    entries: entries.length > 0 ? entries : buildLiveBattleSideLeaderboard(liveBattles, requestedLimit),
+    updatedAt: new Date().toISOString(),
+    activeBattleCount: liveBattles.length,
+  };
+}
+
 export async function resolveAgentBattleP2PRoundWinner(input: {
   roundId: string;
   preloadedRows?: Array<typeof agentBattleP2PPositions.$inferSelect>;
@@ -994,6 +1320,8 @@ export async function settleAgentBattleP2PRound(input: {
   roundId: string;
   escrowChallengeId: number;
   winnerSideId: string;
+  winnerSideLabel: string;
+  loserSideLabel: string | null;
   tokenSymbol: OnchainTokenSymbol;
   chainId: number;
   dryRun: boolean;
@@ -1047,6 +1375,9 @@ export async function settleAgentBattleP2PRound(input: {
   const losers = lockedRows
     .filter((row) => row.sideId !== winnerSideId && normalizeEvmAddress(row.walletAddress || ""))
     .sort(compareStakeRows);
+  const winnerSideLabel =
+    lockedRows.find((row) => row.sideId === winnerSideId)?.sideLabel || winnerSideId;
+  const loserSideLabel = lockedRows.find((row) => row.sideId !== winnerSideId)?.sideLabel || null;
   const maxPairs = Math.max(1, Math.min(Number(input.maxPairs || 20), 100));
   const pairCount = Math.min(winners.length, losers.length, maxPairs);
   if (pairCount < 1) {
@@ -1157,6 +1488,8 @@ export async function settleAgentBattleP2PRound(input: {
     roundId,
     escrowChallengeId: round.escrowChallengeId,
     winnerSideId,
+    winnerSideLabel,
+    loserSideLabel,
     tokenSymbol,
     chainId: chain.chainId,
     dryRun,

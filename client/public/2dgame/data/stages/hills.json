@@ -1,0 +1,47 @@
+{
+  "canvas": {
+    "width": 1366,
+    "height": 768
+  },
+  "gravity": 0.7,
+  "floorY": 390,
+  "fighterBounds": {
+    "left": 340,
+    "right": 1028
+  },
+  "roundSeconds": 300,
+  "background": {
+    "id": "arena-ens-classic",
+    "position": {
+      "x": -1,
+      "y": -96
+    },
+    "imageSrc": "image/arena-ens.png",
+    "totalFrames": 1,
+    "scale": 0.89
+  },
+  "backgroundVariants": [
+    {
+      "id": "arena-ens-island",
+      "position": {
+        "x": -1,
+        "y": -96
+      },
+      "imageSrc": "image/ens-arena.png",
+      "totalFrames": 1,
+      "scale": 0.89
+    },
+    {
+      "id": "arena-bantah-festival",
+      "position": {
+        "x": -1,
+        "y": -96
+      },
+      "imageSrc": "image/bantah-arena.png",
+      "totalFrames": 1,
+      "scale": 0.89
+    }
+  ],
+  "decorations": [],
+  "overlay": null
+}

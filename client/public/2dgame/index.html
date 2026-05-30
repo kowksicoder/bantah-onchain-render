@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html class="bantah-game-document">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <base href="/2dgame/" />
+    <title>Bantah 2D Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      if (new URLSearchParams(window.location.search).get("battle-section") === "1") {
+        document.documentElement.classList.add("is-battle-section");
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      media="screen"
+      href="index.css?v=engine-20260529-20"
+    />
+  </head>
+  <body class="bantah-game-standalone">
+    <div class="bantah-fighting-game container">
+      <div class="top-indicator">
+        <div class="player-card player1">
+          <div class="avatar-ring">
+            <img src="game-play/p1.png" alt="" />
+          </div>
+          <div class="player-card-body">
+            <div class="player-heading">
+              <div>
+                <div class="player-name">PENGU #6873</div>
+                <div class="player-team">PUDGY PENGUINS</div>
+              </div>
+              <div class="hp-readout"><span class="hp-current">100</span> / 100</div>
+            </div>
+            <div class="health-frame">
+              <div class="max-health"></div>
+              <div class="health"></div>
+            </div>
+            <div class="hud-abilities">
+              <span>ICE</span>
+              <span>SHD</span>
+              <span>DASH</span>
+            </div>
+          </div>
+        </div>
+        <div class="timer-panel">
+          <div class="round-label">ROUND 1</div>
+          <div class="timer">--</div>
+          <div class="match-format">BEST OF 3</div>
+          <div class="round-dots" aria-hidden="true">
+            <span class="is-active"></span>
+            <span class="is-active"></span>
+            <span></span>
+            <i></i>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </div>
+        <div class="player-card player2">
+          <div class="player-card-body">
+            <div class="player-heading">
+              <div>
+                <div class="player-name">PENGU #3521</div>
+                <div class="player-team">PUDGY PENGUINS</div>
+              </div>
+              <div class="hp-readout"><span class="hp-current">100</span> / 100</div>
+            </div>
+            <div class="health-frame">
+              <div class="max-health"></div>
+              <div class="health"></div>
+            </div>
+            <div class="hud-abilities">
+              <span>STRK</span>
+              <span>GRD</span>
+              <span>HEAL</span>
+            </div>
+          </div>
+          <div class="avatar-ring">
+            <img src="game-play/p2.png" alt="" />
+          </div>
+        </div>
+      </div>
+      <div class="dialog"></div>
+      <canvas></canvas>
+    </div>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.10.2/gsap.min.js"
+      integrity="sha512-kVlGhj2qFy+KBCFuvjBJTGUMxbdqJKs4yK2jh0e0VPhWUPiPC87bzm4THmaaIee3Oj7j6sDpTTgm2EPPiESqBg=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+      async
+    ></script>
+    <script src="js/classes.js?v=engine-20260529-20"></script>
+    <script src="engine/AssetLoader.js?v=engine-20260529-20"></script>
+    <script src="engine/InputManager.js?v=engine-20260529-20"></script>
+    <script src="engine/CollisionSystem.js?v=engine-20260529-20"></script>
+    <script src="engine/MoveResolver.js?v=engine-20260529-20"></script>
+    <script src="engine/RoundManager.js?v=engine-20260529-20"></script>
+    <script src="engine/GameEngine.js?v=engine-20260529-20"></script>
+    <script src="index.js?v=engine-20260529-20"></script>
+  </body>
+</html>

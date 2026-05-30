@@ -27,11 +27,11 @@ export function SplashScreen({ onComplete, variant = 'bantah' }: SplashScreenPro
             <div className="w-24 h-24 mx-auto mb-4 rounded-full border border-violet-500/30 bg-violet-500/10 flex items-center justify-center shadow-[0_0_40px_rgba(124,58,237,0.35)]">
               <img
                 src="/bantahbrologo.png"
-                alt="BantahBro"
+                alt="BOTA"
                 className="w-20 h-20 rounded-full object-cover animate-pulse"
               />
             </div>
-            <h1 className="text-violet-200 text-2xl font-bold mb-2">BantahBro</h1>
+            <h1 className="text-violet-200 text-2xl font-bold mb-2">BOTA</h1>
             <p className="text-violet-200/70 text-sm">AI Degen Command Center</p>
           </div>
 
@@ -49,7 +49,7 @@ export function SplashScreen({ onComplete, variant = 'bantah' }: SplashScreenPro
         <div className="mb-8">
           <img 
             src="/assets/bantahlogo.png" 
-            alt="BetChat" 
+            alt="BOTA" 
             className="w-20 h-20 mx-auto mb-4 animate-pulse"
           />
           <h1 className="text-primary text-2xl font-bold mb-2">Bantah</h1>

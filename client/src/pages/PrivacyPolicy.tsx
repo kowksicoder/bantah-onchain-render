@@ -25,7 +25,7 @@ export default function PrivacyPolicy() {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 flex items-center">
               <Shield className="w-6 h-6 mr-2" />
-              Bantah Onchain Privacy Policy
+              BOTA Privacy Policy
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
               Last updated: February 21, 2026

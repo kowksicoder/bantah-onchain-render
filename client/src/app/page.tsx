@@ -5,6 +5,7 @@ import Sidebar from '@/components/layout/sidebar';
 import TopBar from '@/components/layout/topbar';
 import MainContent from '@/components/layout/main-content';
 import type { MainContentTopTab } from '@/components/layout/main-content';
+import { ChallengeRightSidebar } from '@/components/pages/challenge-page';
 import RightPanel from '@/components/layout/right-panel';
 import MobileBottomNav from '@/components/layout/mobile-bottom-nav';
 import ChatPage from '@/components/pages/chat-page';
@@ -22,6 +23,7 @@ import type { BantahBroWalletAction } from '@shared/bantahBroWallet';
 import { decodeBantahBroWalletActionParam } from '@shared/bantahBroWalletDeepLink';
 
 export type AppSection =
+  | 'challenge'
   | 'dashboard'
   | 'feed'
   | 'chat'
@@ -50,20 +52,66 @@ export type BantahTool =
   | 'launcher';
 
 export default function Home({
-  initialSection = 'dashboard',
-  initialDashboardTab = 'markets',
+  initialSection = 'challenge',
+  initialDashboardTab = 'battles',
   initialPredictionBattleId = '',
 }: {
   initialSection?: AppSection;
   initialDashboardTab?: MainContentTopTab;
   initialPredictionBattleId?: string;
 }) {
-  const [selectedToken, setSelectedToken] = useState('PEPEFUN');
+  const [selectedToken, setSelectedToken] = useState('BOTA');
   const [isMounted, setIsMounted] = useState(false);
   const [activeSection, setActiveSection] = useState<AppSection>(initialSection);
   const [predictionBattleId] = useState(initialPredictionBattleId);
   const [activeTool, setActiveTool] = useState<BantahTool>('assistant');
   const [pendingWalletAction, setPendingWalletAction] = useState<BantahBroWalletAction | null>(null);
+
+  const normalizeSection = (section: AppSection): AppSection =>
+    section === 'dashboard' ? 'challenge' : section;
+
+  const syncSectionUrl = (section: AppSection, battleId?: string | null) => {
+    if (typeof window === 'undefined') return;
+
+    const normalizedSection = normalizeSection(section);
+    const params = new URLSearchParams(window.location.search);
+    params.set('section', normalizedSection);
+
+    if (normalizedSection === 'battles' && battleId?.trim()) {
+      params.set('battle', battleId.trim());
+      params.set('battleLayer', 'arena');
+      params.delete('arenaState');
+      params.delete('arenaStartsAt');
+      params.delete('arenaMatchup');
+      params.delete('arenaLabel');
+      params.delete('arenaPreviewId');
+    } else {
+      params.delete('battle');
+      if (normalizedSection !== 'battles') {
+        params.delete('battleLayer');
+        params.delete('arenaState');
+        params.delete('arenaStartsAt');
+        params.delete('arenaMatchup');
+        params.delete('arenaLabel');
+        params.delete('arenaPreviewId');
+      }
+    }
+
+    const queryString = params.toString();
+    const nextUrl = `${window.location.pathname}${queryString ? `?${queryString}` : ''}`;
+    window.history.replaceState({}, '', nextUrl);
+  };
+
+  const handleNavigate = (section: AppSection) => {
+    const normalizedSection = normalizeSection(section);
+    setActiveSection(normalizedSection);
+    syncSectionUrl(section);
+  };
+
+  const handleOpenBattle = (battleId: string) => {
+    syncSectionUrl('battles', battleId);
+    setActiveSection('battles');
+  };
 
   useEffect(() => {
     setIsMounted(true);
@@ -75,6 +123,7 @@ export default function Home({
 
     if (
       sectionParam === 'chat' ||
+      sectionParam === 'challenge' ||
       sectionParam === 'dashboard' ||
       sectionParam === 'feed' ||
       sectionParam === 'battles' ||
@@ -88,7 +137,7 @@ export default function Home({
       sectionParam === 'prediction' ||
       sectionParam === 'prediction-battle'
     ) {
-      setActiveSection(sectionParam);
+      setActiveSection(normalizeSection(sectionParam));
     }
 
     if (
@@ -117,23 +166,27 @@ export default function Home({
 
   if (!isMounted) return null;
 
-  const renderRightPanel = (className = 'hidden lg:flex') => (
-    <div className={className}>
-      <RightPanel
-        selectedToken={selectedToken}
-        onNavigate={setActiveSection}
-      />
-    </div>
-  );
-
-  const renderWithRightPanel = (content: ReactNode, rightPanelClassName = 'hidden lg:flex') => (
+  const renderWithPanel = (content: ReactNode, panel: ReactNode, rightPanelClassName = 'hidden lg:flex') => (
     <div className={`flex-1 flex gap-0.5 overflow-hidden p-0.5 ${activeSection === 'launcher' ? 'pb-0.5' : 'pb-20 md:pb-0.5'} flex-col md:flex-row`}>
       <div className="flex-1 min-w-0 flex overflow-hidden">
         {content}
       </div>
-      {renderRightPanel(rightPanelClassName)}
+      <div className={rightPanelClassName}>
+        {panel}
+      </div>
     </div>
   );
+
+  const renderWithRightPanel = (content: ReactNode, rightPanelClassName = 'hidden lg:flex') =>
+    renderWithPanel(
+      content,
+      <RightPanel
+        selectedToken={selectedToken}
+        onNavigate={handleNavigate}
+        onOpenBattle={handleOpenBattle}
+      />,
+      rightPanelClassName,
+    );
 
   const renderPage = () => {
     switch (activeSection) {
@@ -150,7 +203,7 @@ export default function Home({
       case 'battles':
         return (
           <div className="flex-1 flex overflow-hidden p-0">
-            <BattlesPage onNavigate={setActiveSection} />
+            <BattlesPage onNavigate={handleNavigate} />
           </div>
         );
       case 'leaderboard':
@@ -174,16 +227,27 @@ export default function Home({
           </div>
         );
       default:
-        return renderWithRightPanel(
-          <MainContent
-            selectedToken={selectedToken}
-            setSelectedToken={setSelectedToken}
-            activeSection={activeSection}
-            onNavigate={setActiveSection}
-            initialTab={initialDashboardTab}
-          />,
-          activeSection === 'prediction' ? 'w-full md:w-auto' : 'hidden lg:flex'
-        );
+        {
+          const content = (
+            <MainContent
+              selectedToken={selectedToken}
+              setSelectedToken={setSelectedToken}
+              activeSection={activeSection}
+              onNavigate={handleNavigate}
+              onOpenBattle={handleOpenBattle}
+              initialTab={initialDashboardTab}
+            />
+          );
+
+          if (activeSection === 'challenge') {
+            return renderWithPanel(content, <ChallengeRightSidebar />, 'hidden lg:flex');
+          }
+
+          return renderWithRightPanel(
+            content,
+            activeSection === 'prediction' ? 'w-full md:w-auto' : 'hidden lg:flex'
+          );
+        }
     }
   };
 
@@ -193,7 +257,7 @@ export default function Home({
         <Sidebar
           activeSection={activeSection}
           activeTool={activeTool}
-          onNavigate={setActiveSection}
+          onNavigate={handleNavigate}
           onToolSelect={setActiveTool}
         />
       </div>
@@ -201,7 +265,8 @@ export default function Home({
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className={activeSection === 'battles' ? 'hidden md:block' : 'block'}>
           <TopBar
-            onNavigate={setActiveSection}
+            onNavigate={handleNavigate}
+            onOpenBattle={handleOpenBattle}
             activeSection={activeSection}
             activeTool={activeTool}
             onToolSelect={setActiveTool}
@@ -210,7 +275,7 @@ export default function Home({
         {renderPage()}
       </div>
 
-      {activeSection !== 'battles' && activeSection !== 'launcher' && <MobileBottomNav activeSection={activeSection} onNavigate={setActiveSection} />}
+      {activeSection !== 'battles' && activeSection !== 'launcher' && <MobileBottomNav activeSection={activeSection} onNavigate={handleNavigate} />}
     </div>
   );
 }

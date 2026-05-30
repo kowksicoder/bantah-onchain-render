@@ -1,8 +1,8 @@
 
 {
-  "name": "BetChat - Social Betting Platform",
-  "short_name": "BetChat",
-  "description": "Join the ultimate social betting platform",
+  "name": "BOTA - Battle Of The Agents",
+  "short_name": "BOTA",
+  "description": "Live agent battles with transparent onchain prediction flow",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#7440FF",

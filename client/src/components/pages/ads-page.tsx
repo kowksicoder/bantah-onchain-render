@@ -35,7 +35,7 @@ const stats = [
   { label: 'Starter slots', value: 'From $99' },
   { label: 'Ad surfaces', value: '5 live areas' },
   { label: 'Audience', value: 'Crypto degens' },
-  { label: 'Contact', value: '@bantahfun' },
+  { label: 'Contact', value: 'BOTA team' },
 ]
 
 const placements = [
@@ -49,7 +49,7 @@ const placements = [
   {
     icon: PanelRight,
     title: 'Sidebar feature',
-    body: 'Persistent coin placement in the BantahBro terminal rail.',
+    body: 'Persistent coin placement in the BOTA terminal rail.',
     tag: 'Sidebar',
     highlight: 'side',
   },
@@ -77,7 +77,7 @@ const sponsoredBattleSteps = [
 
 const partnerships = [
   { title: 'Launch partners', body: 'Co-market new tokens, agents, prediction markets, and community campaigns.' },
-  { title: 'Media partners', body: 'Bring BantahBro placements into newsletters, Telegram rooms, X Spaces, and trading communities.' },
+  { title: 'Media partners', body: 'Bring BOTA placements into newsletters, Telegram rooms, X Spaces, and trading communities.' },
   { title: 'Ecosystem partners', body: 'Collaborate across chains, launchpads, DEX tools, market data, and creator networks.' },
 ]
 
@@ -88,7 +88,7 @@ function TerminalPreview({ highlight }: { highlight: string }) {
         <span className="size-2 rounded-full bg-destructive/70" />
         <span className="size-2 rounded-full bg-yellow-500/70" />
         <span className="size-2 rounded-full bg-secondary/70" />
-        <span className="ml-auto text-[10px] font-bold text-muted-foreground uppercase">BantahBro terminal</span>
+        <span className="ml-auto text-[10px] font-bold text-muted-foreground uppercase">BOTA terminal</span>
       </div>
 
       <div className="p-3 space-y-2">
@@ -136,7 +136,7 @@ export default function AdsPage() {
         <div className="flex items-center gap-2">
           <Megaphone size={18} className="text-primary" />
           <span className="font-bold text-foreground">Ads Placement</span>
-          <span className="ml-auto text-xs text-muted-foreground">Promote your coin on BantahBro</span>
+          <span className="ml-auto text-xs text-muted-foreground">Promote your coin on BOTA</span>
         </div>
       </div>
 
@@ -149,10 +149,10 @@ export default function AdsPage() {
                 Self-serve ads from $99
               </div>
               <h1 className="text-3xl md:text-4xl font-black text-foreground tracking-tight max-w-2xl">
-                Reach real crypto degens with BantahBro Ads
+                Reach real crypto degens with BOTA Ads
               </h1>
               <p className="mt-3 text-sm text-muted-foreground max-w-xl leading-relaxed">
-                Put your coin in front of active traders, market watchers, and agent users inside the BantahBro terminal.
+                Put your coin in front of active traders, market watchers, and agent users inside the BOTA terminal.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
                 <a
@@ -162,7 +162,7 @@ export default function AdsPage() {
                   className="inline-flex items-center gap-2 rounded bg-primary px-4 py-2 text-sm font-bold text-primary-foreground"
                 >
                   <Send size={15} />
-                  Telegram @bantahfun
+                  Telegram
                 </a>
                 <a
                   href="https://x.com/bantahfun"
@@ -171,7 +171,7 @@ export default function AdsPage() {
                   className="inline-flex items-center gap-2 rounded border border-border bg-card px-4 py-2 text-sm font-bold text-foreground hover:bg-sidebar-accent"
                 >
                   <Twitter size={15} />
-                  X @bantahfun
+                  X
                 </a>
               </div>
             </div>
@@ -296,7 +296,7 @@ export default function AdsPage() {
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground"
               >
-                Telegram @bantahfun
+                Telegram
                 <ArrowUpRight size={13} />
               </a>
               <a
@@ -305,7 +305,7 @@ export default function AdsPage() {
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-sidebar-accent"
               >
-                X @bantahfun
+                X
                 <ArrowUpRight size={13} />
               </a>
             </div>
@@ -315,7 +315,7 @@ export default function AdsPage() {
         <section className="border border-border rounded bg-background p-4 flex flex-col md:flex-row md:items-center gap-3">
           <div className="min-w-0">
             <div className="text-lg font-black text-foreground">Want a slot?</div>
-            <div className="text-sm text-muted-foreground">Message BantahFun and we will confirm placement, timing, and creative specs.</div>
+            <div className="text-sm text-muted-foreground">Message the BOTA team and we will confirm placement, timing, and creative specs.</div>
           </div>
           <div className="md:ml-auto flex flex-wrap gap-2">
             <a

@@ -36,9 +36,9 @@ const MOCK_POSITIONS: Position[] = [
   },
   {
     id: '2',
-    market: 'Will PEPEFUN 2x in 24H?',
+    market: 'Will BONK 2x in 24H?',
     emoji: '🐸',
-    token: 'PEPEFUN',
+    token: 'BONK',
     choice: 'yes',
     amount: '500 BXBT',
     currentOdds: 62,

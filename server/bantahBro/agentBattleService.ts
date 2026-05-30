@@ -11,10 +11,79 @@ import {
 } from "./tokenIntelligence";
 
 const AGENT_BATTLE_CACHE_TTL_MS = 5_000;
-const BATTLE_WINDOW_MS = 5 * 60 * 1000;
+const DEFAULT_BATTLE_WINDOW_MINUTES = 5;
 const LISTED_BATTLES_TIMEOUT_MS = Number(process.env.BANTAHBRO_LISTED_BATTLES_TIMEOUT_MS || 3_500);
 const LISTED_BATTLE_REFRESH_TIMEOUT_MS = Number(process.env.BANTAHBRO_LISTED_BATTLE_REFRESH_TIMEOUT_MS || 5_000);
 const BATTLE_ENGINE_TIMEOUT_MS = Number(process.env.BANTAHBRO_BATTLE_ENGINE_TIMEOUT_MS || 7_500);
+
+function getBattleWindowMinutes() {
+  const configured = Number.parseInt(
+    String(process.env.BANTAHBRO_AGENT_BATTLE_DURATION_MINUTES || "").trim(),
+    10,
+  );
+  if (Number.isInteger(configured) && configured > 0) {
+    return configured;
+  }
+  return DEFAULT_BATTLE_WINDOW_MINUTES;
+}
+
+function getBattleWindowMs() {
+  return getBattleWindowMinutes() * 60 * 1000;
+}
+
+function normalizeBattleIdentity(value: string) {
+  return String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9:-]/g, "-")
+    .slice(0, 180);
+}
+
+type BattleTokenIdentitySide = {
+  id?: string | null;
+  chainId?: string | null;
+  tokenAddress?: string | null;
+};
+
+function tokenIdentityForBattleSide(side?: BattleTokenIdentitySide | null) {
+  const chainId = String(side?.chainId || "").trim().toLowerCase();
+  const tokenAddress = String(side?.tokenAddress || "").trim().toLowerCase();
+  if (chainId && tokenAddress) {
+    return normalizeBattleIdentity(`${chainId}:${tokenAddress}`);
+  }
+  return normalizeBattleIdentity(String(side?.id || ""));
+}
+
+function collectUniqueBattleTokenIdentities(
+  sides: Array<BattleTokenIdentitySide | null | undefined>,
+) {
+  const tokenIdentities: string[] = [];
+  const seen = new Set<string>();
+  for (const side of sides) {
+    const identity = tokenIdentityForBattleSide(side);
+    if (!identity || seen.has(identity)) continue;
+    seen.add(identity);
+    tokenIdentities.push(identity);
+  }
+  return tokenIdentities;
+}
+
+function candidateTokenIdentities(candidate?: BantahBroBattleCandidate | null) {
+  return collectUniqueBattleTokenIdentities(candidate?.sides || []);
+}
+
+function battleTokenIdentities(battle?: BantahBroAgentBattle | null) {
+  return collectUniqueBattleTokenIdentities(battle?.sides || []);
+}
+
+function hasTokenIdentityOverlap(tokenIdentities: string[], usedTokenIdentities: Set<string>) {
+  return tokenIdentities.some((identity) => usedTokenIdentities.has(identity));
+}
+
+function markTokenIdentitiesUsed(tokenIdentities: string[], usedTokenIdentities: Set<string>) {
+  for (const identity of tokenIdentities) {
+    usedTokenIdentities.add(identity);
+  }
+}
 
 export interface BantahBroAgentBattleSide {
   id: string;
@@ -72,7 +141,7 @@ export interface BantahBroAgentBattle {
   id: string;
   title: string;
   battleType: "agent-battle";
-  status: "live";
+  status: "live" | "expired";
   winnerLogic: string;
   startsAt: string;
   endsAt: string;
@@ -99,9 +168,10 @@ let cachedAt = 0;
 let cachedLimit = 0;
 let inflightFeedPromise: Promise<BantahBroAgentBattlesFeed> | null = null;
 let inflightLimit = 0;
-let lockedRoundKey = "";
 let lockedRoundBattleIds: string[] = [];
 let lockedRoundCandidateSnapshots: BantahBroBattleCandidate[] = [];
+let lockedRoundBattleSnapshots: BantahBroAgentBattle[] = [];
+let lastNonEmptyFeed: BantahBroAgentBattlesFeed | null = null;
 
 type BattleTokenEntry = Pick<
   BantahBroBattleDiscoveryTokenProfile,
@@ -467,36 +537,180 @@ function winnerLogicForCandidate(candidate?: BantahBroBattleCandidate) {
   return "Hybrid live score: live 5M/1H/24H price movement, buy pressure, volume, liquidity, and rivalry strength.";
 }
 
+function battleSnapshotKeyFromCandidate(candidate?: BantahBroBattleCandidate | null) {
+  return normalizeBattleIdentity(candidate?.id || "");
+}
+
+function isBattleSnapshotLive(battle: BantahBroAgentBattle, now: Date) {
+  const endsAtMs = new Date(battle.endsAt).getTime();
+  return Number.isFinite(endsAtMs) && endsAtMs > now.getTime();
+}
+
+function pruneExpiredBattleSnapshots(now: Date) {
+  const usedTokenIdentities = new Set<string>();
+  lockedRoundBattleSnapshots = lockedRoundBattleSnapshots
+    .map((battle) => syncBattleSnapshotToNow(battle, now))
+    .filter((battle) => isBattleSnapshotLive(battle, now))
+    .filter((battle) => {
+      const tokenIdentities = battleTokenIdentities(battle);
+      if (hasTokenIdentityOverlap(tokenIdentities, usedTokenIdentities)) {
+        return false;
+      }
+      markTokenIdentitiesUsed(tokenIdentities, usedTokenIdentities);
+      return true;
+    });
+  lockedRoundBattleIds = lockedRoundBattleSnapshots.map((battle) => battle.id);
+  const activeIds = new Set(lockedRoundBattleIds);
+  lockedRoundCandidateSnapshots = lockedRoundCandidateSnapshots.filter((candidate) =>
+    activeIds.has(battleSnapshotKeyFromCandidate(candidate)),
+  );
+}
+
 function lockCandidatesForRound(
   candidates: BantahBroBattleCandidate[],
   requestedBattles: number,
   now: Date,
 ) {
-  const roundKey = String(Math.floor(now.getTime() / BATTLE_WINDOW_MS));
-  const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  pruneExpiredBattleSnapshots(now);
+  const byId = new Map(
+    candidates
+      .map((candidate) => {
+        const key = battleSnapshotKeyFromCandidate(candidate);
+        return key ? ([key, candidate] as const) : null;
+      })
+      .filter((entry): entry is readonly [string, BantahBroBattleCandidate] => Boolean(entry)),
+  );
 
-  if (candidates.length === 0) {
-    return lockedRoundCandidateSnapshots.slice(0, requestedBattles);
-  }
-
-  if (lockedRoundKey !== roundKey) {
-    lockedRoundKey = roundKey;
-    lockedRoundCandidateSnapshots = candidates.slice(0, requestedBattles);
-    lockedRoundBattleIds = lockedRoundCandidateSnapshots.map((candidate) => candidate.id);
-  } else if (lockedRoundBattleIds.length < requestedBattles) {
-    for (const candidate of candidates) {
-      if (lockedRoundBattleIds.length >= requestedBattles) break;
-      if (lockedRoundBattleIds.includes(candidate.id)) continue;
-      lockedRoundBattleIds.push(candidate.id);
-      lockedRoundCandidateSnapshots.push(candidate);
-    }
-  }
-
-  lockedRoundCandidateSnapshots = lockedRoundBattleIds
-    .map((id) => byId.get(id) || lockedRoundCandidateSnapshots.find((candidate) => candidate.id === id))
+  const activeBattleIds = lockedRoundBattleSnapshots.map((battle) => battle.id);
+  const activeCandidates = activeBattleIds
+    .map((id) => byId.get(id) || lockedRoundCandidateSnapshots.find((candidate) => battleSnapshotKeyFromCandidate(candidate) === id))
     .filter((candidate): candidate is BantahBroBattleCandidate => Boolean(candidate));
+  const usedTokenIdentities = new Set<string>();
+  const uniqueActiveCandidates: BantahBroBattleCandidate[] = [];
+  for (const candidate of activeCandidates) {
+    const tokenIdentities = candidateTokenIdentities(candidate);
+    if (hasTokenIdentityOverlap(tokenIdentities, usedTokenIdentities)) continue;
+    uniqueActiveCandidates.push(candidate);
+    markTokenIdentitiesUsed(tokenIdentities, usedTokenIdentities);
+  }
 
-  return lockedRoundCandidateSnapshots.slice(0, requestedBattles);
+  const activeIdSet = new Set(activeBattleIds);
+  const queuedCandidates: BantahBroBattleCandidate[] = [];
+  for (const candidate of candidates) {
+    const key = battleSnapshotKeyFromCandidate(candidate);
+    if (!key || activeIdSet.has(key)) continue;
+    const tokenIdentities = candidateTokenIdentities(candidate);
+    if (hasTokenIdentityOverlap(tokenIdentities, usedTokenIdentities)) continue;
+    queuedCandidates.push(candidate);
+    markTokenIdentitiesUsed(tokenIdentities, usedTokenIdentities);
+    if (uniqueActiveCandidates.length + queuedCandidates.length >= requestedBattles) break;
+  }
+
+  lockedRoundBattleIds = activeBattleIds;
+  lockedRoundCandidateSnapshots = [...uniqueActiveCandidates, ...queuedCandidates].slice(0, requestedBattles);
+  return lockedRoundCandidateSnapshots;
+}
+
+function syncBattleSnapshotToNow(
+  battle: BantahBroAgentBattle,
+  now: Date,
+): BantahBroAgentBattle {
+  const endsAtMs = new Date(battle.endsAt).getTime();
+  const timeRemainingSeconds = Number.isFinite(endsAtMs)
+    ? Math.max(0, Math.ceil((endsAtMs - now.getTime()) / 1000))
+    : Math.max(0, Math.round(battle.timeRemainingSeconds || 0));
+
+  return {
+    ...battle,
+    status: timeRemainingSeconds > 0 ? "live" : "expired",
+    timeRemainingSeconds,
+  };
+}
+
+function buildLockedRoundFeed(
+  now: Date,
+  requestedBattles: number,
+): BantahBroAgentBattlesFeed {
+  return {
+    battles: lockedRoundBattleSnapshots
+      .slice(0, requestedBattles)
+      .map((battle) => syncBattleSnapshotToNow(battle, now)),
+    updatedAt: now.toISOString(),
+    sources: {
+      marketData: "dexscreener",
+      note:
+        "Agent Battle stats are refreshed from live Dexscreener market windows on request. Stored listings are never rendered as live data without a fresh market pull.",
+    },
+  };
+}
+
+function feedHasBattles(feed?: BantahBroAgentBattlesFeed | null): feed is BantahBroAgentBattlesFeed {
+  return Boolean(feed?.battles?.length);
+}
+
+function syncFeedToNow(
+  feed: BantahBroAgentBattlesFeed,
+  now: Date,
+): BantahBroAgentBattlesFeed {
+  return {
+    ...feed,
+    battles: feed.battles.map((battle) => syncBattleSnapshotToNow(battle, now)),
+    updatedAt: now.toISOString(),
+  };
+}
+
+function mergeFeedsPreservingLiveBattles(
+  primaryFeed: BantahBroAgentBattlesFeed,
+  fallbackFeed: BantahBroAgentBattlesFeed | null,
+  requestedBattles: number,
+  now: Date,
+): BantahBroAgentBattlesFeed {
+  if (!fallbackFeed?.battles?.length) {
+    return {
+      ...primaryFeed,
+      battles: primaryFeed.battles
+        .map((battle) => syncBattleSnapshotToNow(battle, now))
+        .filter((battle) => isBattleSnapshotLive(battle, now))
+        .slice(0, requestedBattles),
+      updatedAt: now.toISOString(),
+    };
+  }
+
+  const latestById = new Map<string, BantahBroAgentBattle>();
+  for (const battle of fallbackFeed.battles) {
+    latestById.set(battle.id, battle);
+  }
+  for (const battle of primaryFeed.battles) {
+    latestById.set(battle.id, battle);
+  }
+
+  const orderedIds: string[] = [];
+  const seenIds = new Set<string>();
+  const queueBattleId = (battleId: string) => {
+    if (!battleId || seenIds.has(battleId)) return;
+    seenIds.add(battleId);
+    orderedIds.push(battleId);
+  };
+
+  for (const battle of fallbackFeed.battles) {
+    queueBattleId(battle.id);
+  }
+  for (const battle of primaryFeed.battles) {
+    queueBattleId(battle.id);
+  }
+
+  const battles = orderedIds
+    .map((battleId) => latestById.get(battleId))
+    .filter((battle): battle is BantahBroAgentBattle => Boolean(battle))
+    .map((battle) => syncBattleSnapshotToNow(battle, now))
+    .filter((battle) => isBattleSnapshotLive(battle, now))
+    .slice(0, requestedBattles);
+
+  return {
+    ...primaryFeed,
+    battles,
+    updatedAt: now.toISOString(),
+  };
 }
 
 function buildBattle(
@@ -513,29 +727,27 @@ function buildBattle(
   const rightConfidence = 100 - leftConfidence;
   const left = buildSide(leftEntry, leftConfidence, leftScore);
   const right = buildSide(rightEntry, rightConfidence, rightScore);
-  const battleWindowMs = BATTLE_WINDOW_MS;
-  const bucketStart = Math.floor(now.getTime() / battleWindowMs) * battleWindowMs;
-  const startsAt = new Date(bucketStart);
-  const endsAt = new Date(bucketStart + battleWindowMs);
+  const battleWindowMs = getBattleWindowMs();
+  const startsAt = new Date(now.getTime());
+  const endsAt = new Date(startsAt.getTime() + battleWindowMs);
+  const timeRemainingSeconds = Math.max(0, Math.ceil((endsAt.getTime() - now.getTime()) / 1000));
   const leadingSideId = left.confidence >= right.confidence ? left.id : right.id;
   const volumeTotal = safeNumber(left.volumeH24) + safeNumber(right.volumeH24);
   const liquidityTotal = safeNumber(left.liquidityUsd) + safeNumber(right.liquidityUsd);
   const spectators = Math.round(clamp(Math.log10(volumeTotal + liquidityTotal + 1) * 180, 120, 2600));
-  const battleId = candidate?.officialListing?.id
-    ? candidate.officialListing.id
-    : `agent-battle-${index + 1}-${startsAt.getTime()}-${left.id}-${right.id}`
-        .replace(/[^a-zA-Z0-9:-]/g, "-")
-        .slice(0, 180);
+  const battleId =
+    battleSnapshotKeyFromCandidate(candidate) ||
+    normalizeBattleIdentity(`agent-battle-${index + 1}-${left.id}-${right.id}`);
 
   return {
     id: battleId,
     title: `${left.label} vs ${right.label}`,
     battleType: "agent-battle",
-    status: "live",
+    status: timeRemainingSeconds > 0 ? "live" : "expired",
     winnerLogic: winnerLogicForCandidate(candidate),
     startsAt: startsAt.toISOString(),
     endsAt: endsAt.toISOString(),
-    timeRemainingSeconds: Math.max(0, Math.round((endsAt.getTime() - now.getTime()) / 1000)),
+    timeRemainingSeconds,
     spectators,
     sides: [left, right],
     leadingSideId,
@@ -548,6 +760,10 @@ function buildBattle(
 async function buildFeed(limit: number): Promise<BantahBroAgentBattlesFeed> {
   const requestedBattles = clamp(Math.round(limit || 3), 1, 40);
   const now = new Date();
+  pruneExpiredBattleSnapshots(now);
+  if (lockedRoundBattleSnapshots.length >= requestedBattles) {
+    return buildLockedRoundFeed(now, requestedBattles);
+  }
   const battles: BantahBroAgentBattle[] = [];
   const candidatePool: BantahBroBattleCandidate[] = [];
   const seenCandidateIds = new Set<string>();
@@ -590,8 +806,10 @@ async function buildFeed(limit: number): Promise<BantahBroAgentBattlesFeed> {
   }
 
   const roundCandidates = lockCandidatesForRound(candidatePool, requestedBattles, now);
+  const existingBattleCount = lockedRoundBattleSnapshots.length;
+  const missingRoundCandidates = roundCandidates.slice(existingBattleCount, requestedBattles);
   const refreshedRoundCandidates = await mapWithConcurrency(
-    roundCandidates,
+    missingRoundCandidates,
     5,
     async (candidate) => {
       try {
@@ -601,27 +819,23 @@ async function buildFeed(limit: number): Promise<BantahBroAgentBattlesFeed> {
           `Agent Battle live refresh ${candidate.id}`,
         );
       } catch {
-        return null;
+        return candidate;
       }
     },
   );
 
   for (const candidate of refreshedRoundCandidates) {
-    if (battles.length >= requestedBattles) break;
+    if (lockedRoundBattleSnapshots.length >= requestedBattles) break;
     if (!candidate) continue;
     const [leftEntry, rightEntry] = candidate.sides;
-    battles.push(buildBattle(leftEntry, rightEntry, battles.length, now, candidate));
+    battles.push(buildBattle(leftEntry, rightEntry, lockedRoundBattleSnapshots.length + battles.length, now, candidate));
   }
 
-  return {
-    battles,
-    updatedAt: now.toISOString(),
-    sources: {
-      marketData: "dexscreener",
-      note:
-        "Agent Battle stats are refreshed from live Dexscreener market windows on request. Stored listings are never rendered as live data without a fresh market pull.",
-    },
-  };
+  if (battles.length > 0) {
+    lockedRoundBattleSnapshots = [...lockedRoundBattleSnapshots, ...battles];
+  }
+
+  return buildLockedRoundFeed(now, requestedBattles);
 }
 
 export async function getLiveBantahBroAgentBattles(limit = 3) {
@@ -631,14 +845,39 @@ export async function getLiveBantahBroAgentBattles(limit = 3) {
     ...feed,
     battles: feed.battles.slice(0, requestedLimit),
   });
+  const syncTrimmedFeed = (feed: BantahBroAgentBattlesFeed) =>
+    syncFeedToNow(trimFeed(feed), new Date());
   const refreshFeed = (limitToRefresh: number) => {
     inflightLimit = limitToRefresh;
     const currentPromise = buildFeed(limitToRefresh)
       .then((feed) => {
-        cachedFeed = feed;
+        const fallbackNow = new Date();
+        const mergedWithCache = mergeFeedsPreservingLiveBattles(
+          feed,
+          cachedFeed,
+          limitToRefresh,
+          fallbackNow,
+        );
+        const mergedFeed = mergeFeedsPreservingLiveBattles(
+          mergedWithCache,
+          lastNonEmptyFeed,
+          limitToRefresh,
+          fallbackNow,
+        );
+        const resolvedFeed = feedHasBattles(mergedFeed)
+          ? mergedFeed
+          : feedHasBattles(cachedFeed)
+            ? syncFeedToNow(cachedFeed, fallbackNow)
+            : feedHasBattles(lastNonEmptyFeed)
+              ? syncFeedToNow(lastNonEmptyFeed, fallbackNow)
+              : mergedFeed;
+        cachedFeed = resolvedFeed;
         cachedAt = Date.now();
         cachedLimit = limitToRefresh;
-        return feed;
+        if (feedHasBattles(resolvedFeed)) {
+          lastNonEmptyFeed = resolvedFeed;
+        }
+        return resolvedFeed;
       })
       .catch((error) => {
         if (cachedFeed) return cachedFeed;
@@ -655,19 +894,19 @@ export async function getLiveBantahBroAgentBattles(limit = 3) {
   };
 
   if (cachedFeed && cachedLimit >= requestedLimit && now - cachedAt < AGENT_BATTLE_CACHE_TTL_MS) {
-    return trimFeed(cachedFeed);
+    return syncTrimmedFeed(cachedFeed);
   }
 
   if (cachedFeed && cachedLimit >= requestedLimit) {
     if (!inflightFeedPromise || inflightLimit < requestedLimit) {
       void refreshFeed(requestedLimit);
     }
-    return trimFeed(cachedFeed);
+    return syncTrimmedFeed(cachedFeed);
   }
 
   if (!inflightFeedPromise || inflightLimit < requestedLimit) {
     refreshFeed(requestedLimit);
   }
 
-  return inflightFeedPromise.then(trimFeed);
+  return inflightFeedPromise.then(syncTrimmedFeed);
 }

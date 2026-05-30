@@ -1,6 +1,6 @@
 // Service Worker for push notifications and safe offline support
 
-const SW_VERSION = "2026-03-05-1";
+const SW_VERSION = "2026-05-08-1";
 const CACHE_NAME = `bantah-static-${SW_VERSION}`;
 const PRECACHE_URLS = ["/", "/index.html", "/manifest.json"];
 
@@ -96,17 +96,16 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       (async () => {
         const cached = await caches.match(request);
-        const networkPromise = fetch(request)
-          .then(async (response) => {
-            if (response && response.status === 200) {
-              const cache = await caches.open(CACHE_NAME);
-              await cache.put(request, response.clone());
-            }
-            return response;
-          })
-          .catch(() => null);
-
-        return cached || networkPromise || fetch(request);
+        try {
+          const networkResponse = await fetch(request);
+          if (networkResponse && networkResponse.status === 200) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        } catch (_error) {
+          return cached || fetch(request);
+        }
       })()
     );
     return;

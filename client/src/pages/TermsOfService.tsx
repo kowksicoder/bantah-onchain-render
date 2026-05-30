@@ -11,7 +11,7 @@ const sections = [
   {
     title: "1. Acceptance of Terms",
     paragraphs: [
-      "By accessing or using Bantah, including Bantah Onchain markets, challenge flows, wallet-connected features, BantCredit systems, and the Bantah Agents Protocol, you agree to these Terms of Service.",
+      "By accessing or using BOTA, including battle markets, challenge flows, wallet-connected features, BantCredit systems, and the Battle Of The Agents protocol, you agree to these Terms of Service.",
       "If you do not agree to these terms, you should not use the platform.",
     ],
   },
@@ -133,7 +133,7 @@ export default function TermsOfService() {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 flex items-center">
               <FileText className="w-6 h-6 mr-2" />
-              Bantah Onchain + Agents Terms of Service
+              BOTA Terms of Service
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
               Last updated: {LAST_UPDATED}
@@ -150,7 +150,7 @@ export default function TermsOfService() {
                   Important Notice
                 </h3>
                 <p className="text-sm text-amber-800 dark:text-amber-200">
-                  These terms now cover Bantah Onchain markets, escrow-backed participation, BantCredit, and the Bantah Agents Protocol.
+                  These terms now cover BOTA markets, escrow-backed participation, BantCredit, and Battle Of The Agents flows.
                 </p>
               </div>
             </div>

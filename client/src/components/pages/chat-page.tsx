@@ -97,11 +97,11 @@ const TOOL_CONFIG: Record<BantahTool, ToolConfig> = {
   assistant: {
     label: 'Chat Agent',
     title: 'Trading Agent',
-    subtitle: 'Ask anything across tokens, markets, narratives, and BantahBro activity.',
+    subtitle: 'Ask anything across tokens, markets, narratives, and BOTA activity.',
     placeholder: 'Ask about markets, agents, strategies...',
-    helperText: 'Try asking about: PEPEFUN, Bitcoin, market setups, or who looks strongest today.',
-    intro: 'I am your BantahBro trading agent. Ask me about market setups, token flows, prediction opportunities, or where the attention is shifting.',
-    prompts: ['Summarize PEPEFUN right now', 'What is the best setup today?', 'Which agent looks strongest?'],
+    helperText: 'Try asking about: BONK, Bitcoin, market setups, or who looks strongest today.',
+    intro: 'I am your BOTA trading agent. Ask me about market setups, token flows, prediction opportunities, or where the attention is shifting.',
+    prompts: ['Summarize BONK right now', 'What is the best setup today?', 'Which agent looks strongest?'],
     icon: MessageSquare,
   },
   wallet: {
@@ -130,7 +130,7 @@ const TOOL_CONFIG: Record<BantahTool, ToolConfig> = {
     subtitle: 'Join live battles, inspect what is active, or create a new token-vs-token arena from chat.',
     placeholder: 'Ask to join a battle, show live arenas, or create $TOKEN vs $TOKEN...',
     helperText: 'Try: show live battles, join a battle, or create $PEPE vs $BONK.',
-    intro: 'Use this tab for BantahBro battle flows. I can show live arenas and spin up new token-vs-token battles from chat when the market data resolves cleanly.',
+    intro: 'Use this tab for BOTA battle flows. I can show live arenas and spin up new token-vs-token battles from chat when the market data resolves cleanly.',
     prompts: ['Show live battles', 'Join a battle', 'Create $PEPE vs $BONK'],
     icon: Zap,
   },
@@ -139,9 +139,9 @@ const TOOL_CONFIG: Record<BantahTool, ToolConfig> = {
     title: 'Analyze Token',
     subtitle: 'Break down ticker, contract, narrative, and onchain behavior inside one workspace.',
     placeholder: 'Drop a ticker, contract, or token theme to analyze...',
-    helperText: 'Good prompts: analyze PEPEFUN, review a contract, compare a runner versus its sector.',
+    helperText: 'Good prompts: analyze BONK, review a contract, compare a runner versus its sector.',
     intro: 'Send a ticker, contract, or token theme and I will break down the key market, holder, and narrative signals that matter first.',
-    prompts: ['Analyze PEPEFUN', 'Review a Base meme coin', 'What changed in volume today?'],
+    prompts: ['Analyze BONK', 'Review a Base meme coin', 'What changed in volume today?'],
     icon: Search,
   },
   rug: {
@@ -151,7 +151,7 @@ const TOOL_CONFIG: Record<BantahTool, ToolConfig> = {
     placeholder: 'Drop a ticker or contract to score rug risk...',
     helperText: 'Try PEPE, ALIEN BOY, or a full contract address on Solana, Base, Arbitrum, or BSC.',
     intro: 'Send a ticker or contract and I will run the same live Rug Scorer path used by the dedicated scanner page.',
-    prompts: ['Rug score PEPEFUN', 'Check ALIEN BOY rug risk', 'Score Base WETH'],
+    prompts: ['Rug score BONK', 'Check ALIEN BOY rug risk', 'Score Base WETH'],
     icon: Shield,
   },
   runner: {
@@ -195,16 +195,16 @@ const TOOL_CONFIG: Record<BantahTool, ToolConfig> = {
     icon: Activity,
   },
   launcher: {
-    label: 'Launch Token',
-    title: 'Token Launcher',
-    subtitle: 'Draft and confirm fixed-supply token launches through the BantahBro AgentKit factory.',
-    placeholder: 'Launch token name Bantah Demo symbol BDEMO supply 1000000 owner 0x... on Base',
-    helperText: 'Deployments require an owner wallet, configured factory, auth, and an explicit confirm click.',
-    intro: 'Tell me the token name, symbol, initial supply, owner wallet, and chain. I will validate the launch first, then ask for explicit confirmation before any deploy.',
+    label: 'Battle Hosting',
+    title: 'Battle Hosting',
+    subtitle: 'Draft battle matchups, rules, staking ranges, and hosting packages for BOTA arenas.',
+    placeholder: 'Draft a PEPE vs WOJAK battle with 15 minute duration and BXBT staking...',
+    helperText: 'Try: create a meme coin battle, compare two tokens, or plan a sponsored arena.',
+    intro: 'Use this tab to shape a battle hosting draft: matchup, duration, winner rule, stake rails, and package.',
     prompts: [
-      'Launch token name Bantah Demo symbol BDEMO supply 1000000 owner 0xYourWallet on Base',
-      'What details do you need to launch on Base?',
-      'Is the Base launcher factory configured?',
+      'Create a PEPE vs WOJAK battle draft',
+      'Plan a sponsored 15 minute battle',
+      'What rules should a fair meme coin battle use?',
     ],
     icon: Rocket,
   },
@@ -240,6 +240,26 @@ interface ChatResponse {
   message?: string
   launcher?: ChatLauncherPayload
   walletAction?: BantahBroWalletAction
+}
+
+function formatChatRuntimeError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return 'The live BOTA agent is temporarily unavailable. Please try again shortly.'
+  }
+
+  if (/Error:\s*400\b/i.test(error.message)) {
+    return 'That chat request could not be sent. Please shorten it and try again.'
+  }
+
+  if (
+    /BANTAHBRO_SYSTEM_USERNAME|BANTAHBRO_SYSTEM_EMAIL|BANTAHBRO_AGENT_NAME|required for BantahBro|AgentKit provisioning is not configured|runtime config is missing|wallet is invalid/i.test(
+      error.message,
+    )
+  ) {
+    return 'The live BOTA agent is still being configured on this server. Please try again shortly.'
+  }
+
+  return 'I could not reach the live BOTA agent right now. Please try again shortly.'
 }
 
 export default function ChatPage({ activeTool = 'assistant', onToolChange, pendingWalletAction = null }: ChatPageProps) {
@@ -303,7 +323,7 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange, pendi
     login()
     toast({
       title: 'Sign in to continue',
-      description: 'Finish sign in so BantahBro can load this action and set up your wallet.',
+      description: 'Finish sign in so BOTA can load this action and set up your wallet.',
     })
   }, [pendingWalletAction, authLoading, isAuthenticated, login, toast])
 
@@ -358,7 +378,7 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange, pendi
       const agentMessage: Message = {
         id: createMessageId(),
         role: 'agent',
-        content: data.reply || 'BantahBro answered, but no reply text came back.',
+        content: data.reply || 'BOTA answered, but no reply text came back.',
         timestamp: new Date(),
         launcher: data.launcher,
         walletAction: data.walletAction,
@@ -369,10 +389,7 @@ export default function ChatPage({ activeTool = 'assistant', onToolChange, pendi
       const agentMessage: Message = {
         id: createMessageId(),
         role: 'agent',
-        content:
-          error instanceof Error
-            ? `I could not reach the live BantahBro agent runtime: ${error.message}`
-            : 'I could not reach the live BantahBro agent runtime right now.',
+        content: formatChatRuntimeError(error),
         timestamp: new Date(),
       }
       appendMessage(toolAtSend, agentMessage)

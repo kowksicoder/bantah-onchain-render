@@ -1,0 +1,882 @@
+.bantah-fighting-game, .bantah-fighting-game * {
+  box-sizing: border-box;
+  font-family: "Press Start 2P", cursive;
+}
+
+html.bantah-game-document {
+  background: #050505;
+}
+
+body.bantah-game-standalone {
+  min-height: 100vh;
+  margin: 0;
+  padding: clamp(12px, 3vw, 28px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  background: #050505;
+}
+
+.bantah-fighting-game.container {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1366 / 768;
+  background: #090719 url("image/bantah-arena.png") center / cover no-repeat;
+  overflow: hidden;
+}
+
+body.bantah-game-standalone .bantah-fighting-game.container {
+  display: inline-block;
+  width: min(92vw, calc((100vh - 56px) * 1.778), 1120px);
+  height: auto;
+  overflow: visible;
+}
+
+html.bantah-game-document.is-battle-section,
+html.bantah-game-document.is-battle-section body.bantah-game-standalone {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.bantah-game-document.is-battle-section body.bantah-game-standalone {
+  display: block;
+  padding: 0;
+}
+
+html.bantah-game-document.is-battle-section .bantah-fighting-game.container {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  aspect-ratio: auto;
+  overflow: hidden;
+}
+
+.bantah-fighting-game .top-indicator,
+.bantah-fighting-game .spectator-widget,
+.bantah-fighting-game .ability-dock,
+.bantah-fighting-game .minimap-widget {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.bantah-fighting-game div.top-indicator {
+  top: 10px;
+  left: 14px;
+  right: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(118px, 13vw, 148px) minmax(0, 1fr);
+  gap: clamp(8px, 1.1vw, 12px);
+  align-items: start;
+}
+
+.bantah-fighting-game .player-card {
+  min-width: 0;
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.bantah-fighting-game .player2 {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.bantah-fighting-game .avatar-ring {
+  width: clamp(46px, 5vw, 56px);
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  padding: 3px;
+  border: 3px solid #78aeea;
+  background: linear-gradient(180deg, #eff8ff, #d7e9ff);
+  box-shadow: 0 4px 10px rgb(44 103 165 / 0.22);
+  overflow: hidden;
+}
+
+.bantah-fighting-game .player2 .avatar-ring {
+  border-color: #b997f3;
+  background: linear-gradient(180deg, #f8f1ff, #e3d3ff);
+}
+
+.bantah-fighting-game .avatar-ring img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.bantah-fighting-game .player-card-body {
+  min-width: 0;
+  width: 100%;
+}
+
+.bantah-fighting-game .player-heading {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 5px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.bantah-fighting-game .player2 .player-heading {
+  flex-direction: row-reverse;
+}
+
+.bantah-fighting-game .player-name,
+.bantah-fighting-game .player-team,
+.bantah-fighting-game .hp-readout {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+.bantah-fighting-game .player-name {
+  color: #11182a;
+  font-size: clamp(12px, 1.18vw, 16px);
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.bantah-fighting-game .player-team {
+  margin-top: 2px;
+  color: #57627a;
+  font-size: clamp(7px, 0.74vw, 9px);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.bantah-fighting-game .hp-readout {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: linear-gradient(180deg, #38d85a, #15982f);
+  font-size: clamp(8px, 0.78vw, 10px);
+  font-weight: 900;
+  line-height: 1.2;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.bantah-fighting-game .health-frame {
+  position: relative;
+  width: 100%;
+  height: 16px;
+  border: 1px solid rgb(20 83 43 / 0.35);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #811a1a, #5e1010);
+  box-shadow:
+    inset 0 1px 3px rgb(0 0 0 / 0.2),
+    0 2px 5px rgb(32 89 40 / 0.14);
+  overflow: visible;
+}
+
+.bantah-fighting-game .health,
+.bantah-fighting-game .max-health,
+.bantah-fighting-game .damage-trail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  border-radius: inherit;
+}
+
+.bantah-fighting-game .health {
+  z-index: 4;
+  background: linear-gradient(180deg, #4cf076 0%, #1fc347 54%, #0c8429 100%);
+}
+
+.bantah-fighting-game .player1 .health {
+  right: 0;
+}
+
+.bantah-fighting-game .player2 .health {
+  left: 0;
+}
+
+.bantah-fighting-game .max-health {
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, #d52b2b 0%, #8d1717 100%);
+}
+
+.bantah-fighting-game .health-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / 0.76) 45%,
+    transparent 100%
+  );
+}
+
+.bantah-fighting-game .health-frame.is-hit {
+  animation: health-hit-shake 190ms ease-out;
+}
+
+.bantah-fighting-game .health-frame.is-hit::after {
+  animation: health-hit-flash 260ms ease-out;
+}
+
+.bantah-fighting-game .damage-trail {
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(180deg, #ffe15d 0%, #f7a824 48%, #d4551c 100%);
+  box-shadow: inset 0 0 10px rgb(255 255 255 / 0.45);
+}
+
+.bantah-fighting-game .player1 .damage-trail {
+  right: 0;
+}
+
+.bantah-fighting-game .player2 .damage-trail {
+  left: 0;
+}
+
+.bantah-fighting-game .hit-spark {
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  width: 26px;
+  z-index: 7;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%) skewX(-14deg);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 247 145 / 0.15) 18%,
+    rgb(255 255 255 / 0.95) 50%,
+    rgb(255 129 40 / 0.2) 82%,
+    transparent 100%
+  );
+  filter: drop-shadow(0 0 8px rgb(255 205 77 / 0.9));
+}
+
+.bantah-fighting-game .hit-spark.is-active {
+  animation: health-spark 320ms ease-out;
+}
+
+.bantah-fighting-game .damage-number {
+  position: absolute;
+  top: -10px;
+  z-index: 9;
+  pointer-events: none;
+  min-width: 36px;
+  transform: translateX(-50%);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  color: #fff3a6;
+  text-shadow:
+    0 2px 0 #5b0909,
+    0 0 10px rgb(255 75 38 / 0.95),
+    0 0 18px rgb(255 224 79 / 0.8);
+  animation: damage-number-pop 760ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.bantah-fighting-game .hud-abilities {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.bantah-fighting-game .player2 .hud-abilities {
+  justify-content: flex-end;
+}
+
+.bantah-fighting-game .hud-abilities span {
+  width: 28px;
+  height: 18px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 5px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #65b7ff, #3477e7);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.32);
+}
+
+.bantah-fighting-game .player2 .hud-abilities span {
+  background: linear-gradient(135deg, #a873ff, #7244d8);
+}
+
+.bantah-fighting-game .timer-panel {
+  min-height: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px 7px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.bantah-fighting-game .round-label,
+.bantah-fighting-game .match-format,
+.bantah-fighting-game .timer {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+.bantah-fighting-game .round-label {
+  color: #2d75d8;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.bantah-fighting-game .timer {
+  margin-top: 0;
+  color: #070c1c;
+  font-size: clamp(26px, 3vw, 36px);
+  font-weight: 950;
+  line-height: 0.95;
+}
+
+.bantah-fighting-game .match-format {
+  margin-top: 4px;
+  color: #2a2f3e;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.bantah-fighting-game .round-dots {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.bantah-fighting-game .round-dots span {
+  width: 7px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #d2d7df;
+}
+
+.bantah-fighting-game .round-dots span.is-active {
+  background: #3385ef;
+  box-shadow: 0 0 0 2px rgb(51 133 239 / 0.12);
+}
+
+.bantah-fighting-game .round-dots i {
+  width: 10px;
+}
+
+.bantah-fighting-game .spectator-widget {
+  left: 16px;
+  bottom: 16px;
+  min-width: 142px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgb(180 201 229 / 0.78);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.88);
+  box-shadow: 0 12px 25px rgb(22 53 87 / 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.bantah-fighting-game .eye-mark {
+  width: 31px;
+  height: 21px;
+  position: relative;
+  border: 3px solid #4a8fe7;
+  border-radius: 50% 50% 48% 48% / 60% 60% 40% 40%;
+}
+
+.bantah-fighting-game .eye-mark::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  aspect-ratio: 1;
+  top: 3px;
+  left: 8px;
+  border-radius: 50%;
+  background: #4a8fe7;
+}
+
+.bantah-fighting-game .widget-label {
+  color: #4a6d9c;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.bantah-fighting-game .spectator-widget strong {
+  display: block;
+  margin-top: 2px;
+  color: #246ed0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 27px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.bantah-fighting-game .ability-dock {
+  left: 50%;
+  bottom: 14px;
+  width: min(520px, 47%);
+  min-height: 104px;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 25px 13px 13px;
+  border: 1px solid rgb(190 207 232 / 0.78);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.88);
+  box-shadow: 0 14px 30px rgb(22 54 92 / 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.bantah-fighting-game .dock-title {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #151b2f;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.bantah-fighting-game .ability-card {
+  min-width: 0;
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  color: #10172a;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.bantah-fighting-game .ability-key {
+  position: absolute;
+  top: 4px;
+  left: calc(50% - 35px);
+  z-index: 2;
+  width: 20px;
+  aspect-ratio: 1;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #121a36;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.bantah-fighting-game .ability-glyph {
+  width: 58px;
+  height: 42px;
+  position: relative;
+  z-index: 1;
+  display: block;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #dfeaff, #7ab7ff);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7);
+}
+
+.bantah-fighting-game .ability-glyph.ice::before,
+.bantah-fighting-game .ability-glyph.shield::before,
+.bantah-fighting-game .ability-glyph.dash::before,
+.bantah-fighting-game .ability-glyph.heal::before {
+  content: "";
+  position: absolute;
+  inset: 11px 18px;
+  background: #ffffff;
+  opacity: 0.95;
+}
+
+.bantah-fighting-game .ability-glyph.ice::before {
+  clip-path: polygon(50% 0, 62% 36%, 100% 26%, 70% 53%, 94% 100%, 50% 72%, 6% 100%, 30% 53%, 0 26%, 38% 36%);
+}
+
+.bantah-fighting-game .ability-glyph.shield {
+  background: linear-gradient(135deg, #dff2ff, #4e92ea);
+}
+
+.bantah-fighting-game .ability-glyph.shield::before {
+  clip-path: polygon(50% 0, 89% 15%, 82% 65%, 50% 100%, 18% 65%, 11% 15%);
+}
+
+.bantah-fighting-game .ability-glyph.dash {
+  background: linear-gradient(135deg, #efe6ff, #7852e7);
+}
+
+.bantah-fighting-game .ability-glyph.dash::before {
+  clip-path: polygon(0 42%, 58% 0, 44% 34%, 100% 34%, 34% 100%, 48% 58%);
+}
+
+.bantah-fighting-game .ability-glyph.heal {
+  background: linear-gradient(135deg, #e6fff3, #59d78d);
+}
+
+.bantah-fighting-game .ability-glyph.heal::before {
+  clip-path: polygon(35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%, 0 35%, 35% 35%);
+}
+
+.bantah-fighting-game .minimap-widget {
+  right: 16px;
+  bottom: 16px;
+  width: 180px;
+  height: 118px;
+  border: 1px solid rgb(178 202 232 / 0.76);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at center, rgb(255 255 255 / 0.72), rgb(222 237 255 / 0.72)),
+    rgb(255 255 255 / 0.86);
+  box-shadow: 0 12px 25px rgb(22 53 87 / 0.18);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.bantah-fighting-game .mini-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgb(73 133 202 / 0.25);
+  border-radius: 50%;
+}
+
+.bantah-fighting-game .mini-ring.outer {
+  width: 132px;
+  height: 76px;
+}
+
+.bantah-fighting-game .mini-ring.inner {
+  width: 72px;
+  height: 40px;
+}
+
+.bantah-fighting-game .mini-dot {
+  position: absolute;
+  width: 13px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.8);
+}
+
+.bantah-fighting-game .mini-dot.blue {
+  background: #3e8bec;
+}
+
+.bantah-fighting-game .mini-dot.purple {
+  background: #8a51df;
+}
+
+.bantah-fighting-game .mini-dot.one {
+  left: 36px;
+  top: 30px;
+}
+
+.bantah-fighting-game .mini-dot.two {
+  left: 58px;
+  bottom: 24px;
+}
+
+.bantah-fighting-game .mini-dot.three {
+  right: 36px;
+  top: 33px;
+}
+
+.bantah-fighting-game .mini-dot.four {
+  right: 57px;
+  bottom: 22px;
+}
+
+.bantah-fighting-game div.dialog {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 35px;
+  font-weight: 900;
+  color: rgb(100 52 187);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  left: 0;
+  bottom: 0;
+  cursor: pointer;
+  line-height: 1.35;
+  padding: 24px;
+  text-align: center;
+}
+
+.bantah-fighting-game canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes health-hit-shake {
+  0% {
+    transform: translateX(0);
+  }
+  28% {
+    transform: translateX(-4px);
+  }
+  58% {
+    transform: translateX(3px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes health-hit-flash {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes health-spark {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(0.5) skewX(-14deg);
+  }
+  52% {
+    opacity: 0.95;
+    transform: translateX(-50%) scaleX(1.35) skewX(-14deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scaleX(1.9) skewX(-14deg);
+  }
+}
+
+@keyframes damage-number-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(5px) scale(0.74);
+  }
+  18% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-1px) scale(1.18);
+  }
+  62% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-9px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-16px) scale(0.9);
+  }
+}
+
+@media (max-width: 760px) {
+  .bantah-fighting-game div.top-indicator {
+    left: 8px;
+    right: 8px;
+    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) 122px minmax(0, 1fr);
+  }
+
+  .bantah-fighting-game .player-card {
+    min-height: 86px;
+    padding: 8px;
+    gap: 7px;
+  }
+
+  .bantah-fighting-game .avatar-ring {
+    width: 48px;
+  }
+
+  .bantah-fighting-game .player-name {
+    font-size: 11px;
+  }
+
+  .bantah-fighting-game .player-team,
+.bantah-fighting-game .hp-readout,
+.bantah-fighting-game .hud-abilities span {
+    font-size: 8px;
+  }
+
+  .bantah-fighting-game .health-frame {
+    height: 18px;
+  }
+
+  .bantah-fighting-game .hud-abilities {
+    display: none;
+  }
+
+  .bantah-fighting-game .timer-panel {
+    min-height: 88px;
+    padding: 8px;
+  }
+
+  .bantah-fighting-game .timer {
+    font-size: 28px;
+  }
+
+  .bantah-fighting-game .match-format,
+.bantah-fighting-game .round-label {
+    font-size: 10px;
+  }
+
+  .bantah-fighting-game .ability-dock,
+.bantah-fighting-game .minimap-widget {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .bantah-fighting-game div.top-indicator {
+    top: 4px;
+    left: 5px;
+    right: 5px;
+    grid-template-columns: minmax(0, 1fr) 58px minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  .bantah-fighting-game .player-card {
+    min-height: 42px;
+    padding: 2px 0;
+    gap: 3px;
+  }
+
+  .bantah-fighting-game .avatar-ring {
+    width: 26px;
+    padding: 1px;
+    border-width: 1px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgb(44 103 165 / 0.18);
+  }
+
+  .bantah-fighting-game .avatar-ring img {
+    border-radius: 6px;
+  }
+
+  .bantah-fighting-game .player-heading {
+    gap: 3px;
+    margin-bottom: 2px;
+  }
+
+  .bantah-fighting-game .player-name {
+    max-width: 66px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 8px;
+    line-height: 1;
+  }
+
+  .bantah-fighting-game .player-team {
+    max-width: 66px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 6px;
+    line-height: 1;
+  }
+
+  .bantah-fighting-game .hp-readout {
+    display: none;
+  }
+
+  .bantah-fighting-game .health-frame {
+    height: 8px;
+    border-width: 1px;
+    border-radius: 999px;
+  }
+
+  .bantah-fighting-game .health,
+  .bantah-fighting-game .max-health,
+  .bantah-fighting-game .damage-trail {
+    border-radius: 999px;
+  }
+
+  .bantah-fighting-game .health-frame::after {
+    inset: 1px;
+  }
+
+  .bantah-fighting-game .timer-panel {
+    min-height: 44px;
+    padding: 1px 0;
+  }
+
+  .bantah-fighting-game .timer {
+    font-size: 15px;
+    line-height: 0.95;
+  }
+
+  .bantah-fighting-game .round-label,
+  .bantah-fighting-game .match-format {
+    font-size: 5.5px;
+    line-height: 1;
+  }
+
+  .bantah-fighting-game .match-format {
+    margin-top: 1px;
+  }
+
+  .bantah-fighting-game .round-dots {
+    gap: 2px;
+    margin-top: 2px;
+  }
+
+  .bantah-fighting-game .round-dots span {
+    width: 3px;
+  }
+
+  .bantah-fighting-game .round-dots i {
+    width: 1px;
+    height: 7px;
+  }
+
+  .bantah-fighting-game div.dialog {
+    top: 58px;
+    max-width: min(82vw, 240px);
+    padding: 8px 10px;
+    font-size: 9px;
+  }
+}
