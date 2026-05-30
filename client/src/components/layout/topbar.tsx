@@ -81,91 +81,7 @@ function stripAgentAvatar(seed: string) {
   return arenaAgentAvatar(seed)
 }
 
-const MOCK_FIGHTER_STRIP_CARDS: FighterStripCard[] = [
-  {
-    id: 'mock-frostline',
-    mode: 'arena',
-    slotLabel: 'Next 1',
-    status: 'queued',
-    statusLabel: 'Queue',
-    startsInSeconds: 30,
-    leftName: 'ChaosAgent_88',
-    rightName: 'GuardianPrime',
-    leftTag: 'Berserker',
-    rightTag: 'Sentinel',
-    leftAvatar: stripAgentAvatar('mock-frostline:left'),
-    rightAvatar: stripAgentAvatar('mock-frostline:right'),
-    meta: '00:30',
-    arena: 'Frostline',
-    accent: 'purple',
-  },
-  {
-    id: 'mock-glacier',
-    mode: 'arena',
-    slotLabel: 'Next 2',
-    status: 'queued',
-    statusLabel: 'Queue',
-    startsInSeconds: 60,
-    leftName: 'ArenaKing',
-    rightName: 'SignalRider',
-    leftTag: 'Champion',
-    rightTag: 'Counter',
-    leftAvatar: stripAgentAvatar('mock-glacier:left'),
-    rightAvatar: stripAgentAvatar('mock-glacier:right'),
-    meta: '01:00',
-    arena: 'Glacier Ring',
-    accent: 'cyan',
-  },
-  {
-    id: 'mock-crown',
-    mode: 'arena',
-    slotLabel: 'Next 3',
-    status: 'rematch',
-    statusLabel: 'Rematch',
-    leftName: 'VaultRunner',
-    rightName: 'OraclePrime',
-    leftTag: 'Runner',
-    rightTag: 'Oracle',
-    leftAvatar: stripAgentAvatar('mock-crown:left'),
-    rightAvatar: stripAgentAvatar('mock-crown:right'),
-    meta: 'Best of 3',
-    arena: 'Crown Court',
-    accent: 'amber',
-  },
-  {
-    id: 'mock-nova',
-    mode: 'arena',
-    slotLabel: 'Next 4',
-    status: 'cancelled',
-    statusLabel: 'Cancelled',
-    leftName: 'RiskBreaker',
-    rightName: 'AlphaGuard',
-    leftTag: 'Rush',
-    rightTag: 'Guard',
-    leftAvatar: stripAgentAvatar('mock-nova:left'),
-    rightAvatar: stripAgentAvatar('mock-nova:right'),
-    meta: 'Round 1',
-    arena: 'Nova Ice',
-    accent: 'green',
-  },
-  {
-    id: 'mock-apex',
-    mode: 'arena',
-    slotLabel: 'Next 5',
-    status: 'queued',
-    statusLabel: 'Queue',
-    startsInSeconds: 120,
-    leftName: 'MomentumMax',
-    rightName: 'TacticNode',
-    leftTag: 'Momentum',
-    rightTag: 'Tactics',
-    leftAvatar: stripAgentAvatar('mock-apex:left'),
-    rightAvatar: stripAgentAvatar('mock-apex:right'),
-    meta: 'Warm-up',
-    arena: 'Apex Arena',
-    accent: 'rose',
-  },
-]
+const LIVE_FIGHTER_STRIP_ACCENTS: FighterStripAccent[] = ['blue', 'purple', 'green', 'amber', 'cyan', 'rose']
 
 function fighterStripTone(accent: FighterStripAccent) {
   switch (accent) {
@@ -213,29 +129,27 @@ function stripSideAvatar(side: AgentBattle['sides'][number] | undefined, fallbac
   return stripAgentAvatar(side ? `${side.agentName}:${side.id}` : fallbackSeed)
 }
 
-function buildCurrentFighterStripCard(battle: AgentBattle | undefined): FighterStripCard {
-  const timeRemainingSeconds = battle
-    ? getBattleTimeRemainingSeconds(battle.endsAt, battle.timeRemainingSeconds)
-    : 0
-  const left = battle?.sides?.[0]
-  const right = battle?.sides?.[1]
+function buildLiveFighterStripCard(battle: AgentBattle, index: number): FighterStripCard {
+  const timeRemainingSeconds = getBattleTimeRemainingSeconds(battle.endsAt, battle.timeRemainingSeconds)
+  const left = battle.sides?.[0]
+  const right = battle.sides?.[1]
 
   return {
-    id: battle?.id || 'current-fighter-battle',
-    sourceBattleId: battle?.id,
+    id: battle.id,
+    sourceBattleId: battle.id,
     mode: 'arena',
-    slotLabel: 'Current',
+    slotLabel: `Live ${index + 1}`,
     status: 'live',
-    statusLabel: battle ? 'Live' : 'Live',
+    statusLabel: 'Live',
     leftName: stripSideName(left, 'BOTA Agent Alpha'),
     rightName: stripSideName(right, 'BOTA Agent Beta'),
     leftTag: stripSideTag(left, 'Alpha'),
     rightTag: stripSideTag(right, 'Beta'),
-    leftAvatar: stripSideAvatar(left, 'current-fighter-battle:left'),
-    rightAvatar: stripSideAvatar(right, 'current-fighter-battle:right'),
-    meta: battle ? formatBattleDuration(timeRemainingSeconds) : 'Open',
-    arena: 'Main Arena',
-    accent: 'blue',
+    leftAvatar: stripSideAvatar(left, `${battle.id}:left`),
+    rightAvatar: stripSideAvatar(right, `${battle.id}:right`),
+    meta: formatBattleDuration(timeRemainingSeconds),
+    arena: left?.chainLabel || right?.chainLabel || 'BOTA Arena',
+    accent: LIVE_FIGHTER_STRIP_ACCENTS[index % LIVE_FIGHTER_STRIP_ACCENTS.length],
   }
 }
 
@@ -321,7 +235,7 @@ export default function TopBar({ onNavigate, onOpenBattle, activeSection, active
     refetchInterval: 60_000,
   })
   const { data: battleStripFeed, isLoading: battleStripLoading } = useQuery<AgentBattleFeed>({
-    queryKey: ['/api/bantahbro/agent-battles/live', { limit: '12' }],
+    queryKey: ['/api/bantahbro/agent-battles/live', { limit: '40' }],
     staleTime: 3_000,
     refetchInterval: 15_000,
     retry: 3,
@@ -337,13 +251,12 @@ export default function TopBar({ onNavigate, onOpenBattle, activeSection, active
       ).slice(0, 6)
     : []
   const battleStripBattles = (battleStripFeed?.battles || []).filter(
-    (battle) => getBattleTimeRemainingSeconds(battle.endsAt, battle.timeRemainingSeconds) > 0,
+    (battle) =>
+      battle.status === 'live' &&
+      getBattleTimeRemainingSeconds(battle.endsAt, battle.timeRemainingSeconds) > 0,
   )
-  const fighterStripCards = [
-    buildCurrentFighterStripCard(battleStripBattles[0]),
-    ...MOCK_FIGHTER_STRIP_CARDS,
-  ]
-  const fighterStripSlides = [...fighterStripCards, ...fighterStripCards]
+  const fighterStripCards = battleStripBattles.map((battle, index) => buildLiveFighterStripCard(battle, index))
+  const fighterStripSlides = fighterStripCards.length > 1 ? [...fighterStripCards, ...fighterStripCards] : fighterStripCards
   const isBattlesPage = activeSection === 'battles'
 
   useEffect(() => {
