@@ -23,6 +23,7 @@ import {
   type BantahBroAgentBattle,
   type BantahBroAgentBattleSide,
 } from "./agentBattleService";
+import { simulateBotaArenaBattleFromLiveBattle } from "./botaArenaEngine";
 import {
   choosePrimaryPair,
   fetchDexScreenerTokenPairs,
@@ -1308,6 +1309,226 @@ export async function resolveAgentBattleP2PRoundWinner(input: {
     winnerMetric: leftWins ? leftMetric : rightMetric,
     loserMetric: leftWins ? rightMetric : leftMetric,
     winnerLogic,
+  };
+}
+
+function clampSettlementValue(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function settlementSideSymbol(side: SettlementSnapshotSide) {
+  return (
+    side.tokenSymbol ||
+    side.label?.replace(/^\$/, "") ||
+    side.tokenName ||
+    side.id.split(":").slice(-1)[0] ||
+    "BOTA"
+  )
+    .replace(/^\$/, "")
+    .trim()
+    .slice(0, 32) || "BOTA";
+}
+
+function settlementSideConfidence(
+  side: SettlementSnapshotSide,
+  opponent: SettlementSnapshotSide,
+) {
+  const sideScore = Math.max(1, side.score || calculateSettlementSideScore(side));
+  const opponentScore = Math.max(1, opponent.score || calculateSettlementSideScore(opponent));
+  return clampSettlementValue(Math.round((sideScore / (sideScore + opponentScore)) * 100), 1, 99);
+}
+
+function settlementSideStatus(confidence: number): BantahBroAgentBattleSide["status"] {
+  if (confidence >= 58) return "attacking";
+  if (confidence <= 42) return "staggered";
+  return "holding";
+}
+
+function settlementSideToAgentBattleSide(
+  side: SettlementSnapshotSide,
+  opponent: SettlementSnapshotSide,
+): BantahBroAgentBattleSide {
+  const symbol = settlementSideSymbol(side);
+  const confidence = settlementSideConfidence(side, opponent);
+  const direction =
+    side.priceChangeH24 > 0
+      ? "up"
+      : side.priceChangeH24 < 0
+        ? "down"
+        : ("flat" as const);
+  const priceDisplay =
+    side.priceUsd && side.priceUsd > 0
+      ? `$${side.priceUsd.toFixed(side.priceUsd >= 1 ? 4 : 8).replace(/0+$/, "").replace(/\.$/, "")}`
+      : "n/a";
+
+  return {
+    id: side.id,
+    label: side.label || `$${symbol}`,
+    agentName: `${symbol} Agent`,
+    tokenSymbol: side.tokenSymbol || symbol,
+    tokenName: side.tokenName,
+    emoji: "BOTA",
+    logoUrl: side.logoUrl,
+    chainId: side.chainId,
+    chainLabel: side.chainLabel,
+    tokenAddress: side.tokenAddress,
+    pairAddress: side.pairAddress,
+    pairUrl: side.pairUrl,
+    dexId: side.dexId,
+    priceUsd: side.priceUsd,
+    priceDisplay,
+    priceChangeM5: side.priceChangeM5,
+    priceChangeH1: side.priceChangeH1,
+    priceChangeH24: side.priceChangeH24,
+    change: `${side.priceChangeH24 >= 0 ? "+" : ""}${side.priceChangeH24.toFixed(1)}%`,
+    direction,
+    volumeM5: side.volumeM5,
+    volumeH1: side.volumeH1,
+    volumeH24: side.volumeH24,
+    liquidityUsd: side.liquidityUsd,
+    marketCap: null,
+    buysM5: side.buysM5,
+    sellsM5: side.sellsM5,
+    buysH1: side.buysH1,
+    sellsH1: side.sellsH1,
+    buysH24: side.buysH24,
+    sellsH24: side.sellsH24,
+    pairAgeMinutes: null,
+    dataSource: "dexscreener",
+    dataUpdatedAt: new Date().toISOString(),
+    score: side.score || calculateSettlementSideScore(side),
+    confidence,
+    status: settlementSideStatus(confidence),
+  };
+}
+
+async function refreshSettlementSideForEngine(side: SettlementSnapshotSide) {
+  try {
+    return await refreshSettlementSideFromDexscreener(side);
+  } catch {
+    return {
+      ...side,
+      score: side.score || calculateSettlementSideScore(side),
+    };
+  }
+}
+
+function buildSettlementBattleForBotaEngine(input: {
+  round: typeof agentBattleP2PRounds.$inferSelect;
+  left: SettlementSnapshotSide;
+  right: SettlementSnapshotSide;
+  spectatorCount: number;
+  winnerLogic: string;
+}): BantahBroAgentBattle {
+  const leftSide = settlementSideToAgentBattleSide(input.left, input.right);
+  const rightSide = settlementSideToAgentBattleSide(input.right, input.left);
+  const leadingSideId = leftSide.confidence >= rightSide.confidence ? leftSide.id : rightSide.id;
+
+  return {
+    id: input.round.battleId || input.round.roundId,
+    title: `${leftSide.label} vs ${rightSide.label}`,
+    battleType: "agent-battle",
+    status: "expired",
+    winnerLogic: input.winnerLogic,
+    startsAt: toIsoString(input.round.roundStartsAt),
+    endsAt: toIsoString(input.round.roundEndsAt),
+    timeRemainingSeconds: 0,
+    spectators: Math.max(0, input.spectatorCount),
+    sides: [leftSide, rightSide],
+    leadingSideId,
+    confidenceSpread: Math.abs(leftSide.confidence - rightSide.confidence),
+    events: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export async function resolveAgentBattleP2PRoundWinnerWithBotaEngine(input: {
+  roundId: string;
+  seed?: string | null;
+  maxRounds?: number | null;
+  preloadedRows?: Array<typeof agentBattleP2PPositions.$inferSelect>;
+}) {
+  await ensureAgentBattleP2PPositionsTable();
+  const roundId = String(input.roundId || "").trim();
+  if (!roundId) throw new Error("roundId is required");
+
+  const [round] = await db
+    .select()
+    .from(agentBattleP2PRounds)
+    .where(eq(agentBattleP2PRounds.roundId, roundId))
+    .limit(1);
+  if (!round) {
+    const error = new Error("Battle P2P round not found");
+    (error as { status?: number }).status = 404;
+    throw error;
+  }
+
+  const rows =
+    input.preloadedRows ||
+    (await db
+      .select()
+      .from(agentBattleP2PPositions)
+      .where(
+        and(
+          eq(agentBattleP2PPositions.roundId, roundId),
+          eq(agentBattleP2PPositions.escrowStatus, "escrow_locked"),
+        ),
+      )
+      .orderBy(asc(agentBattleP2PPositions.createdAt)));
+
+  if (rows.length === 0) {
+    throw new Error("No escrow-locked battle positions are available for settlement");
+  }
+
+  const sides = collectRoundSettlementSides(rows);
+  if (sides.length < 2) {
+    throw new Error("Battle round needs two sides before BOTA engine settlement");
+  }
+
+  const [left, right] = await Promise.all([
+    refreshSettlementSideForEngine(sides[0]),
+    refreshSettlementSideForEngine(sides[1]),
+  ]);
+  const winnerLogic = `BOTA Arena Engine (${resolveSnapshotWinnerLogic(rows)})`;
+  const battle = buildSettlementBattleForBotaEngine({
+    round,
+    left,
+    right,
+    spectatorCount: rows.length,
+    winnerLogic,
+  });
+  const simulation = await simulateBotaArenaBattleFromLiveBattle(battle, {
+    seed: input.seed || `bota-engine:${roundId}:${toIsoString(round.roundStartsAt)}`,
+    maxRounds: input.maxRounds || 5,
+  });
+  const leftFinal = simulation.finalState.fighters.find((fighter) => fighter.id === left.id);
+  const rightFinal = simulation.finalState.fighters.find((fighter) => fighter.id === right.id);
+  let winnerSideId = simulation.finalState.winnerId;
+
+  if (!winnerSideId) {
+    const leftHealth = leftFinal?.health ?? 0;
+    const rightHealth = rightFinal?.health ?? 0;
+    if (leftHealth !== rightHealth) {
+      winnerSideId = leftHealth > rightHealth ? left.id : right.id;
+    } else {
+      winnerSideId = (left.score || calculateSettlementSideScore(left)) >=
+        (right.score || calculateSettlementSideScore(right))
+        ? left.id
+        : right.id;
+    }
+  }
+
+  const winner = winnerSideId === left.id ? left : right;
+  const loser = winnerSideId === left.id ? right : left;
+
+  return {
+    roundId,
+    winnerSideId,
+    winner,
+    loser,
+    winnerLogic,
+    battle,
+    simulation,
   };
 }
 

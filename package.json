@@ -103,6 +103,7 @@
     "@types/qrcode": "^1.5.5",
     "@types/web-push": "^3.6.4",
     "@vercel/node": "^5.5.16",
+    "@virtuals-protocol/game": "^0.1.14",
     "axios": "^1.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -98,6 +98,7 @@ import {
   listAgentBattleP2PHistoryPositions,
   markAgentBattleP2PEscrowLocked,
   placeAgentBattleP2PStake,
+  resolveAgentBattleP2PRoundWinnerWithBotaEngine,
   settleAgentBattleP2PRound,
 } from "../bantahBro/agentBattleP2PService";
 import {
@@ -208,6 +209,14 @@ const agentBattleP2PSettlementSchema = z.object({
   winnerSideId: z.string().trim().min(1).max(500),
   maxPairs: z.coerce.number().int().positive().max(100).default(20),
   dryRun: z.coerce.boolean().default(false),
+});
+
+const agentBattleP2PBotaEngineSettlementSchema = z.object({
+  roundId: z.string().trim().min(1).max(320),
+  seed: z.string().trim().min(1).max(255).optional(),
+  maxRounds: z.coerce.number().int().min(1).max(5).default(5),
+  maxPairs: z.coerce.number().int().positive().max(100).default(20),
+  dryRun: z.coerce.boolean().default(true),
 });
 
 const agentBattleWatchRewardSchema = z.object({
@@ -866,6 +875,48 @@ router.post(
         });
       }
       res.json(result);
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
+
+router.post(
+  "/admin/agent-battles/p2p/settle-round/bota-engine",
+  PrivyAuthMiddleware,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const parsed = agentBattleP2PBotaEngineSettlementSchema.parse(req.body || {});
+      const outcome = await resolveAgentBattleP2PRoundWinnerWithBotaEngine({
+        roundId: parsed.roundId,
+        seed: parsed.seed,
+        maxRounds: parsed.maxRounds,
+      });
+      const settlement = await settleAgentBattleP2PRound({
+        roundId: parsed.roundId,
+        winnerSideId: outcome.winnerSideId,
+        maxPairs: parsed.maxPairs,
+        dryRun: parsed.dryRun,
+      });
+      if (!parsed.dryRun) {
+        const winnerLabel = settlement.winnerSideLabel || settlement.winnerSideId;
+        const loserText = settlement.loserSideLabel ? `; ${settlement.loserSideLabel} lost` : "";
+        recordBantahBroTrollboxMessage({
+          roomId: "agent-battle",
+          source: "system",
+          user: "BOTA Engine",
+          handle: "arena result",
+          message:
+            `BOTA settled: ${winnerLabel} won${loserText}. ` +
+            `${settlement.pairsSettled} payout${settlement.pairsSettled === 1 ? "" : "s"} processed.`,
+        });
+      }
+      res.json({
+        dryRun: parsed.dryRun,
+        outcome,
+        settlement,
+      });
     } catch (error) {
       handleError(res, error);
     }
