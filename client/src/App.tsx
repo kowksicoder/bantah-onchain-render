@@ -122,9 +122,15 @@ function isBattleAliasPath(pathname: string) {
   return normalized === '/battle' || normalized.startsWith('/battle/');
 }
 
+function isBotaAliasPath(pathname: string) {
+  const normalized = normalizeRoutePath(pathname);
+  return normalized === '/bota' || normalized.startsWith('/bota/');
+}
+
 function isBantahBroPath(pathname: string) {
   const normalized = pathname.toLowerCase();
   return (
+    normalized.startsWith('/bota') ||
     normalized.startsWith('/bantahbro') ||
     pathname === '/Agents' ||
     normalized.startsWith('/ads') ||
@@ -312,6 +318,7 @@ function AppRouter() {
   const isBantahBroRoute =
     isBantahBroPath(location) ||
     isBattleAliasPath(location) ||
+    isBotaAliasPath(location) ||
     (isBattleBantahClone && isBattleBantahClonePath(location));
 
   return (
@@ -343,6 +350,19 @@ function AppRouter() {
       <Route path="/skills" component={Skills} />
       <Route path="/partners" component={PartnerPrograms} />
       <Route path="/partner-signup" component={PartnerSignup} />
+
+      <Route path="/bota/battle-engine/live" component={AdminEngineRedirect} />
+      <Route path="/bota/challenge" component={BantahBroChallenge} />
+      <Route path="/bota/arena" component={BantahBroBattles} />
+      <Route path="/bota/battles" component={BantahBroBattles} />
+      <Route path="/bota/agents" component={BantahBroAgents} />
+      <Route path="/bota/ads" component={BantahBroAds} />
+      <Route path="/bota/launcher" component={BantahBroLauncher} />
+      <Route path="/bota/polymarket/:battleId" component={BantahBroPolymarketBattle} />
+      <Route path="/bota/polymarket" component={BantahBroPolymarket} />
+      <Route path="/bota/rug-scorer" component={BantahBroRugScorer} />
+      <Route path="/bota" component={BantahBroHome} />
+      <Route path="/bota/" component={BantahBroHome} />
 
       <Route path="/battle/battle-engine/live" component={AdminEngineRedirect} />
       <Route path="/battle/challenge" component={BantahBroChallenge} />
