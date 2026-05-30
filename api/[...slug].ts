@@ -1,8 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { initAppForServerless } from '../server/index.js';
 
 let appHandler: any = null;
 let initPromise: Promise<any> | null = null;
+
+type ServerlessAppModule = {
+  initAppForServerless: () => Promise<any>;
+};
+
+async function loadServerlessAppModule(): Promise<ServerlessAppModule> {
+  return import('../dist/index.js') as Promise<ServerlessAppModule>;
+}
 
 async function ensureApp() {
   if (!appHandler) {
@@ -10,6 +17,7 @@ async function ensureApp() {
       initPromise = (async () => {
         console.log("[INIT] Initializing Express app...");
         try {
+          const { initAppForServerless } = await loadServerlessAppModule();
           const app = await initAppForServerless();
           appHandler = app;
           console.log("[OK] Express app ready");

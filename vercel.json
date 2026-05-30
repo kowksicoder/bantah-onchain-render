@@ -6,7 +6,7 @@
   "functions": {
     "api/[...slug].ts": {
       "maxDuration": 60,
-      "includeFiles": "{migrations/**,server/assets/**,docs/bantahbro/knowledge/**,client/public/fonts/**,client/public/assets/bantahblue.svg,public/bantahbro/**,client/public/bantahbro/**,client/public/assets/bantahbro-*}"
+      "includeFiles": "{dist/index.js,migrations/**,server/assets/**,docs/bantahbro/knowledge/**,client/public/fonts/**,client/public/assets/bantahblue.svg,public/bantahbro/**,client/public/bantahbro/**,client/public/assets/bantahbro-*}"
     }
   },
   "crons": [
