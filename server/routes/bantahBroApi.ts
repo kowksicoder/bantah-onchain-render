@@ -92,6 +92,7 @@ import {
   type BantahBroFeedSource,
 } from "../bantahBro/socialFeedService";
 import { getLiveBantahBroAgentBattles } from "../bantahBro/agentBattleService";
+import { simulateBotaArenaBattleFromLiveBattle } from "../bantahBro/botaArenaEngine";
 import {
   getAgentBattleP2PPool,
   listAgentBattleP2PHistoryPositions,
@@ -178,6 +179,11 @@ const predictionVisualizationOrderIntentSchema = z.object({
 
 const predictionVisualizationExecutionPreflightSchema = z.object({
   walletAddress: z.string().trim().min(8).max(128).optional().nullable(),
+});
+
+const botaArenaSimulationRequestSchema = z.object({
+  seed: z.string().trim().min(1).max(255).optional(),
+  maxRounds: z.coerce.number().int().min(1).max(5).optional(),
 });
 
 const agentBattleP2PStakeSchema = z.object({
@@ -614,6 +620,37 @@ router.get("/agent-battles/live", async (req, res) => {
   try {
     const feed = await getLiveBantahBroAgentBattles(parseLimit(req.query.limit, 3, 40));
     res.json(feed);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post("/agent-battles/:battleId/arena/simulate", async (req, res) => {
+  try {
+    const parsed = botaArenaSimulationRequestSchema.parse(req.body || {});
+    const battleId = String(req.params.battleId || "").trim();
+    if (!battleId) {
+      return res.status(400).json({ message: "Battle ID is required" });
+    }
+
+    const feed = await getLiveBantahBroAgentBattles(40);
+    const battle = feed.battles.find((candidate) => candidate.id === battleId);
+    if (!battle) {
+      return res.status(404).json({ message: "Live Arena battle not found" });
+    }
+
+    const simulation = await simulateBotaArenaBattleFromLiveBattle(battle, {
+      seed: parsed.seed || `${battle.id}:${battle.startsAt}`,
+      maxRounds: parsed.maxRounds || 5,
+    });
+
+    res.json({
+      battle,
+      simulation,
+      dryRun: true,
+      note:
+        "Phase 1/2 dry-run only: GAME-style decisions are mocked, adapter validation is active, and no P2P settlement or leaderboard write occurs.",
+    });
   } catch (error) {
     handleError(res, error);
   }
