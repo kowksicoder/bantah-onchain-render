@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { arenaLabelForBattle } from '@/lib/bantahbro/arenaVenues';
 import { getBattleTimeRemainingSeconds, useBattleClock } from '@/lib/bantahbro/battleTiming';
 import { arenaAgentAvatar } from '@/lib/arenaAgentAvatars';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -105,6 +106,7 @@ type DesktopSideTab = 'trollbox' | 'slips';
 type DesktopBattleTab = 'charts' | 'stats' | 'feed' | 'side';
 const BATTLE_MODE_STORAGE_KEY = 'bantahbro:battle-mode';
 const DESKTOP_BATTLE_MEDIA_QUERY = '(min-width: 1024px)';
+const DEFAULT_ARENA_LABEL = 'BOTA Arena';
 
 function readIsDesktopBattleLayout() {
   if (typeof window === 'undefined') return false;
@@ -284,7 +286,7 @@ function readArenaPreviewFromUrl(): ArenaPreviewState {
       status: 'live',
       startsAtMs: null,
       matchupLabel: 'BOTA Agent Alpha VS BOTA Agent Beta',
-      arenaLabel: 'Main Arena',
+      arenaLabel: DEFAULT_ARENA_LABEL,
     };
   }
 
@@ -296,8 +298,16 @@ function readArenaPreviewFromUrl(): ArenaPreviewState {
     status: normalizeArenaStatus(params.get('arenaState')),
     startsAtMs: Number.isFinite(startsAtMs) && startsAtMs > 0 ? startsAtMs : null,
     matchupLabel: params.get('arenaMatchup') || 'BOTA Agent Alpha VS BOTA Agent Beta',
-    arenaLabel: params.get('arenaLabel') || 'Main Arena',
+    arenaLabel: params.get('arenaLabel') || DEFAULT_ARENA_LABEL,
   };
+}
+
+function resolveBattleArenaLabel(arenaPreview: ArenaPreviewState, battle?: AgentBattle | null) {
+  const previewLabel = arenaPreview.arenaLabel?.trim();
+  if (previewLabel && previewLabel !== DEFAULT_ARENA_LABEL && previewLabel !== 'Main Arena') {
+    return previewLabel;
+  }
+  return arenaLabelForBattle(battle?.id || arenaPreview.matchupLabel);
 }
 
 function formatSignedPercent(value?: number | null) {
@@ -2680,6 +2690,7 @@ function MobileAgentBattleView({
   const [joinSide, setJoinSide] = useState<AgentBattleSide | null>(null);
   const defaultSide = left.confidence >= right.confidence ? left : right;
   const [chosenSide, setChosenSide] = useState<AgentBattleSide | null>(defaultSide);
+  const battleArenaLabel = resolveBattleArenaLabel(arenaPreview, battle);
 
   useEffect(() => {
     if (battleModeEnabled) {
@@ -2735,7 +2746,7 @@ function MobileAgentBattleView({
               battleStatus={arenaPreview.status}
               startsAtMs={arenaPreview.startsAtMs}
               matchupLabel={arenaPreview.matchupLabel}
-              arenaLabel={arenaPreview.arenaLabel}
+              arenaLabel={battleArenaLabel}
               watchReward={watchReward}
             />
             <div className="min-h-0 flex-1 pb-1">
@@ -3333,6 +3344,7 @@ export default function BattlesPage({
     battleStatus: isBattleExpired ? 'cancelled' : arenaPreview.status,
     onAward: handleBattleWatchRewardAward,
   });
+  const battleArenaLabel = resolveBattleArenaLabel(arenaPreview, battle);
 
   const stakeMutation = useMutation<AgentBattleP2PStakeResponse, Error>({
     mutationFn: async () => {
@@ -3642,7 +3654,7 @@ export default function BattlesPage({
                 battleStatus={arenaPreview.status}
                 startsAtMs={arenaPreview.startsAtMs}
                 matchupLabel={arenaPreview.matchupLabel}
-                arenaLabel={arenaPreview.arenaLabel}
+                arenaLabel={battleArenaLabel}
                 watchReward={battleWatchReward}
               />
             )}

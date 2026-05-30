@@ -6,6 +6,7 @@ class GameEngine {
     stagePath,
     fighterPaths,
     autonomous = false,
+    arenaSeed = null,
     rootElement = null,
     assetBasePath = "",
   }) {
@@ -17,6 +18,7 @@ class GameEngine {
     this.stagePath = stagePath;
     this.fighterPaths = fighterPaths;
     this.autonomous = autonomous;
+    this.arenaSeed = arenaSeed;
     this.assetBasePath = assetBasePath;
 
     this.stage = null;
@@ -180,8 +182,13 @@ class GameEngine {
   }
 
   getInitialArenaSeed() {
+    if (this.arenaSeed) {
+      return String(this.arenaSeed);
+    }
+
     const params = new URLSearchParams(window.location.search);
     return [
+      params.get("battle"),
       params.get("battleId"),
       params.get("round"),
       params.get("stage"),

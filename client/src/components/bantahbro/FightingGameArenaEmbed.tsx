@@ -44,6 +44,7 @@ type FightingGameEngineConstructor = new (options: {
   stagePath: string;
   fighterPaths: string[];
   autonomous: boolean;
+  arenaSeed?: string;
   assetBasePath: string;
 }) => FightingGameEngine;
 
@@ -54,7 +55,7 @@ declare global {
   }
 }
 
-const FIGHTING_GAME_ASSET_VERSION = 'engine-20260530-02';
+const FIGHTING_GAME_ASSET_VERSION = 'engine-20260530-03';
 const FIGHTING_GAME_SCRIPT_PATHS = [
   'js/classes.js',
   'engine/AssetLoader.js',
@@ -181,7 +182,7 @@ export function FightingGameArenaEmbed({
   battleStatus = 'live',
   startsAtMs = null,
   matchupLabel = 'BOTA Agent Alpha VS BOTA Agent Beta',
-  arenaLabel = 'Main Arena',
+  arenaLabel = 'BOTA Arena',
   watchReward,
   battle = null,
 }: FightingGameArenaEmbedProps) {
@@ -227,6 +228,7 @@ export function FightingGameArenaEmbed({
   const rightTeam = rightSide?.label || rightSide?.chainLabel || 'BOTA ARENA';
   const leftAvatar = leftSide?.avatarUrl || arenaAgentAvatar(leftName);
   const rightAvatar = rightSide?.avatarUrl || arenaAgentAvatar(rightName);
+  const arenaSeed = syncedBattle?.id || arenaLabel || matchupLabel;
 
   const applyArenaPayload = useCallback(
     (payload: { state: ArenaGuiState; cue: ArenaGuiCue | null } | null) => {
@@ -276,6 +278,7 @@ export function FightingGameArenaEmbed({
             `/2dgame/data/fighters/player2.json?v=${FIGHTING_GAME_ASSET_VERSION}`,
           ],
           autonomous: true,
+          arenaSeed,
           assetBasePath: '/2dgame/',
         });
         engineRef.current = localEngine;
@@ -310,7 +313,7 @@ export function FightingGameArenaEmbed({
       }
       localEngine?.destroy?.();
     };
-  }, [applyArenaPayload]);
+  }, [applyArenaPayload, arenaSeed]);
 
   useEffect(() => {
     if (!arenaState || !syncedBattle) return;

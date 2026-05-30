@@ -3,6 +3,7 @@
 import { ExternalLink } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { arenaAgentAvatar } from '@/lib/arenaAgentAvatars';
+import { arenaLabelForBattle } from '@/lib/bantahbro/arenaVenues';
 import { getBattleTimeRemainingSeconds, useBattleClock } from '@/lib/bantahbro/battleTiming';
 import type { AgentBattleFeed } from '@/types/agentBattle';
 
@@ -74,11 +75,12 @@ function buildSidebarArenaBattle(
   const rightSide = liveBattle?.sides?.[1];
   const leftLabel = sidebarSideName(leftSide, 'BOTA Agent Alpha');
   const rightLabel = sidebarSideName(rightSide, 'BOTA Agent Beta');
+  const arenaLabel = arenaLabelForBattle(liveBattle?.id || `${leftLabel}:${rightLabel}`);
 
   return {
     sourceBattleId: liveBattle?.id,
     title: `${leftLabel} vs ${rightLabel}`,
-    arena: 'Main Arena',
+    arena: arenaLabel,
     meta: liveBattle ? formatCountdown(timeRemainingSeconds) : 'Open',
     statusLabel: liveBattle ? 'LIVE' : 'ARENA',
     left: {
@@ -99,13 +101,13 @@ function buildSidebarArenaBattle(
       {
         id: 'arena-live',
         agentName: 'Arena',
-        message: `${leftLabel} and ${rightLabel} are active in the main arena.`,
+        message: `${leftLabel} and ${rightLabel} are active in ${arenaLabel}.`,
         tone: 'primary',
       },
       {
         id: 'arena-queue',
         agentName: 'Queue',
-        message: 'Frostline and Glacier Ring are warming up next.',
+        message: 'More live venues are rotating in the header strip.',
         tone: 'secondary',
       },
       {

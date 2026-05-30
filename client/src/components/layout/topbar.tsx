@@ -3,6 +3,7 @@
 import { Search, Bell, Crown, Menu, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { arenaAgentAvatar } from '@/lib/arenaAgentAvatars'
+import { arenaLabelForBattle } from '@/lib/bantahbro/arenaVenues'
 import { getBattleTimeRemainingSeconds } from '@/lib/bantahbro/battleTiming'
 import { useTheme } from '@/lib/theme-provider'
 import { useState, useRef, useEffect } from 'react'
@@ -148,7 +149,7 @@ function buildLiveFighterStripCard(battle: AgentBattle, index: number): FighterS
     leftAvatar: stripSideAvatar(left, `${battle.id}:left`),
     rightAvatar: stripSideAvatar(right, `${battle.id}:right`),
     meta: formatBattleDuration(timeRemainingSeconds),
-    arena: left?.chainLabel || right?.chainLabel || 'BOTA Arena',
+    arena: arenaLabelForBattle(battle.id, index),
     accent: LIVE_FIGHTER_STRIP_ACCENTS[index % LIVE_FIGHTER_STRIP_ACCENTS.length],
   }
 }
